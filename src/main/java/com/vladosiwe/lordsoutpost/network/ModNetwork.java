@@ -22,7 +22,8 @@ import java.util.Set;
 import java.util.UUID;
 
 /** Регистрация пакетов и рассылка обновлений тем, у кого открыты окно аванпоста или карта. */
-@EventBusSubscriber(modid = LordsOutpost.MODID)
+@SuppressWarnings("removal")
+@EventBusSubscriber(modid = LordsOutpost.MODID, bus = EventBusSubscriber.Bus.MOD)
 public final class ModNetwork {
     /** Особая «вкладка»: окно ввода имени форта сразу после основания. */
     public static final int TAB_NAME = 100;

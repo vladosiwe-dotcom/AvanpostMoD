@@ -67,7 +67,7 @@ public final class Raids {
     }
 
     private static String sourceName(@Nullable Outpost source) {
-        return source == null ? "-" : source.difficulty.skulls + "*";
+        return source == null ? "—" : "★".repeat(source.difficulty.skulls);
     }
 
     private static double remainingShare(Raid raid) {

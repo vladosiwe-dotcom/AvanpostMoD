@@ -1,0 +1,18 @@
+{
+  "variants": {
+    "axis=x,inner=false": {
+      "model": "lordsoutpost:block/outpost_gate"
+    },
+    "axis=z,inner=false": {
+      "model": "lordsoutpost:block/outpost_gate",
+      "y": 90
+    },
+    "axis=x,inner=true": {
+      "model": "lordsoutpost:block/outpost_gate_inner"
+    },
+    "axis=z,inner=true": {
+      "model": "lordsoutpost:block/outpost_gate_inner",
+      "y": 90
+    }
+  }
+}

@@ -32,7 +32,7 @@ public final class Diplomacy {
             int cost = cost(target, pact);
             if (!o.take(Resource.GOLD, cost)) return Result.NO_GOLD;
             set(o, target, pact);
-            o.log(now, "lordsoutpost.event.pact", pact.id, target.difficulty.skulls + "*");
+            o.log(now, "lordsoutpost.event.pact", pact.id, "★".repeat(target.difficulty.skulls));
             data.setDirty();
             return Result.OK;
         }
@@ -73,7 +73,7 @@ public final class Diplomacy {
             rb.pact = Pact.NONE;
             rb.offered = Pact.NONE;
         }
-        o.log(now, "lordsoutpost.event.pact_broken", target.state == OutpostState.WILD ? target.difficulty.skulls + "*" : target.name);
+        o.log(now, "lordsoutpost.event.pact_broken", target.state == OutpostState.WILD ? "★".repeat(target.difficulty.skulls) : target.name);
         o.dirtyForClients = true;
         target.dirtyForClients = true;
         data.setDirty();

@@ -1,0 +1,7 @@
+{
+  "type": "lordsoutpost:outpost",
+  "biomes": "#lordsoutpost:has_structure/outpost",
+  "step": "surface_structures",
+  "spawn_overrides": {},
+  "terrain_adaptation": "beard_box"
+}

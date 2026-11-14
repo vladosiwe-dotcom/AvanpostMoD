@@ -81,6 +81,7 @@ public final class OutpostManager {
         o.conqueredAt = now;
         o.residents.clear();
         o.raid = null;
+        o.alarmUntil = 0;
         clearRelations(data, o);
         o.log(now, "lordsoutpost.event.conquered");
         o.dirtyForClients = true;
@@ -110,6 +111,7 @@ public final class OutpostManager {
         o.caravans.clear();
         o.quests.clear();
         o.raid = null;
+        o.alarmUntil = 0;
         o.squads[Squad.GUARD].order = Squad.Order.POSTS;
         o.squads[Squad.WATCH].order = Squad.Order.PATROL;
         o.squads[Squad.RETINUE].order = Squad.Order.POSTS;

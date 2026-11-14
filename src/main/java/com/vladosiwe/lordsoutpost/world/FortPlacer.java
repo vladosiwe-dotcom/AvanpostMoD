@@ -41,6 +41,7 @@ public final class FortPlacer {
                              Map<BlockPos, BlockState> snapshot, @Nullable BoundingBox box, RandomSource random) {
         Set<BlockPos> lootChests = new HashSet<>(bp.design(difficulty.tier).markers(Marker.LOOT_CHEST));
         BlockState foundation = bp.palette.foundation.defaultBlockState();
+        boolean worldgen = !(level instanceof net.minecraft.server.level.ServerLevel);
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         BlockPos.MutableBlockPos below = new BlockPos.MutableBlockPos();
         for (var e : snapshot.entrySet()) {
@@ -50,7 +51,8 @@ public final class FortPlacer {
             if (level.isOutsideBuildHeight(pos)) continue;
             BlockState state = e.getValue();
             level.setBlock(pos, state, Block.UPDATE_CLIENTS);
-            if (FortBlueprint.shapeSensitive(state)) level.getChunk(pos).markPosForPostprocessing(pos);
+            // При генерации мира форма заборов и стен досчитывается, когда чанк станет активным; в живом мире это делает согласование.
+            if (worldgen && FortBlueprint.shapeSensitive(state)) level.getChunk(pos).markPosForPostprocessing(pos);
             // Фундамент: если под нижним блоком пустота, заполняем её до твёрдой земли.
             if ((rel.getY() == 0 || rel.getY() == 1) && !state.isAir() && !snapshot.containsKey(rel.below())) {
                 for (int d = 1; d <= MAX_FOUNDATION; d++) {

@@ -226,7 +226,7 @@ public final class Caravans {
             }
         }
         o.caravans.add(c);
-        o.log(now, "lordsoutpost.event.caravan_sent", target.state == OutpostState.WILD ? target.difficulty.skulls + "*" : target.name);
+        o.log(now, "lordsoutpost.event.caravan_sent", target.state == OutpostState.WILD ? "★".repeat(target.difficulty.skulls) : target.name);
         o.dirtyForClients = true;
         data.setDirty();
         return Result.OK;
