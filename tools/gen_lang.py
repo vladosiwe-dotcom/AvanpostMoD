@@ -298,6 +298,7 @@ add(P + 'cmd.none_near', 'Поблизости нет подходящих ме�
 add(P + 'cmd.list', 'Известно аванпостов: %s (ближайшие 20)', 'Known outposts: %s (nearest 20)')
 add(P + 'cmd.revealed', 'Разведано аванпостов: %s', 'Outposts revealed: %s')
 add(P + 'cmd.created', 'Создан аванпост: ', 'Outpost created: ')
+add(P + 'cmd.water', 'Здесь вода: форт ставится на сушу.', 'There is water here: forts go on dry land.')
 add(P + 'cmd.too_close', 'Слишком близко к другому аванпосту: ', 'Too close to another outpost: ')
 add(P + 'cmd.not_wild', 'Этот аванпост уже не принадлежит мародёрам.', 'This outpost is no longer held by marauders.')
 add(P + 'cmd.not_owned', 'У этого аванпоста нет Лорда.', 'This outpost has no Lord.')

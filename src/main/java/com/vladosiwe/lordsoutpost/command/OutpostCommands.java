@@ -162,7 +162,15 @@ public final class OutpostCommands {
         }
         ServerLevel level = overworld(c);
         OutpostSavedData data = OutpostSavedData.get(level);
-        BlockPos center = player.blockPosition().below();
+        // Форт встаёт на поверхность земли под игроком, а не на высоту, где игрок летит.
+        int px = player.getBlockX(), pz = player.getBlockZ();
+        level.getChunk(px >> 4, pz >> 4);
+        int ground = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, px, pz) - 1;
+        BlockPos center = new BlockPos(px, ground, pz);
+        if (!level.getFluidState(center).isEmpty() || !level.getFluidState(center.above()).isEmpty()) {
+            c.getSource().sendFailure(Component.translatable("lordsoutpost.cmd.water"));
+            return 0;
+        }
         for (Outpost other : data.near(center.getX(), center.getZ(), 120)) {
             c.getSource().sendFailure(Component.translatable("lordsoutpost.cmd.too_close").append(describe(other)));
             return 0;

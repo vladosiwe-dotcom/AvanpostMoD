@@ -618,7 +618,7 @@ public final class OutpostGameTests {
                 h.assertTrue(swordGoals.stream().anyMatch(n -> n.startsWith("yesman.epicfight")), "мечник не получил боевой ИИ Epic Fight: " + swordGoals);
                 h.assertTrue(bossGoals.stream().anyMatch(n -> n.startsWith("yesman.epicfight")), "Лорд мародёров не получил боевой ИИ Epic Fight: " + bossGoals);
                 h.assertTrue(bossGoals.stream().anyMatch(n -> n.endsWith("CaptainTacticsGoal")), "Лорд мародёров потерял тактику");
-                h.assertTrue(bowGoals.stream().anyMatch(n -> n.contains("RangedAttackGoal") || n.startsWith("yesman.epicfight")), "лучник потерял стрелковый ИИ: " + bowGoals);
+                h.assertTrue(bowGoals.stream().anyMatch(n -> n.contains("Ranged")), "лучник потерял стрелковый ИИ: " + bowGoals);
                 h.succeed();
             } finally {
                 sword.discard();

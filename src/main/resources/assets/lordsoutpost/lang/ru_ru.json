@@ -257,6 +257,7 @@
   "lordsoutpost.cmd.list": "Известно аванпостов: %s (ближайшие 20)",
   "lordsoutpost.cmd.revealed": "Разведано аванпостов: %s",
   "lordsoutpost.cmd.created": "Создан аванпост: ",
+  "lordsoutpost.cmd.water": "Здесь вода: форт ставится на сушу.",
   "lordsoutpost.cmd.too_close": "Слишком близко к другому аванпосту: ",
   "lordsoutpost.cmd.not_wild": "Этот аванпост уже не принадлежит мародёрам.",
   "lordsoutpost.cmd.not_owned": "У этого аванпоста нет Лорда.",

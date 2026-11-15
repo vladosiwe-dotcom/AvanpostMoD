@@ -19,6 +19,7 @@ import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.ai.goal.RangedAttackGoal;
+import net.minecraft.world.entity.ai.goal.RangedBowAttackGoal;
 import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.monster.RangedAttackMob;
@@ -45,8 +46,62 @@ public class FighterEntity extends OutpostNpc implements RangedAttackMob {
     private static final Item[] SWORDS = {Items.STONE_SWORD, Items.IRON_SWORD, Items.IRON_SWORD, Items.DIAMOND_SWORD};
     private static final Item[] AXES = {Items.STONE_AXE, Items.IRON_AXE, Items.IRON_AXE, Items.DIAMOND_AXE};
 
+    // Создаются лениво: registerGoals вызывается из конструктора Mob, раньше инициализаторов полей.
+    private RangedAttackGoal rangedGoal;
+    private RangedBowAttackGoal<FighterEntity> bowGoal;
+
     public FighterEntity(EntityType<? extends FighterEntity> type, Level level) {
         super(type, level);
+    }
+
+    /**
+     * Epic Fight, накладывая свой патч, убирает у моба все цели атаки и ставит свои только для оружия ближнего боя.
+     * Стрелкам их стрелковая цель возвращается.
+     */
+    private void restoreRangedGoals() {
+        if (!ranged()) return;
+        createRangedGoals();
+        boolean ranged = false, bow = false;
+        for (var w : goalSelector.getAvailableGoals()) {
+            if (w.getGoal() == rangedGoal) ranged = true;
+            if (w.getGoal() == bowGoal) bow = true;
+        }
+        if (!ranged) goalSelector.addGoal(2, rangedGoal);
+        if (!bow) goalSelector.addGoal(2, bowGoal);
+    }
+
+    @Override
+    public void aiStep() {
+        super.aiStep();
+        if (!level().isClientSide && tickCount % 20 == 7) restoreRangedGoals();
+    }
+
+    private void createRangedGoals() {
+        if (rangedGoal != null) return;
+        // Арбалетчик: выстрел раз в полторы секунды.
+        rangedGoal = new RangedAttackGoal(this, 1.0, 30, 18f) {
+            @Override
+            public boolean canUse() {
+                return role() == Role.CROSSBOWMAN && super.canUse();
+            }
+
+            @Override
+            public boolean canContinueToUse() {
+                return role() == Role.CROSSBOWMAN && super.canContinueToUse();
+            }
+        };
+        // Лучник натягивает лук: видно и в обычной игре, и как прицеливание Epic Fight.
+        bowGoal = new RangedBowAttackGoal<>(this, 1.0, 25, 18f) {
+            @Override
+            public boolean canUse() {
+                return role() == Role.ARCHER && super.canUse();
+            }
+
+            @Override
+            public boolean canContinueToUse() {
+                return role() == Role.ARCHER && super.canContinueToUse();
+            }
+        };
     }
 
     public static AttributeSupplier.Builder attributes() {
@@ -85,17 +140,9 @@ public class FighterEntity extends OutpostNpc implements RangedAttackMob {
                 return !ranged() && super.canContinueToUse();
             }
         });
-        goalSelector.addGoal(2, new RangedAttackGoal(this, 1.0, 30, 18f) {
-            @Override
-            public boolean canUse() {
-                return ranged() && super.canUse();
-            }
-
-            @Override
-            public boolean canContinueToUse() {
-                return ranged() && super.canContinueToUse();
-            }
-        });
+        createRangedGoals();
+        goalSelector.addGoal(2, rangedGoal);
+        goalSelector.addGoal(2, bowGoal);
         goalSelector.addGoal(4, new DutyGoal(this));
         goalSelector.addGoal(8, new LookAtPlayerGoal(this, Player.class, 8f));
         goalSelector.addGoal(9, new RandomLookAroundGoal(this));

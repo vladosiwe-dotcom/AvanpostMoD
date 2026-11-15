@@ -22,13 +22,17 @@ import java.util.List;
 
 /**
  * Тактика Лорда мародёров. Пока у него есть стража, он не лезет в первую линию:
- *  - стоит за ближайшим к врагу стражником, прикрываясь щитом, и бросает на врага всю стражу вокруг;
- *  - если враг прорвался вплотную или прикрыться некем — дерётся сам (это делает обычная цель ближнего боя);
+ *  - держится в 6–9 блоках от врага за спинами стражи, прикрываясь щитом, и бросает на врага всю стражу вокруг;
+ *  - если враг прорвался вплотную (ближе 2,5 блока) или в живых меньше двух стражников — дерётся сам
+ *    (это делает обычная цель ближнего боя или боевой ИИ Epic Fight);
  *  - на четверти здоровья отходит к трону, один раз за бой пьёт целебное зелье и зовёт подмогу.
  */
 public class CaptainTacticsGoal extends Goal {
     private static final double GUARD_RADIUS = 20;
-    private static final double MELEE_RANGE = 3.5;
+    /** Ближе этого враг прорвался — Лорд рубится сам. */
+    private static final double MELEE_RANGE = 2.5;
+    /** Дистанция, которую Лорд держит до врага, пока его прикрывает стража. */
+    private static final double STANDOFF = 7.0;
     private final CaptainEntity mob;
     private boolean potionUsed;
     private int rallyCooldown;
@@ -90,22 +94,22 @@ public class CaptainTacticsGoal extends Goal {
             return;
         }
 
-        // Встать за ближайшим к врагу стражником: на линии «враг — стражник», в трёх блоках позади него.
-        FighterEntity shield = null;
-        double best = Double.MAX_VALUE;
-        for (FighterEntity g : guards) {
-            double d = g.distanceToSqr(target);
-            if (d < best) {
-                best = d;
-                shield = g;
-            }
-        }
-        if (shield != null && --repath <= 0) {
+        // Встать за строем стражи: на линии «враг — центр стражи», в STANDOFF блоках от врага.
+        if (--repath <= 0) {
             repath = 10;
-            Vec3 away = shield.position().subtract(target.position()).multiply(1, 0, 1);
-            if (away.lengthSqr() < 0.01) away = mob.position().subtract(target.position()).multiply(1, 0, 1);
-            Vec3 spot = shield.position().add(away.normalize().scale(3.0));
-            mob.getNavigation().moveTo(spot.x, spot.y, spot.z, 1.0);
+            double gx = 0, gz = 0;
+            for (FighterEntity g : guards) {
+                gx += g.getX();
+                gz += g.getZ();
+            }
+            Vec3 line = new Vec3(gx / guards.size() - target.getX(), 0, gz / guards.size() - target.getZ());
+            if (line.lengthSqr() < 0.25) line = new Vec3(mob.getX() - target.getX(), 0, mob.getZ() - target.getZ());
+            if (line.lengthSqr() < 0.01) line = new Vec3(1, 0, 0);
+            Vec3 spot = target.position().add(line.normalize().scale(STANDOFF));
+            double dist = mob.distanceTo(target);
+            // Слишком близко — отступить быстрее; на месте — стоять, лицом к врагу.
+            if (dist < STANDOFF - 1 || mob.distanceToSqr(spot) > 4) mob.getNavigation().moveTo(spot.x, mob.getY(), spot.z, dist < STANDOFF - 1 ? 1.2 : 1.0);
+            else mob.getNavigation().stop();
         }
         // Щит поднят, когда в него могут попасть: враг со стрелковым оружием или подошёл близко.
         boolean threatened = mob.distanceTo(target) < 7 || holdsRanged(target);

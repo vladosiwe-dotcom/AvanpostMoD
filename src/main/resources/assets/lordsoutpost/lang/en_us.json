@@ -257,6 +257,7 @@
   "lordsoutpost.cmd.list": "Known outposts: %s (nearest 20)",
   "lordsoutpost.cmd.revealed": "Outposts revealed: %s",
   "lordsoutpost.cmd.created": "Outpost created: ",
+  "lordsoutpost.cmd.water": "There is water here: forts go on dry land.",
   "lordsoutpost.cmd.too_close": "Too close to another outpost: ",
   "lordsoutpost.cmd.not_wild": "This outpost is no longer held by marauders.",
   "lordsoutpost.cmd.not_owned": "This outpost has no Lord.",
