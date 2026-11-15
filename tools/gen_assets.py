@@ -357,6 +357,8 @@ def mobpatch(impact, max_strikes, stun_armor, chasing, boss=False):
         'armature': 'epicfight:entity/biped',
         'renderer': 'minecraft:vindicator',
         'isHumanoid': True,
+        # Обязательное поле в Epic Fight 21.17. Свой/чужой для наших бойцов решает мод, поэтому нейтральная фракция.
+        'faction': 'neutral',
         'attributes': {'impact': impact, 'armor_negation': 0.0, 'max_strikes': max_strikes, 'stun_armor': stun_armor,
                        'chasing_speed': chasing, 'scale': 1.0},
         'default_livingmotions': {
