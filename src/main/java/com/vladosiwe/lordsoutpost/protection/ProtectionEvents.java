@@ -79,6 +79,7 @@ public final class ProtectionEvents {
                 OutpostManager.abandon(data, o, level.getGameTime());
                 deny(player, "lordsoutpost.msg.abandoned");
                 if (player instanceof ServerPlayer sp) {
+                    com.vladosiwe.lordsoutpost.compat.SoloStatusCompat.setLord(sp, false);
                     sp.refreshDisplayName();
                     sp.refreshTabListName();
                 }

@@ -22,9 +22,9 @@ import java.util.List;
  */
 public final class MagicLoot {
     public static final String IRONS = "irons_spellbooks";
-    private static final ResourceKey<LootTable> MAGE_VANILLA = table("gameplay/mage_work");
-    private static final ResourceKey<LootTable> MAGE_IRONS = table("compat/irons/mage_work");
-    private static final ResourceKey<LootTable> TREASURE_IRONS = table("compat/irons/captain_treasure");
+    public static final ResourceKey<LootTable> MAGE_VANILLA = table("gameplay/mage_work");
+    public static final ResourceKey<LootTable> MAGE_IRONS = table("compat/irons/mage_work");
+    public static final ResourceKey<LootTable> TREASURE_IRONS = table("compat/irons/captain_treasure");
 
     private MagicLoot() {}
 

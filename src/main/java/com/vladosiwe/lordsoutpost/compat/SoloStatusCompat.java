@@ -60,8 +60,14 @@ public final class SoloStatusCompat {
 
     public static void onBecameLord(ServerPlayer player) {
         if (!ready()) return;
-        call(setCounter, player, "outpost_lord", 1L);
         call(addCounter, player, "outposts_founded", 1L);
+        setLord(player, true);
+    }
+
+    /** Синхронизирует титул «Лорд» с владением (вход в игру, отказ от аванпоста). */
+    public static void setLord(ServerPlayer player, boolean lord) {
+        if (!ready()) return;
+        call(setCounter, player, "outpost_lord", lord ? 1L : 0L);
     }
 
     public static void onQuestDone(ServerPlayer player, int reward) {

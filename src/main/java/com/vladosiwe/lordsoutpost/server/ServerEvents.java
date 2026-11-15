@@ -66,7 +66,10 @@ public final class ServerEvents {
     @SubscribeEvent
     public static void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
-            ModNetwork.sendMap(player, OutpostSavedData.get(player.server), false, true);
+            OutpostSavedData data = OutpostSavedData.get(player.server);
+            ModNetwork.sendMap(player, data, false, true);
+            // Пока игрок был не в сети, его аванпост могли отобрать или удалить: титул должен это отражать.
+            com.vladosiwe.lordsoutpost.compat.SoloStatusCompat.setLord(player, data.lordOutpost(player.getUUID()) != null);
         }
     }
 

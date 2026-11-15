@@ -205,6 +205,7 @@ public final class ServerActions {
                     if (!player.getInventory().add(item)) player.drop(item, false);
                 }
                 feedback(player, "lordsoutpost.msg.abandoned", ChatFormatting.YELLOW);
+                com.vladosiwe.lordsoutpost.compat.SoloStatusCompat.setLord(player, false);
                 player.refreshDisplayName();
                 player.refreshTabListName();
                 ModNetwork.closed(player);

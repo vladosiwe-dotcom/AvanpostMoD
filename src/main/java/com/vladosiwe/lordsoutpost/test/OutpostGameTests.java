@@ -467,4 +467,81 @@ public final class OutpostGameTests {
             }
         });
     }
+
+    /**
+     * Связь с Solo Status System (тест выполняется, только если мод установлен): основание аванпоста
+     * выдаёт и надевает титул «Лорд», отказ от аванпоста его снимает.
+     */
+    @GameTest(template = "empty")
+    public static void soloStatusLordTitle(GameTestHelper h) {
+        if (!net.neoforged.fml.ModList.get().isLoaded(com.vladosiwe.lordsoutpost.compat.SoloStatusCompat.MODID)) {
+            h.succeed();
+            return;
+        }
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        net.minecraft.server.level.ServerPlayer player = h.makeMockServerPlayerInLevel();
+        Outpost o = virtualOutpost(level, data, FAR.offset(18000, 0, 0), 1, null);
+        try {
+            OutpostManager.conquer(data, o, level.getGameTime());
+            OutpostManager.found(data, o, player.getUUID(), "Tester", o.marker(Marker.YARD), level.getGameTime(), level.random);
+            com.vladosiwe.lordsoutpost.compat.SoloStatusCompat.onBecameLord(player);
+            h.assertTrue("lord".equals(soloTitle(player)), "титул Системы после основания: " + soloTitle(player));
+            OutpostManager.abandon(data, o, level.getGameTime());
+            com.vladosiwe.lordsoutpost.compat.SoloStatusCompat.setLord(player, false);
+            h.assertTrue(!"lord".equals(soloTitle(player)), "титул остался после отказа от аванпоста");
+            LordsOutpost.LOGGER.info("Solo Status System: титул Лорда выдаётся и снимается вместе с владением");
+        } finally {
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
+    private static String soloTitle(net.minecraft.server.level.ServerPlayer player) {
+        try {
+            Object d = Class.forName("com.vladosiwe.solostatus.data.Hunter").getMethod("get", Player.class).invoke(null, player);
+            return (String) d.getClass().getField("title").get(d);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /**
+     * Магическая добыча. Без Iron's Spells таблицы мода просто не загружаются, и Маг создаёт ванильные предметы.
+     * С Iron's Spells (так тест запускается на GitHub) таблицы обязаны загрузиться и выдавать свитки и руны мода.
+     */
+    @GameTest(template = "empty")
+    public static void magicLootTables(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        var tables = level.getServer().reloadableRegistries();
+        h.assertTrue(tables.getLootTable(com.vladosiwe.lordsoutpost.compat.MagicLoot.MAGE_VANILLA) != net.minecraft.world.level.storage.loot.LootTable.EMPTY,
+                "нет ванильной таблицы работы Мага");
+        boolean irons = com.vladosiwe.lordsoutpost.compat.MagicLoot.ironsLoaded();
+        for (var key : List.of(com.vladosiwe.lordsoutpost.compat.MagicLoot.MAGE_IRONS, com.vladosiwe.lordsoutpost.compat.MagicLoot.TREASURE_IRONS)) {
+            boolean loaded = tables.getLootTable(key) != net.minecraft.world.level.storage.loot.LootTable.EMPTY;
+            h.assertTrue(loaded == irons, "таблица " + key.location() + (irons ? " не загрузилась при установленном Iron's Spells" : " загрузилась без Iron's Spells"));
+        }
+        int ironsItems = 0, total = 0;
+        for (int i = 0; i < 40; i++) {
+            for (var stack : com.vladosiwe.lordsoutpost.compat.MagicLoot.mageProduct(level, level.random)) {
+                total++;
+                if (net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).getNamespace().equals("irons_spellbooks")) ironsItems++;
+            }
+        }
+        h.assertTrue(total > 0, "Маг ничего не создаёт");
+        h.assertTrue(irons ? ironsItems > 0 : ironsItems == 0, "предметы Мага не соответствуют установленным модам: " + ironsItems + " из " + total);
+        if (irons) {
+            int scrolls = 0;
+            for (int i = 0; i < 10; i++) {
+                for (var stack : com.vladosiwe.lordsoutpost.compat.MagicLoot.captainScrolls(level, level.random)) {
+                    if (net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath().equals("scroll")) scrolls++;
+                }
+            }
+            h.assertTrue(scrolls > 0, "в сундуке Капитана нет свитков Iron's Spells");
+            LordsOutpost.LOGGER.info("Iron's Spells: таблицы добычи работают, предметов мода у Мага {} из {}, свитков у Капитана {}", ironsItems, total, scrolls);
+        } else {
+            LordsOutpost.LOGGER.info("Iron's Spells не установлен: Маг создаёт ванильные предметы ({} шт. за 40 циклов)", total);
+        }
+        h.succeed();
+    }
 }
