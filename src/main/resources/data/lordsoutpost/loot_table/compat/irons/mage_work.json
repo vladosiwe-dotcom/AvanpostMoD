@@ -25,23 +25,9 @@
           ]
         },
         {
-          "type": "minecraft:item",
-          "name": "irons_spellbooks:arcane_essence",
-          "weight": 6,
-          "functions": [
-            {
-              "function": "minecraft:set_count",
-              "count": {
-                "type": "minecraft:uniform",
-                "min": 2,
-                "max": 6
-              }
-            }
-          ]
-        },
-        {
-          "type": "minecraft:item",
-          "name": "irons_spellbooks:common_ink",
+          "type": "minecraft:tag",
+          "name": "lordsoutpost:irons_reagents",
+          "expand": true,
           "weight": 4,
           "functions": [
             {
@@ -49,84 +35,15 @@
               "count": {
                 "type": "minecraft:uniform",
                 "min": 1,
-                "max": 3
+                "max": 4
               }
             }
           ]
         },
         {
-          "type": "minecraft:item",
-          "name": "irons_spellbooks:uncommon_ink",
-          "weight": 3,
-          "functions": [
-            {
-              "function": "minecraft:set_count",
-              "count": {
-                "type": "minecraft:uniform",
-                "min": 1,
-                "max": 2
-              }
-            }
-          ]
-        },
-        {
-          "type": "minecraft:item",
-          "name": "irons_spellbooks:rare_ink",
-          "weight": 2
-        },
-        {
-          "type": "minecraft:item",
-          "name": "irons_spellbooks:fire_rune",
-          "weight": 2
-        },
-        {
-          "type": "minecraft:item",
-          "name": "irons_spellbooks:ice_rune",
-          "weight": 2
-        },
-        {
-          "type": "minecraft:item",
-          "name": "irons_spellbooks:lightning_rune",
-          "weight": 2
-        },
-        {
-          "type": "minecraft:item",
-          "name": "irons_spellbooks:holy_rune",
-          "weight": 2
-        },
-        {
-          "type": "minecraft:item",
-          "name": "irons_spellbooks:ender_rune",
-          "weight": 2
-        },
-        {
-          "type": "minecraft:item",
-          "name": "irons_spellbooks:blood_rune",
-          "weight": 2
-        },
-        {
-          "type": "minecraft:item",
-          "name": "irons_spellbooks:evocation_rune",
-          "weight": 2
-        },
-        {
-          "type": "minecraft:item",
-          "name": "irons_spellbooks:nature_rune",
-          "weight": 2
-        },
-        {
-          "type": "minecraft:item",
-          "name": "irons_spellbooks:mana_rune",
-          "weight": 2
-        },
-        {
-          "type": "minecraft:item",
-          "name": "irons_spellbooks:cooldown_rune",
-          "weight": 2
-        },
-        {
-          "type": "minecraft:item",
-          "name": "irons_spellbooks:protection_rune",
+          "type": "minecraft:tag",
+          "name": "lordsoutpost:irons_runes",
+          "expand": true,
           "weight": 2
         }
       ]

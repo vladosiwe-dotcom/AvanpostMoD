@@ -281,15 +281,30 @@ SCROLL = {'type': 'minecraft:item', 'name': 'irons_spellbooks:scroll', 'weight':
           'functions': [{'function': 'irons_spellbooks:randomize_spell', 'quality': {'min': 0.0, 'max': 0.6}}]}
 GOOD_SCROLL = {'type': 'minecraft:item', 'name': 'irons_spellbooks:scroll', 'weight': 10,
                'functions': [{'function': 'irons_spellbooks:randomize_spell', 'quality': {'min': 0.4, 'max': 1.0}}]}
-RUNES = [item(f'irons_spellbooks:{r}_rune', 2) for r in ('fire', 'ice', 'lightning', 'holy', 'ender', 'blood', 'evocation', 'nature', 'mana', 'cooldown', 'protection')]
+# Руны и чернила берутся через теги с необязательными записями: если в какой-то версии Iron's Spells предмета нет
+# (например, mana_rune отсутствует в 3.16), он просто пропускается, а таблица добычи всё равно загружается.
+IRONS_RUNES = [f'irons_spellbooks:{r}_rune' for r in ('fire', 'ice', 'lightning', 'holy', 'ender', 'blood', 'evocation', 'nature',
+                                                      'arcane', 'mana', 'cooldown', 'protection')]
+IRONS_REAGENTS = ['irons_spellbooks:arcane_essence', 'irons_spellbooks:common_ink', 'irons_spellbooks:uncommon_ink', 'irons_spellbooks:rare_ink']
+write(os.path.join(DM, 'tags', 'item', 'irons_runes.json'), {'values': [{'id': i, 'required': False} for i in IRONS_RUNES]})
+write(os.path.join(DM, 'tags', 'item', 'irons_reagents.json'), {'values': [{'id': i, 'required': False} for i in IRONS_REAGENTS]})
+
+
+def tag(name, weight, lo=1, hi=1):
+    e = {'type': 'minecraft:tag', 'name': f'{MOD}:{name}', 'expand': True, 'weight': weight}
+    if hi > 1:
+        e['functions'] = [{'function': 'minecraft:set_count', 'count': {'type': 'minecraft:uniform', 'min': lo, 'max': hi}}]
+    return e
+
+
+RUNES = [tag('irons_runes', 2)]
 write(os.path.join(DM, 'loot_table', 'compat', 'irons', 'mage_work.json'), {
     'neoforge:conditions': IRONS, 'type': 'minecraft:gift', 'pools': [{'rolls': 1, 'entries': [
-        SCROLL, item('irons_spellbooks:arcane_essence', 6, 2, 6), item('irons_spellbooks:common_ink', 4, 1, 3),
-        item('irons_spellbooks:uncommon_ink', 3, 1, 2), item('irons_spellbooks:rare_ink', 2)] + RUNES}]})
+        SCROLL, tag('irons_reagents', 4, 1, 4)] + RUNES}]})
 write(os.path.join(DM, 'loot_table', 'compat', 'irons', 'captain_treasure.json'), {
     'neoforge:conditions': IRONS, 'type': 'minecraft:chest', 'pools': [
         {'rolls': {'type': 'minecraft:uniform', 'min': 1, 'max': 3}, 'entries': [GOOD_SCROLL]},
-        {'rolls': 1, 'entries': [item('irons_spellbooks:arcane_essence', 6, 3, 8), item('irons_spellbooks:rare_ink', 3)] + RUNES}]})
+        {'rolls': 1, 'entries': [tag('irons_reagents', 4, 2, 6)] + RUNES}]})
 
 # Рецепты: решётку и доску можно сделать самому, Штандарт — только трофей.
 write(os.path.join(DM, 'recipe', 'outpost_gate.json'), {
