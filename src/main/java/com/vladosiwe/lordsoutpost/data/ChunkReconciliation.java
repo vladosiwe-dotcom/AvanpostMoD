@@ -598,7 +598,8 @@ public final class ChunkReconciliation {
         } else if (o.defenselessSince == 0) {
             o.defenselessSince = now;
         } else if (now - o.defenselessSince > 600) {
-            for (UUID id : raid.entities) if (level.getEntity(id) instanceof OutpostNpc npc) npc.discard();
+            // Копия: при удалении налётчик сам вычёркивает себя из raid.entities (NpcLifecycle.onUnloaded).
+            for (UUID id : new ArrayList<>(raid.entities)) if (level.getEntity(id) instanceof OutpostNpc npc) npc.discard();
             o.raid = null;
             o.defenselessSince = 0;
             for (Resource res : new Resource[]{Resource.WOOD, Resource.STONE, Resource.FOOD, Resource.IRON, Resource.HIDES, Resource.GOLD}) {
@@ -704,7 +705,7 @@ public final class ChunkReconciliation {
     /** Караван уходит из загруженной области: сущности исчезают, путь продолжается в симуляции. */
     public static void dematerialize(ServerLevel level, Caravan c, @Nullable UUID alreadyGone) {
         c.materialized = false;
-        for (UUID id : c.entities) {
+        for (UUID id : new ArrayList<>(c.entities)) {
             if (id.equals(alreadyGone)) continue;
             Entity e = level.getEntity(id);
             if (e != null) e.discard();

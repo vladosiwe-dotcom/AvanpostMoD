@@ -126,6 +126,7 @@
   "lordsoutpost.event.conquered": "The Marauder Lord fell and the garrison scattered.",
   "lordsoutpost.event.reclaimed": "Marauders returned to the abandoned fort.",
   "lordsoutpost.event.tier_up": "Tier %s complete!",
+  "lordsoutpost.event.catch_up": "While the world was closed, the outpost lived %s days: tier %s → %s.",
   "lordsoutpost.event.settler": "New resident: %s (%s).",
   "lordsoutpost.event.starving": "Famine: the larders are empty and work goes at half pace.",
   "lordsoutpost.event.law": "Law proclaimed: %s.",

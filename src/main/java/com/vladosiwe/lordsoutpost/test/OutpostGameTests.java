@@ -204,6 +204,29 @@ public final class OutpostGameTests {
         h.succeed();
     }
 
+    /** Пока мир закрыт, игровое время стоит; при запуске форт проживает это время задним числом и растёт. */
+    @GameTest(template = "empty")
+    public static void outpostLivesWhileWorldClosed(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        Outpost o = virtualOutpost(level, data, FAR.offset(1500, 0, 0), 1, UUID.randomUUID());
+        try {
+            o.nextRaidAt = Long.MAX_VALUE / 4;
+            o.lastSim = level.getGameTime();
+            int pop0 = o.residents.size(), steps0 = o.steps, tier0 = o.tier;
+            ALifeSimulationManager.catchUp(level, data, o, 3 * Simulation.DAY);
+            h.assertTrue(o.lastSim == level.getGameTime(), "догон не дошёл до текущего времени: " + o.lastSim);
+            h.assertTrue(o.tier > tier0 || o.steps > steps0, "за три дня отсутствия форт не строился");
+            h.assertTrue(o.residents.size() > pop0, "за три дня отсутствия население не выросло");
+            h.assertTrue(o.chronicle.stream().anyMatch(e -> e.key().equals("lordsoutpost.event.catch_up")), "нет записи в хронике");
+            LordsOutpost.LOGGER.info("Догон: 3 дня, тир {} → {}, шагов {}, жителей {} → {}", tier0, o.tier, o.steps, pop0, o.residents.size());
+        } finally {
+            OutpostManager.abandon(data, o, level.getGameTime());
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
     /** Нехватка рождает задание; помощь игрока закрывает его и ускоряет работу; без игрока задание уходит само. */
     @GameTest(template = "empty")
     public static void shortagesBecomeQuests(GameTestHelper h) {

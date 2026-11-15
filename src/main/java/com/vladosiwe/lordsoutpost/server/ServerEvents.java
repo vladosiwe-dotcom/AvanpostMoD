@@ -44,6 +44,7 @@ public final class ServerEvents {
         OutpostSites.clearCache();
         BiomeTiles.clear();
         ModNetwork.reset();
+        ALifeSimulationManager.catchUp(event.getServer());
     }
 
     @SubscribeEvent
@@ -69,7 +70,10 @@ public final class ServerEvents {
             OutpostSavedData data = OutpostSavedData.get(player.server);
             ModNetwork.sendMap(player, data, false, true);
             // Пока игрок был не в сети, его аванпост могли отобрать или удалить: титул должен это отражать.
-            com.vladosiwe.lordsoutpost.compat.SoloStatusCompat.setLord(player, data.lordOutpost(player.getUUID()) != null);
+            var own = data.lordOutpost(player.getUUID());
+            com.vladosiwe.lordsoutpost.compat.SoloStatusCompat.setLord(player, own != null);
+            // Тир мог вырасти, пока игрока не было (в том числе пока мир был закрыт).
+            if (own != null) com.vladosiwe.lordsoutpost.compat.SoloStatusCompat.onTier(player, own.tier);
         }
     }
 

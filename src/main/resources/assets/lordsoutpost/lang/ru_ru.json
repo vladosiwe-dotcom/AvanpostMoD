@@ -126,6 +126,7 @@
   "lordsoutpost.event.conquered": "Лорд мародёров пал, гарнизон разбежался.",
   "lordsoutpost.event.reclaimed": "Мародёры вернулись в брошенный форт.",
   "lordsoutpost.event.tier_up": "Достроен тир %s!",
+  "lordsoutpost.event.catch_up": "Пока мир был закрыт, форт прожил %s дн.: тир %s → %s.",
   "lordsoutpost.event.settler": "Новый житель: %s (%s).",
   "lordsoutpost.event.starving": "Голод: кладовые пусты, работа идёт вполсилы.",
   "lordsoutpost.event.law": "Объявлен закон: %s.",

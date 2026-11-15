@@ -153,6 +153,7 @@ add(P + 'event.abandoned', 'Лорд %s покинул аванпост.', 'Lord
 add(P + 'event.conquered', 'Лорд мародёров пал, гарнизон разбежался.', 'The Marauder Lord fell and the garrison scattered.')
 add(P + 'event.reclaimed', 'Мародёры вернулись в брошенный форт.', 'Marauders returned to the abandoned fort.')
 add(P + 'event.tier_up', 'Достроен тир %s!', 'Tier %s complete!')
+add(P + 'event.catch_up', 'Пока мир был закрыт, форт прожил %s дн.: тир %s → %s.', 'While the world was closed, the outpost lived %s days: tier %s → %s.')
 add(P + 'event.settler', 'Новый житель: %s (%s).', 'New resident: %s (%s).')
 add(P + 'event.starving', 'Голод: кладовые пусты, работа идёт вполсилы.', 'Famine: the larders are empty and work goes at half pace.')
 add(P + 'event.law', 'Объявлен закон: %s.', 'Law proclaimed: %s.')

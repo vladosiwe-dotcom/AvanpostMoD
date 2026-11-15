@@ -45,6 +45,11 @@ public final class OutpostConfig {
             .comment("Множитель здоровья Капитана.")
             .defineInRange("threats.captainHealth", 1.0, 0.1, 20.0);
 
+    public static final ModConfigSpec.DoubleValue OFFLINE_DAYS = B
+            .comment("Сколько игровых дней (не больше) форты живут, пока мир закрыт. Время вне игры считается реальным:",
+                    "20 минут — один игровой день. 0 — без догона.")
+            .defineInRange("economy.offlineCatchUpDays", 7.0, 0.0, 100.0);
+
     public static final ModConfigSpec.DoubleValue ROAD_SPEED = B
             .comment("Множитель скорости на дорогах (тропинка, гравий, булыжник и блоки из тега lordsoutpost:roads).")
             .defineInRange("roads.speed", 1.35, 1.0, 3.0);

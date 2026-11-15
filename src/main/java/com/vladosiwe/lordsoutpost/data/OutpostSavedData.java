@@ -34,6 +34,9 @@ public final class OutpostSavedData extends SavedData {
     private static final long MANUAL_BASE = 1L << 48;
 
     /** Что игрок знает о мире: слухи (знак вопроса на карте) и разведанные форты. */
+    /** Сколько реального времени мир был закрыт (с последнего сохранения до загрузки). Не сохраняется; догон обнуляет. */
+    public long awayMillis;
+
     public static final class Knowledge {
         public final LongSet hinted = new LongOpenHashSet();
         public final LongSet discovered = new LongOpenHashSet();
@@ -200,6 +203,7 @@ public final class OutpostSavedData extends SavedData {
         tag.put("knowledge", kn);
         tag.putLongArray("emptyRegions", emptyRegions.toLongArray());
         tag.putLong("manualCounter", manualCounter);
+        tag.putLong("savedAtMillis", System.currentTimeMillis());
         return tag;
     }
 
@@ -226,6 +230,8 @@ public final class OutpostSavedData extends SavedData {
         }
         for (long l : tag.getLongArray("emptyRegions")) data.emptyRegions.add(l);
         data.manualCounter = tag.getLong("manualCounter");
+        long savedAt = tag.getLong("savedAtMillis");
+        data.awayMillis = savedAt > 0 ? Math.max(0, System.currentTimeMillis() - savedAt) : 0;
         return data;
     }
 }
