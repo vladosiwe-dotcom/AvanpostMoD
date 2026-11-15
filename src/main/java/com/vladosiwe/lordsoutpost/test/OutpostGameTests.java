@@ -572,4 +572,52 @@ public final class OutpostGameTests {
         }
         h.succeed();
     }
+
+    /**
+     * Epic Fight (тест выполняется, только если мод установлен; так он запускается на GitHub).
+     * Патчи из data/lordsoutpost/epicfight_mobpatch должны загрузиться, и бой мечника и Лорда мародёров
+     * должен перейти на анимированные атаки Epic Fight. Лучник свой стрелковый ИИ сохраняет.
+     */
+    @GameTest(template = "empty", timeoutTicks = 200)
+    public static void epicFightPatchesFighters(GameTestHelper h) {
+        if (!net.neoforged.fml.ModList.get().isLoaded("epicfight")) {
+            h.succeed();
+            return;
+        }
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        Outpost o = virtualOutpost(level, data, FAR.offset(21000, 0, 0), 3, null);
+        BlockPos base = h.absolutePos(new BlockPos(1, 2, 1));
+        Resident swordsman = null, archer = null, captain = o.captain();
+        for (Resident r : o.residents) {
+            if (r.role == Role.SHIELDMAN && swordsman == null) swordsman = r;
+            if (r.role.ranged() && archer == null) archer = r;
+        }
+        if (swordsman == null) swordsman = OutpostManager.addSettler(o, Role.SHIELDMAN, level.random);
+        if (archer == null) archer = OutpostManager.addSettler(o, Role.ARCHER, level.random);
+        OutpostNpc sword = com.vladosiwe.lordsoutpost.data.ChunkReconciliation.spawn(level, o, swordsman, base);
+        OutpostNpc bow = com.vladosiwe.lordsoutpost.data.ChunkReconciliation.spawn(level, o, archer, base.offset(3, 0, 0));
+        OutpostNpc boss = com.vladosiwe.lordsoutpost.data.ChunkReconciliation.spawn(level, o, captain, base.offset(0, 0, 3));
+        h.assertTrue(sword instanceof FighterEntity && bow instanceof FighterEntity && boss instanceof CaptainEntity, "бойцы не появились");
+        h.runAfterDelay(40, () -> {
+            try {
+                List<String> swordGoals = ((FighterEntity) sword).goalClassNames();
+                List<String> bossGoals = ((FighterEntity) boss).goalClassNames();
+                List<String> bowGoals = ((FighterEntity) bow).goalClassNames();
+                LordsOutpost.LOGGER.info("Epic Fight: цели мечника {}", swordGoals);
+                LordsOutpost.LOGGER.info("Epic Fight: цели Лорда мародёров {}", bossGoals);
+                LordsOutpost.LOGGER.info("Epic Fight: цели лучника {}", bowGoals);
+                h.assertTrue(swordGoals.stream().anyMatch(n -> n.startsWith("yesman.epicfight")), "мечник не получил боевой ИИ Epic Fight: " + swordGoals);
+                h.assertTrue(bossGoals.stream().anyMatch(n -> n.startsWith("yesman.epicfight")), "Лорд мародёров не получил боевой ИИ Epic Fight: " + bossGoals);
+                h.assertTrue(bossGoals.stream().anyMatch(n -> n.endsWith("CaptainTacticsGoal")), "Лорд мародёров потерял тактику");
+                h.assertTrue(bowGoals.stream().anyMatch(n -> n.contains("RangedAttackGoal") || n.startsWith("yesman.epicfight")), "лучник потерял стрелковый ИИ: " + bowGoals);
+                h.succeed();
+            } finally {
+                sword.discard();
+                bow.discard();
+                boss.discard();
+                data.remove(o);
+            }
+        });
+    }
 }

@@ -63,6 +63,14 @@ public class FighterEntity extends OutpostNpc implements RangedAttackMob {
         return role().ranged();
     }
 
+    /** Классы текущих целей ИИ (для проверки, что Epic Fight подменил ближний бой своими анимированными атаками). */
+    public java.util.List<String> goalClassNames() {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        goalSelector.getAvailableGoals().forEach(w -> out.add(w.getGoal().getClass().getName()));
+        targetSelector.getAvailableGoals().forEach(w -> out.add(w.getGoal().getClass().getName()));
+        return out;
+    }
+
     @Override
     protected void registerGoals() {
         goalSelector.addGoal(0, new FloatGoal(this));

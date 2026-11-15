@@ -322,3 +322,61 @@ if os.path.exists(src):
     os.makedirs(os.path.join(DM, 'structure'), exist_ok=True)
     shutil.copy(src, os.path.join(DM, 'structure', 'empty.nbt'))
 print('assets ok')
+
+
+# ============================== Epic Fight ==============================
+# Патчи мобов Epic Fight (data/<мод>/epicfight_mobpatch/<сущность>.json). Без Epic Fight эту папку никто не читает.
+# С ним бойцы аванпостов получают его скелет, анимации и боевое поведение по оружию в руках:
+# меч (со щитом или без) — связки одноручного меча, топор — удары топором, лук и арбалет — прицеливание и выстрел.
+
+def anim(path):
+    return f'epicfight:biped/{path}'
+
+
+def within(lo, hi):
+    return {'predicate': 'epicfight:within_distance', 'min': lo, 'max': hi}
+
+
+def series(weight, animations, lo=0.0, hi=2.5, cooldown=0, interrupt=True):
+    return {'weight': weight, 'cooldown': cooldown, 'canBeInterrupted': interrupt, 'looping': False,
+            'behaviors': [{'conditions': [within(lo, hi)], 'animation': anim(a)} for a in animations]}
+
+
+def mobpatch(impact, max_strikes, stun_armor, chasing, boss=False):
+    sword = [series(40, ['combat/mob_onehand1', 'combat/mob_onehand2']),
+             series(30, ['combat/sword_auto1', 'combat/sword_auto2', 'combat/sword_auto3']),
+             series(10, ['combat/sword_dash'], 2.5, 5.0, cooldown=60)]
+    axe = [series(40, ['combat/axe_auto1', 'combat/axe_auto2']),
+           series(20, ['combat/mob_onehand1']),
+           series(10, ['combat/axe_dash'], 2.5, 5.0, cooldown=60)]
+    if boss:
+        sword.append(series(15, ['combat/mob_onehand1', 'combat/sword_auto2', 'combat/sword_auto3'], cooldown=40, interrupt=False))
+        axe.append(series(15, ['combat/axe_auto1', 'combat/axe_auto2', 'combat/mob_onehand2'], cooldown=40, interrupt=False))
+    return {
+        'model': 'epicfight:entity/biped',
+        'armature': 'epicfight:entity/biped',
+        'renderer': 'minecraft:vindicator',
+        'isHumanoid': True,
+        'attributes': {'impact': impact, 'armor_negation': 0.0, 'max_strikes': max_strikes, 'stun_armor': stun_armor,
+                       'chasing_speed': chasing, 'scale': 1.0},
+        'default_livingmotions': {
+            'idle': anim('living/idle'), 'walk': anim('living/walk'), 'chase': anim('living/run'),
+            'death': anim('living/death'), 'fall': anim('living/fall')},
+        'humanoid_weapon_motions': [
+            {'weapon_categories': ['sword', 'axe'], 'style': 'one_hand',
+             'livingmotions': {'idle': anim('living/idle'), 'walk': anim('living/walk'), 'chase': anim('living/run'),
+                               'block': anim('living/shield_offhand')}},
+            {'weapon_categories': ['ranged'], 'style': 'ranged',
+             'livingmotions': {'idle': anim('living/idle'), 'walk': anim('living/walk'), 'chase': anim('living/walk'),
+                               'aim': anim('combat/bow_aim_mid'), 'shot': anim('combat/bow_shot_mid'),
+                               'reload': anim('combat/crossbow_reload')}}],
+        'stun_animations': {'short': anim('combat/hit_short'), 'long': anim('combat/hit_long'),
+                            'knockdown': anim('combat/knockdown'), 'fall': anim('living/landing')},
+        'combat_behavior': [
+            {'weapon_categories': ['sword'], 'style': 'one_hand', 'behavior_series': sword},
+            {'weapon_categories': ['axe'], 'style': 'one_hand', 'behavior_series': axe}]}
+
+
+write(os.path.join(DM, 'epicfight_mobpatch', 'fighter.json'), mobpatch(0.5, 1, 0.0, 1.0))
+write(os.path.join(DM, 'epicfight_mobpatch', 'captain.json'), mobpatch(0.9, 2, 6.0, 1.05, boss=True))
+print('epic fight patches ok')
