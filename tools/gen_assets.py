@@ -363,7 +363,8 @@ def mobpatch(impact, max_strikes, stun_armor, chasing, boss=False):
     return {
         'model': 'epicfight:entity/biped',
         'armature': 'epicfight:entity/biped',
-        'renderer': 'minecraft:vindicator',
+        # Не vindicator: его слой предмета в руке у Epic Fight приводит моба к AbstractIllager, и клиент падает.
+        'renderer': 'minecraft:pillager',
         'isHumanoid': True,
         # Обязательное поле в Epic Fight 21.17. Свой/чужой для наших бойцов решает мод, поэтому нейтральная фракция.
         'faction': 'neutral',

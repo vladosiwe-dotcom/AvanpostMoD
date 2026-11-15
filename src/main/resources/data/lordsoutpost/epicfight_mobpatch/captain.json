@@ -1,7 +1,7 @@
 {
   "model": "epicfight:entity/biped",
   "armature": "epicfight:entity/biped",
-  "renderer": "minecraft:vindicator",
+  "renderer": "minecraft:pillager",
   "isHumanoid": true,
   "faction": "neutral",
   "attributes": {
