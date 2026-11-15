@@ -81,6 +81,17 @@ public final class Outpost {
     @Nullable public transient Resource stalledOn;
     public transient boolean starving;
     public long nextCaravanAt;
+    /** Последнее измеренное содержимое бочек склада (стоимость по ресурсам), см. Storehouse. */
+    public final EnumMap<Resource, Double> storeLast = new EnumMap<>(Resource.class);
+    /** Сколько столбцов штрека уже пройдено шахтёрами. */
+    public int mineCursor;
+    /** Загон уже заселён по записи после прихода игрока (не сохраняется). */
+    public transient boolean penSpawned;
+    /** Деревья, которые сейчас рубят лесорубы (позиции комлей). */
+    public transient final java.util.Set<BlockPos> claimedTrees = new java.util.HashSet<>();
+    public transient long penActionAt;
+    /** Сколько предметов жители донесли до склада с начала сессии (для проверки и отладки). */
+    public transient int depositedItems;
 
     // --- Хозяйство ---
     private final EnumMap<Resource, Double> stock = new EnumMap<>(Resource.class);
@@ -393,6 +404,10 @@ public final class Outpost {
         t.putInt("ground", groundCursor);
         t.putLong("nextCaravan", nextCaravanAt);
         t.putBoolean("verified", verified);
+        CompoundTag sl = new CompoundTag();
+        for (var e : storeLast.entrySet()) sl.putDouble(e.getKey().id, e.getValue());
+        t.put("storeLast", sl);
+        t.putInt("mineCursor", mineCursor);
         t.putDouble("credit", buildCredit);
 
         CompoundTag st = new CompoundTag();
@@ -476,6 +491,9 @@ public final class Outpost {
         o.groundCursor = Math.max(0, t.getInt("ground"));
         o.nextCaravanAt = t.getLong("nextCaravan");
         o.verified = t.getBoolean("verified");
+        CompoundTag sl = t.getCompound("storeLast");
+        for (Resource r : Resource.VALUES) if (sl.contains(r.id)) o.storeLast.put(r, sl.getDouble(r.id));
+        o.mineCursor = Math.max(0, t.getInt("mineCursor"));
         o.buildCredit = t.getDouble("credit");
 
         CompoundTag st = t.getCompound("stock");

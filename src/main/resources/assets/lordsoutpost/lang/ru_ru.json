@@ -3,6 +3,8 @@
   "block.lordsoutpost.lord_standard": "Штандарт Лорда",
   "block.lordsoutpost.outpost_gate": "Решётка ворот аванпоста",
   "block.lordsoutpost.quest_board": "Доска заданий",
+  "block.lordsoutpost.storehouse_door": "Дверь склада",
+  "lordsoutpost.msg.store_locked": "Склад заперт: войти могут только жители форта, Лорд и союзники.",
   "item.lordsoutpost.lord_standard.desc": "Установите во дворе захваченного аванпоста, чтобы стать его Лордом.",
   "entity.lordsoutpost.fighter": "Боец аванпоста",
   "entity.lordsoutpost.captain": "Лорд мародёров",

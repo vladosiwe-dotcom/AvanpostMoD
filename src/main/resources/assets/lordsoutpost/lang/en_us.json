@@ -3,6 +3,8 @@
   "block.lordsoutpost.lord_standard": "Lord's Standard",
   "block.lordsoutpost.outpost_gate": "Outpost Gate",
   "block.lordsoutpost.quest_board": "Quest Board",
+  "block.lordsoutpost.storehouse_door": "Storehouse Door",
+  "lordsoutpost.msg.store_locked": "The storehouse is locked: only residents, the Lord and allies may enter.",
   "item.lordsoutpost.lord_standard.desc": "Place it in the yard of a conquered outpost to become its Lord.",
   "entity.lordsoutpost.fighter": "Outpost Fighter",
   "entity.lordsoutpost.captain": "Marauder Lord",

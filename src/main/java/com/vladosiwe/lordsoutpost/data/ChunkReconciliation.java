@@ -78,6 +78,7 @@ public final class ChunkReconciliation {
                 if (on && !o.online) {
                     o.online = true;
                     o.onlineSince = now;
+                    o.penSpawned = false;
                     if (!arrive(level, data, o, now)) {
                         if (removed == null) removed = new ArrayList<>();
                         removed.add(o);
@@ -279,9 +280,16 @@ public final class ChunkReconciliation {
         BlockState old = level.getBlockState(pos);
         if (old == state) return;
         // Содержимое сундука, который сносят при перестройке, не пропадает: оно уходит в дань.
+        // Бочки склада — исключение: их содержимое уже учтено в запасе и выложится в новый склад.
         if (level.getBlockEntity(pos) instanceof Container container) {
+            boolean stockpile = o.markers(Marker.STOCKPILE).contains(pos);
+            if (stockpile) Storehouse.forgetBarrel(o, container);
             for (int s = 0; s < container.getContainerSize(); s++) {
                 ItemStack stack = container.removeItemNoUpdate(s);
+                if (stockpile) {
+                    ResourceItems.Value v = ResourceItems.of(stack);
+                    if (v != null && Storehouse.physical(v.resource())) continue;
+                }
                 if (!stack.isEmpty()) Simulation.addTribute(o, stack);
             }
         }
@@ -408,26 +416,7 @@ public final class ChunkReconciliation {
             }
             chest.setChanged();
         }
-        for (BlockPos pos : o.markers(Marker.SUPPLY)) {
-            if (!(level.getBlockEntity(pos) instanceof Container barrel)) continue;
-            boolean changed = false;
-            for (int s = 0; s < barrel.getContainerSize(); s++) {
-                ItemStack stack = barrel.getItem(s);
-                ResourceItems.Value v = ResourceItems.of(stack);
-                if (v == null) continue;
-                double room = o.capacity(v.resource()) - o.stock(v.resource());
-                int take = (int) Math.min(stack.getCount(), Math.floor(room / v.perItem()));
-                if (take <= 0) continue;
-                Quest done = QuestBoard.deliver(o, v.resource(), take * v.perItem(), now);
-                stack.shrink(take);
-                changed = true;
-                if (done != null) {
-                    ServerPlayer lord = NpcLifecycle.lord(level, o);
-                    if (lord != null) Captures.questReward(lord, o, done);
-                }
-            }
-            if (changed) barrel.setChanged();
-        }
+        Storehouse.sync(level, o, now);
     }
 
     private static void insert(Container chest, ItemStack stack) {
@@ -446,27 +435,43 @@ public final class ChunkReconciliation {
 
     // ---------- Загон ----------
 
+    /**
+     * Загон. Сразу после прихода игрока в нём появляется столько животных, сколько записано (их развели вдали);
+     * дальше запись следует за настоящим загоном, где скотовод сам пригоняет, разводит и забивает скот.
+     */
     private static void pen(ServerLevel level, Outpost o) {
         if (o.design().markers(Marker.PEN).isEmpty()) return;
         BlockPos pen = o.marker(Marker.PEN);
-        int size = o.tier == 1 ? 2 : 3;
-        AABB box = new AABB(pen).inflate(size, 2, size);
-        List<Animal> animals = level.getEntitiesOfClass(Animal.class, box, a -> a instanceof Cow || a instanceof Sheep || a instanceof Pig || a instanceof Chicken);
-        if (animals.size() > o.penAnimals) {
-            o.penAnimals = Math.min(o.penCapacity(), animals.size());
-        } else if (animals.size() < Math.min(o.penAnimals, o.penCapacity())) {
-            EntityType<? extends Animal> type = switch (level.random.nextInt(3)) {
-                case 0 -> EntityType.COW;
-                case 1 -> EntityType.SHEEP;
-                default -> EntityType.PIG;
-            };
-            Animal animal = type.create(level);
-            if (animal != null) {
+        List<Animal> animals = penAnimals(level, o);
+        if (!o.penSpawned) {
+            o.penSpawned = true;
+            for (int i = animals.size(); i < Math.min(o.penAnimals, o.penCapacity()); i++) {
+                EntityType<? extends Animal> type = switch (level.random.nextInt(3)) {
+                    case 0 -> EntityType.COW;
+                    case 1 -> EntityType.SHEEP;
+                    default -> EntityType.PIG;
+                };
+                Animal animal = type.create(level);
+                if (animal == null) continue;
                 animal.moveTo(pen.getX() + 0.5 + level.random.nextInt(3) - 1, pen.getY(), pen.getZ() + 0.5 + level.random.nextInt(3) - 1, level.random.nextFloat() * 360, 0);
                 animal.setPersistenceRequired();
                 level.addFreshEntity(animal);
             }
+            return;
         }
+        o.penAnimals = animals.size();
+    }
+
+    public static int penSize(Outpost o) {
+        return o.tier == 1 ? 2 : 3;
+    }
+
+    /** Скот внутри загона. */
+    public static List<Animal> penAnimals(ServerLevel level, Outpost o) {
+        BlockPos pen = o.marker(Marker.PEN);
+        int size = penSize(o) - 1;
+        AABB box = new AABB(pen.getX() - size, pen.getY() - 1, pen.getZ() - size, pen.getX() + size + 1, pen.getY() + 3, pen.getZ() + size + 1);
+        return level.getEntitiesOfClass(Animal.class, box, a -> a.isAlive() && (a instanceof Cow || a instanceof Sheep || a instanceof Pig || a instanceof Chicken));
     }
 
     // ============================== Жители ==============================

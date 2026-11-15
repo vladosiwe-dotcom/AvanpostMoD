@@ -6,11 +6,8 @@ import com.vladosiwe.lordsoutpost.entity.ai.ShelterGoal;
 import com.vladosiwe.lordsoutpost.entity.ai.WorkGoal;
 import com.vladosiwe.lordsoutpost.outpost.Outpost;
 import com.vladosiwe.lordsoutpost.outpost.Resident;
-import com.vladosiwe.lordsoutpost.outpost.Resource;
 import com.vladosiwe.lordsoutpost.outpost.Role;
 import com.vladosiwe.lordsoutpost.server.Interactions;
-import com.vladosiwe.lordsoutpost.server.NpcLifecycle;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
@@ -25,7 +22,6 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.FloatGoal;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
-import net.minecraft.world.entity.animal.Animal;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -34,8 +30,46 @@ import org.jetbrains.annotations.Nullable;
 
 /** Мирный житель: Управляющий, строитель, охотник, скотовод, шахтёр, лесоруб, кузнец, маг, караванщик. */
 public class WorkerEntity extends OutpostNpc {
+    /** Ноша жителя: то, что он добыл или подобрал и ещё не донёс до склада. */
+    public final net.minecraft.world.SimpleContainer inventory = new net.minecraft.world.SimpleContainer(12);
+    public WorkGoal workGoal;
+
     public WorkerEntity(EntityType<? extends WorkerEntity> type, Level level) {
         super(type, level);
+    }
+
+    /** Взять предмет в ношу; возвращает то, что не поместилось. */
+    public ItemStack collect(ItemStack stack) {
+        if (stack.isEmpty()) return ItemStack.EMPTY;
+        return inventory.addItem(stack.copy());
+    }
+
+    /** Сколько предметов в ноше. */
+    public int carried() {
+        int n = 0;
+        for (int i = 0; i < inventory.getContainerSize(); i++) n += inventory.getItem(i).getCount();
+        return n;
+    }
+
+    public boolean inventoryFull() {
+        for (int i = 0; i < inventory.getContainerSize(); i++) if (inventory.getItem(i).isEmpty()) return false;
+        return true;
+    }
+
+    public java.util.List<String> goalClassNames() {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        goalSelector.getAvailableGoals().stream().filter(w -> w.isRunning()).forEach(w -> out.add(w.getGoal().getClass().getSimpleName()));
+        return out;
+    }
+
+    /** Погибший житель роняет ношу. */
+    @Override
+    protected void dropEquipment() {
+        super.dropEquipment();
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            ItemStack st = inventory.removeItemNoUpdate(i);
+            if (!st.isEmpty()) spawnAtLocation(st);
+        }
     }
 
     public static AttributeSupplier.Builder attributes() {
@@ -49,10 +83,12 @@ public class WorkerEntity extends OutpostNpc {
     @Override
     protected void registerGoals() {
         goalSelector.addGoal(0, new FloatGoal(this));
+        goalSelector.addGoal(1, new net.minecraft.world.entity.ai.goal.OpenDoorGoal(this, true));
         goalSelector.addGoal(1, new ShelterGoal(this));
         goalSelector.addGoal(2, new CaravanGoal(this));
         goalSelector.addGoal(3, new BuildGoal(this));
-        goalSelector.addGoal(4, new WorkGoal(this));
+        workGoal = new WorkGoal(this);
+        goalSelector.addGoal(4, workGoal);
         goalSelector.addGoal(8, new LookAtPlayerGoal(this, Player.class, 6f));
         goalSelector.addGoal(9, new RandomLookAroundGoal(this));
     }
@@ -86,25 +122,6 @@ public class WorkerEntity extends OutpostNpc {
             if (o != null) Interactions.talk(sp, o, this);
         }
         return InteractionResult.sidedSuccess(level().isClientSide);
-    }
-
-    /** Добыча охотника идёт на склад, а не падает на землю. */
-    @Override
-    public boolean killedEntity(ServerLevel level, LivingEntity victim) {
-        if (victim instanceof Animal && role() == Role.HUNTER) {
-            Outpost o = outpost();
-            if (o != null) {
-                o.add(Resource.FOOD, 6);
-                o.add(Resource.HIDES, 2);
-            }
-        }
-        return super.killedEntity(level, victim);
-    }
-
-    @Override
-    public boolean doHurtTarget(net.minecraft.world.entity.Entity target) {
-        if (target instanceof Animal) target.getPersistentData().putBoolean(NpcLifecycle.HUNTED_TAG, true);
-        return super.doHurtTarget(target);
     }
 
     @Override

@@ -25,6 +25,12 @@ public final class ModBlocks {
             BlockBehaviour.Properties.of().mapColor(MapColor.COLOR_RED).strength(3.0f, 1200.0f).sound(SoundType.WOOD)
                     .noOcclusion().pushReaction(PushReaction.BLOCK));
 
+    /** Дверь склада: свои открывают, чужим — нет. */
+    public static final DeferredBlock<com.vladosiwe.lordsoutpost.block.StorehouseDoorBlock> STOREHOUSE_DOOR = BLOCKS.registerBlock("storehouse_door",
+            com.vladosiwe.lordsoutpost.block.StorehouseDoorBlock::new,
+            BlockBehaviour.Properties.of().mapColor(MapColor.PODZOL).strength(4.0f, 12.0f).sound(SoundType.WOOD).noOcclusion()
+                    .pushReaction(PushReaction.DESTROY));
+
     public static final DeferredBlock<QuestBoardBlock> QUEST_BOARD = BLOCKS.registerBlock("quest_board", QuestBoardBlock::new,
             BlockBehaviour.Properties.of().mapColor(MapColor.WOOD).strength(2.0f, 6.0f).sound(SoundType.WOOD).noOcclusion());
 

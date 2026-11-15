@@ -202,6 +202,14 @@ write(os.path.join(A, 'models', 'block', 'lord_standard.json'), {
 write(os.path.join(A, 'blockstates', 'lord_standard.json'), {'variants': {'': {'model': f'{MOD}:block/lord_standard'}}})
 write(os.path.join(A, 'models', 'item', 'lord_standard.json'), {'parent': 'minecraft:item/generated', 'textures': {'layer0': f'{MOD}:item/lord_standard'}})
 
+# Дверь склада: модели ванильной еловой двери, свой предмет и таблица добычи.
+# Состояния блока скопированы из ванильного spruce_door.json (assets/lordsoutpost/blockstates/storehouse_door.json) и здесь не пишутся.
+write(os.path.join(A, 'models', 'item', 'storehouse_door.json'), {'parent': 'minecraft:item/spruce_door'})
+write(os.path.join(D, MOD, 'loot_table', 'blocks', 'storehouse_door.json'), {
+    'type': 'minecraft:block', 'pools': [{'rolls': 1, 'entries': [{'type': 'minecraft:item', 'name': f'{MOD}:storehouse_door', 'conditions': [
+        {'condition': 'minecraft:block_state_property', 'block': f'{MOD}:storehouse_door', 'properties': {'half': 'lower'}}]}],
+        'conditions': [{'condition': 'minecraft:survives_explosion'}]}]})
+
 # ============================== Данные ==============================
 
 DM = os.path.join(D, MOD)
@@ -226,7 +234,7 @@ write(os.path.join(DM, 'tags', 'item', 'arcane.json'), {'values': [
     {'id': 'irons_spellbooks:arcane_essence', 'required': False}, {'id': 'irons_spellbooks:common_ink', 'required': False},
     {'id': 'irons_spellbooks:uncommon_ink', 'required': False}, {'id': 'irons_spellbooks:rare_ink', 'required': False}]})
 write(os.path.join(D, 'minecraft', 'tags', 'block', 'mineable', 'pickaxe.json'), {'values': [f'{MOD}:outpost_gate']})
-write(os.path.join(D, 'minecraft', 'tags', 'block', 'mineable', 'axe.json'), {'values': [f'{MOD}:lord_standard', f'{MOD}:quest_board']})
+write(os.path.join(D, 'minecraft', 'tags', 'block', 'mineable', 'axe.json'), {'values': [f'{MOD}:lord_standard', f'{MOD}:quest_board', f'{MOD}:storehouse_door']})
 
 for block in ('outpost_gate', 'lord_standard', 'quest_board'):
     write(os.path.join(DM, 'loot_table', 'blocks', block + '.json'), {

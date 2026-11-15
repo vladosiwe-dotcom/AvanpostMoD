@@ -42,6 +42,9 @@ public final class Resident {
     @Nullable public transient UUID entity;
     /** Тик, до которого запись считается «занятой» материализацией (защита от дублей). */
     public transient long spawnGrace;
+    /** Когда житель последний раз сделал настоящую работу в мире (срубил, выкопал, добыл). Пока он работает руками,
+     *  симуляция не начисляет ему выработку числами — иначе ресурс засчитался бы дважды. */
+    public transient long lastRealWork = Long.MIN_VALUE / 2;
 
     public Resident(UUID id, Role role, String name) {
         this.id = id;

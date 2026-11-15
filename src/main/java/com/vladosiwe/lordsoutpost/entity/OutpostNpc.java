@@ -63,6 +63,8 @@ public abstract class OutpostNpc extends PathfinderMob implements OutpostMember 
         setPersistenceRequired();
         setPathfindingMalus(PathType.DOOR_OPEN, 0.0f);
         setPathfindingMalus(PathType.WATER, 4.0f);
+        // Открытый люк — это шахтный ствол: обходить, а не проваливаться.
+        setPathfindingMalus(PathType.TRAPDOOR, -1.0f);
         if (getNavigation() instanceof net.minecraft.world.entity.ai.navigation.GroundPathNavigation nav) nav.setCanOpenDoors(true);
     }
 
@@ -298,10 +300,41 @@ public abstract class OutpostNpc extends PathfinderMob implements OutpostMember 
         stuckTicks++;
         if (stuckTicks > patience) {
             stuckTicks = 0;
+            BlockPos safe = safeSpotNear(pos);
+            if (safe == null) return false;
             getNavigation().stop();
-            teleportTo(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5);
+            teleportTo(safe.getX() + 0.5, safe.getY(), safe.getZ() + 0.5);
             return true;
         }
         return false;
+    }
+
+    /**
+     * Ближайшая к цели клетка, где можно стоять: ноги и голова свободны (или это лестница), под ногами опора.
+     * Цель сама может быть блоком (бревно, руда) — переносить прямо в неё нельзя, задохнёшься.
+     */
+    @Nullable
+    public BlockPos safeSpotNear(BlockPos pos) {
+        BlockPos best = null;
+        double bestD = Double.MAX_VALUE;
+        for (BlockPos p : BlockPos.betweenClosed(pos.offset(-2, -2, -2), pos.offset(2, 2, 2))) {
+            if (!standable(p)) continue;
+            double d = p.distSqr(pos);
+            if (d < bestD) {
+                bestD = d;
+                best = p.immutable();
+            }
+        }
+        return best;
+    }
+
+    private boolean standable(BlockPos p) {
+        var level = level();
+        var feet = level.getBlockState(p);
+        var head = level.getBlockState(p.above());
+        boolean feetFree = feet.is(net.minecraft.tags.BlockTags.CLIMBABLE) || feet.getCollisionShape(level, p).isEmpty();
+        boolean headFree = head.is(net.minecraft.tags.BlockTags.CLIMBABLE) || head.getCollisionShape(level, p.above()).isEmpty();
+        if (!feetFree || !headFree || !feet.getFluidState().isEmpty()) return false;
+        return feet.is(net.minecraft.tags.BlockTags.CLIMBABLE) || level.getBlockState(p.below()).isFaceSturdy(level, p.below(), net.minecraft.core.Direction.UP);
     }
 }

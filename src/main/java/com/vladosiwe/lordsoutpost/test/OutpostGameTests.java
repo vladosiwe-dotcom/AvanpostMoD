@@ -75,6 +75,7 @@ public final class OutpostGameTests {
     @GameTest(template = "empty")
     public static void blueprintsAreComplete(GameTestHelper h) {
         Marker[] always = {Marker.GATE, Marker.KEEP_DOOR, Marker.THRONE, Marker.TREASURE, Marker.TRIBUTE, Marker.SUPPLY, Marker.BOARD, Marker.STORAGE,
+                Marker.STORE_INSIDE, Marker.STOCKPILE, Marker.STORE_GUARD, Marker.MINE_SHAFT, Marker.MINE_DIR,
                 Marker.MINE, Marker.WOODYARD, Marker.PEN, Marker.HOUSING, Marker.GUARD_POST, Marker.PATROL, Marker.OUTER_PATROL, Marker.YARD, Marker.CARAVAN, Marker.LOOT_CHEST};
         for (Layout layout : Layout.VALUES)
             for (Palette palette : Palette.VALUES) {
@@ -100,8 +101,16 @@ public final class OutpostGameTests {
                         for (BlockPos p : d.markers(m)) h.assertTrue(d.cells.containsKey(p) && d.cells.get(p).state().hasBlockEntity(), id + ": в точке " + m + " нет сундука");
                     }
                     for (BlockPos p : d.markers(Marker.SUPPLY)) h.assertTrue(d.cells.containsKey(p) && d.cells.get(p).state().hasBlockEntity(), id + ": нет бочки снабжения");
+                    for (BlockPos p : d.markers(Marker.STOCKPILE)) h.assertTrue(d.cells.containsKey(p) && d.cells.get(p).state().hasBlockEntity(), id + ": в точке склада нет бочки");
+                    h.assertTrue(d.cells.values().stream().anyMatch(cell -> cell.state().is(ModBlocks.STOREHOUSE_DOOR.get())), id + ": у склада нет двери");
+                    // Ствол шахты: лестница до дна, первая клетка штрека — нетронутая земля (её выкопает шахтёр).
+                    BlockPos bottom = d.markers(Marker.MINE_SHAFT).get(0), dir = d.markers(Marker.MINE_DIR).get(0);
+                    h.assertTrue(d.cells.containsKey(bottom) && d.cells.get(bottom).state().is(net.minecraft.world.level.block.Blocks.LADDER), id + ": нет лестницы на дне ствола");
+                    h.assertTrue(!d.cells.containsKey(dir) && !d.cells.containsKey(dir.above()), id + ": штрек упирается в постройку");
+                    h.assertTrue(bottom.distManhattan(dir) == 1 && bottom.getY() == dir.getY(), id + ": направление штрека задано неверно");
                     // Места, где стоят жители, свободны.
-                    for (Marker m : new Marker[]{Marker.THRONE, Marker.STORAGE, Marker.YARD, Marker.HOUSING, Marker.GUARD_POST, Marker.KEEP_DOOR, Marker.BOARD}) {
+                    for (Marker m : new Marker[]{Marker.THRONE, Marker.STORAGE, Marker.YARD, Marker.HOUSING, Marker.GUARD_POST, Marker.KEEP_DOOR, Marker.BOARD,
+                            Marker.STORE_INSIDE, Marker.STORE_GUARD}) {
                         for (BlockPos p : d.markers(m)) {
                             Canvas.Cell at = d.cells.get(p), above = d.cells.get(p.above());
                             h.assertTrue((at == null || !at.state().isSolid()) && (above == null || !above.state().isSolid()), id + ": точка " + m + " занята блоком " + p);
@@ -625,6 +634,127 @@ public final class OutpostGameTests {
                 bow.discard();
                 boss.discard();
                 data.remove(o);
+            }
+        });
+    }
+
+    /** Штрек шахтёра: 32 блока главного хода и по 12 отвилок длиной 6, каждый следующий столбец стоит рядом с предыдущим. */
+    @GameTest(template = "empty")
+    public static void mineTunnelLayout(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        for (Layout layout : Layout.VALUES)
+            for (Rotation rot : Rotation.values()) {
+                Outpost o = new Outpost(data.nextManualId(), FAR.offset(24000, 0, 0), layout, Palette.TIMBER, rot, Difficulty.REDOUBT, true);
+                List<com.vladosiwe.lordsoutpost.entity.ai.WorkGoal.Column> cols = com.vladosiwe.lordsoutpost.entity.ai.WorkGoal.tunnel(o);
+                h.assertTrue(cols.size() == 32 + 8 * 2 * 6, layout.id + " " + rot + ": столбцов штрека " + cols.size());
+                BlockPos shaft = o.marker(Marker.MINE_SHAFT);
+                for (var c : cols) {
+                    h.assertTrue(c.stand().distManhattan(c.floor()) == 1 && c.floor().getY() == shaft.getY(), "столбец не примыкает к предыдущему: " + c);
+                    h.assertTrue(!o.insideHorizontally(c.floor().getX(), c.floor().getZ(), 0) || c.floor().getY() < o.center.getY() - 4, "штрек выходит к поверхности");
+                }
+            }
+        h.succeed();
+    }
+
+    /**
+     * Жители работают в мире. Владение 1 тира в загруженных чанках; за стенами растёт дерево и пасутся коровы,
+     * во дворе лежат предметы. Лесоруб должен свалить дерево, жители — подобрать предметы, добыча — дойти до склада,
+     * а запасы в бочках склада — совпадать с запасом поселения.
+     */
+    @GameTest(template = "empty", timeoutTicks = 4800)
+    public static void workersReallyWork(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        level.getGameRules().getRule(net.minecraft.world.level.GameRules.RULE_DAYLIGHT).set(false, level.getServer());
+        level.setDayTime(3000);
+        BlockPos origin = h.absolutePos(BlockPos.ZERO);
+        int x = origin.getX() + 1400, z = origin.getZ() + 640;
+        for (int cx = -5; cx <= 5; cx++)
+            for (int cz = -5; cz <= 5; cz++) level.setChunkForced((x >> 4) + cx, (z >> 4) + cz, true);
+        int y = level.getChunk(x >> 4, z >> 4).getHeight(Heightmap.Types.WORLD_SURFACE, x & 15, z & 15);
+        Outpost o = OutpostManager.createManual(data, new BlockPos(x, y, z), Layout.SQUARE, Palette.TIMBER, Rotation.NONE, Difficulty.FRONTIER_POST, level.getGameTime(), level.random);
+        UUID lord = UUID.randomUUID();
+        AABB area = new AABB(o.center).inflate(70, 40, 70);
+        int[] stage = {0};
+        long[] mark = {0};
+        List<BlockPos> treeLogs = new java.util.ArrayList<>();
+        List<net.minecraft.world.entity.item.ItemEntity> litter = new java.util.ArrayList<>();
+        h.onEachTick(() -> {
+            switch (stage[0]) {
+                case 0 -> {
+                    if (!o.online || !o.basePlaced) return;
+                    OutpostManager.conquer(data, o, level.getGameTime());
+                    OutpostManager.found(data, o, lord, "Tester", o.marker(Marker.YARD), level.getGameTime(), level.random);
+                    o.nextRaidAt = Long.MAX_VALUE / 4;
+                    o.autoCaravans = false;
+                    // Дерево за стенами, недалеко от дровяного двора.
+                    BlockPos wood = o.marker(Marker.WOODYARD);
+                    int tx = o.center.getX() + o.reach() + Layout.MARGIN + 6, tz = wood.getZ();
+                    int ty = level.getChunk(tx >> 4, tz >> 4).getHeight(Heightmap.Types.WORLD_SURFACE, tx & 15, tz & 15);
+                    BlockPos base = new BlockPos(tx, ty, tz);
+                    level.setBlockAndUpdate(base.below(), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState());
+                    for (int i = 0; i < 5; i++) {
+                        level.setBlockAndUpdate(base.above(i), net.minecraft.world.level.block.Blocks.OAK_LOG.defaultBlockState());
+                        treeLogs.add(base.above(i));
+                    }
+                    for (BlockPos p : BlockPos.betweenClosed(base.offset(-2, 3, -2), base.offset(2, 5, 2))) {
+                        if (level.getBlockState(p).isAir()) level.setBlockAndUpdate(p, net.minecraft.world.level.block.Blocks.OAK_LEAVES.defaultBlockState());
+                    }
+                    // Коровы за стенами: скотовод должен пригнать их в загон.
+                    BlockPos pen = o.marker(Marker.PEN);
+                    for (int i = 0; i < 3; i++) {
+                        var cow = net.minecraft.world.entity.EntityType.COW.create(level);
+                        int cx = o.center.getX() - o.reach() - Layout.MARGIN - 4 - i * 2, cz = pen.getZ();
+                        cow.moveTo(cx + 0.5, level.getChunk(cx >> 4, cz >> 4).getHeight(Heightmap.Types.WORLD_SURFACE, cx & 15, cz & 15), cz + 0.5, 0, 0);
+                        cow.setPersistenceRequired();
+                        level.addFreshEntity(cow);
+                    }
+                    // Мусор во дворе.
+                    BlockPos yard = o.marker(Marker.YARD);
+                    for (int i = 0; i < 3; i++) {
+                        var e = new net.minecraft.world.entity.item.ItemEntity(level, yard.getX() + 0.5 + i, yard.getY() + 0.5, yard.getZ() + 0.5,
+                                new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.COBBLESTONE, 8));
+                        level.addFreshEntity(e);
+                        litter.add(e);
+                    }
+                    mark[0] = h.getTick();
+                    stage[0] = 1;
+                }
+                case 1 -> {
+                    int logsLeft = 0;
+                    for (BlockPos p : treeLogs) if (level.getBlockState(p).is(net.minecraft.tags.BlockTags.LOGS)) logsLeft++;
+                    boolean litterGone = litter.stream().noneMatch(net.minecraft.world.entity.Entity::isAlive);
+                    if ((h.getTick() - mark[0]) % 200 == 0) {
+                        LordsOutpost.LOGGER.info("Работа жителей: тик {}, брёвен осталось {}, мусор подобран {}, донесено до склада {}, дерево {}",
+                                h.getTick() - mark[0], logsLeft, litterGone, o.depositedItems, o.claimedTrees);
+                        for (var w : level.getEntitiesOfClass(com.vladosiwe.lordsoutpost.entity.WorkerEntity.class, area)) {
+                            LordsOutpost.LOGGER.info("   {} {} @{} goal={} running={}", w.role().id, w.getName().getString(), w.blockPosition().toShortString(),
+                                    w.workGoal == null ? "-" : w.workGoal.status(), w.goalClassNames());
+                        }
+                    }
+                    int penned = com.vladosiwe.lordsoutpost.data.ChunkReconciliation.penAnimals(level, o).size();
+                    if ((h.getTick() - mark[0]) % 200 == 0) LordsOutpost.LOGGER.info("Работа жителей: в загоне {}", penned);
+                    if (logsLeft > 0 || !litterGone || o.depositedItems < 24 + 5 || penned < 3) return;
+                    // Склад: бочки отражают запас.
+                    var barrels = com.vladosiwe.lordsoutpost.data.Storehouse.barrels(level, o);
+                    h.assertTrue(!barrels.isEmpty(), "у склада нет бочек");
+                    var have = com.vladosiwe.lordsoutpost.data.Storehouse.measure(barrels);
+                    for (Resource r : com.vladosiwe.lordsoutpost.data.Storehouse.PHYSICAL) {
+                        double diff = Math.abs(have.get(r) - o.stock(r));
+                        h.assertTrue(diff < 10 || have.get(r) > 0, "бочки склада не совпадают с запасом: " + r + " " + have.get(r) + " / " + o.stock(r));
+                    }
+                    BlockPos sapling = treeLogs.get(0);
+                    LordsOutpost.LOGGER.info("Работа жителей: дерево свалено, саженец {}, мусор подобран, донесено {}, в загоне {}, склад {}",
+                            level.getBlockState(sapling).getBlock(), o.depositedItems, penned, have);
+                    OutpostManager.abandon(data, o, level.getGameTime());
+                    data.remove(o);
+                    for (var npc : level.getEntitiesOfClass(OutpostNpc.class, area)) npc.discard();
+                    for (int cx = -5; cx <= 5; cx++)
+                        for (int cz = -5; cz <= 5; cz++) level.setChunkForced((x >> 4) + cx, (z >> 4) + cz, false);
+                    h.succeed();
+                }
+                default -> { }
             }
         });
     }

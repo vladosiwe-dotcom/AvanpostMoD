@@ -5,6 +5,8 @@ import com.vladosiwe.lordsoutpost.block.OutpostGateBlock;
 import com.vladosiwe.lordsoutpost.block.QuestBoardBlock;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.BedBlock;
+import net.minecraft.world.level.block.DoorBlock;
+import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LanternBlock;
@@ -278,7 +280,7 @@ public final class FortDesigner {
         switch (tier) {
             case 1 -> {
                 module(ST_KEEP, 0, -8, FACE_S, this::hall);
-                module(ST_WORKS, 8, -4, FACE_W, this::shed);
+                module(ST_WORKS, 8, -4, FACE_W, this::storeroomSmall);
                 module(ST_WORKS, 8, 3, FACE_W, this::woodyard);
                 module(ST_WORKS, 8, 9, FACE_W, this::minePile);
                 module(ST_WORKS, -7, 8, FACE_E, () -> pen(2));
@@ -322,7 +324,7 @@ public final class FortDesigner {
         switch (tier) {
             case 1 -> {
                 module(ST_KEEP, 0, 0, FACE_S, this::hall);
-                module(ST_WORKS, 0, -9, FACE_S, this::shed);
+                module(ST_WORKS, 0, -9, FACE_S, this::storeroomSmall);
                 module(ST_WORKS, 6, 8, FACE_W, this::woodyard);
                 module(ST_WORKS, -7, -8, FACE_E, this::minePile);
                 module(ST_WORKS, -6, 7, FACE_E, () -> pen(2));
@@ -549,36 +551,54 @@ public final class FortDesigner {
         c.mark(Marker.MAGE, 0, 1, 1);
     }
 
-    /** Тир 1: навес со снабжением. */
-    private void shed() {
-        c.fill(-2, 0, -1, 2, 0, 1, p.planks);
-        c.fill(-2, 1, -1, 2, 3, -1, p.planks);
-        for (int sx = -1; sx <= 1; sx += 2) {
-            c.fill(sx * 2, 1, 1, sx * 2, 3, 1, p.fence);
-            c.fill(sx * 2, 1, -1, sx * 2, 3, -1, p.log);
+    /**
+     * Закрытый склад: дверь, которую открывают только свои, бочки с запасами вдоль задней стены,
+     * сундук с добычей и посты стражи снаружи у двери.
+     */
+    private void storeroom(int w, int d, int h, Block wall, boolean stacked) {
+        house(w, d, h, wall, false);
+        BlockState door = ModBlocks.STOREHOUSE_DOOR.get().defaultBlockState()
+                .setValue(DoorBlock.FACING, Direction.NORTH).setValue(DoorBlock.HALF, DoubleBlockHalf.LOWER);
+        c.set(0, 1, d, door);
+        c.chained(0, 2, d, door.setValue(DoorBlock.HALF, DoubleBlockHalf.UPPER));
+        BlockState barrel = Blocks.BARREL.defaultBlockState().setValue(BlockStateProperties.FACING, Direction.SOUTH);
+        for (int x = -w + 1; x <= w - 1; x++) {
+            c.set(x, 1, -d + 1, barrel);
+            c.mark(Marker.STOCKPILE, x, 1, -d + 1);
+            if (stacked) {
+                c.set(x, 2, -d + 1, barrel);
+                c.mark(Marker.STOCKPILE, x, 2, -d + 1);
+            }
         }
-        c.fill(-3, 4, -2, 3, 4, 2, p.roofSlab);
-        c.set(-1, 1, 0, Blocks.BARREL.defaultBlockState().setValue(BlockStateProperties.FACING, Direction.UP));
-        c.mark(Marker.SUPPLY, -1, 1, 0);
-        c.set(1, 1, 0, facing(Blocks.CHEST, Direction.SOUTH));
-        c.mark(Marker.LOOT_CHEST, 1, 1, 0);
-        c.set(-2, 1, 0, Blocks.BARREL);
-        c.set(2, 1, 0, Blocks.HAY_BLOCK);
-        c.mark(Marker.STORAGE, 0, 1, 2);
+        // Первая бочка — «бочка снабжения» из подсказок: всё, что в неё кладут, идёт в запасы (как и в остальные).
+        c.mark(Marker.SUPPLY, -w + 1, 1, -d + 1);
+        c.set(w - 1, 1, d - 1, facing(Blocks.CHEST, Direction.WEST));
+        c.mark(Marker.LOOT_CHEST, w - 1, 1, d - 1);
+        c.set(-w + 1, 1, d - 1, Blocks.HAY_BLOCK);
+        c.mark(Marker.STORE_INSIDE, 0, 1, d - 1);
+        c.mark(Marker.STORAGE, 0, 1, d + 2);
+        c.mark(Marker.STORE_GUARD, -2, 1, d + 2);
+        c.mark(Marker.STORE_GUARD, 2, 1, d + 2);
     }
 
-    /** Тир 2+: каменный склад. */
+    /** Тир 1: бревенчатый склад. */
+    private void storeroomSmall() {
+        storeroom(2, 2, 3, p.planks, false);
+    }
+
+    /** Тир 2+: каменный склад, бочки в два яруса. */
     private void storehouse() {
-        house(3, 2, 4, p.stone, false);
-        for (int x = -2; x <= 2; x++) c.set(x, 1, -1, Blocks.BARREL.defaultBlockState().setValue(BlockStateProperties.FACING, Direction.UP));
-        c.mark(Marker.SUPPLY, -2, 1, -1);
-        c.set(0, 1, -1, facing(Blocks.CHEST, Direction.SOUTH));
-        c.mark(Marker.LOOT_CHEST, 0, 1, -1);
-        c.set(2, 2, -1, Blocks.BARREL);
-        c.set(-2, 1, 1, Blocks.HAY_BLOCK);
-        c.set(2, 1, 1, facing(Blocks.CHEST, Direction.WEST));
-        c.mark(Marker.LOOT_CHEST, 2, 1, 1);
-        c.mark(Marker.STORAGE, 0, 1, 3);
+        storeroom(3, 2, 4, p.stone, true);
+    }
+
+    /** Шахтный ствол под открытым люком: лестница вниз на 6 блоков, штрек ведётся на юг (в локальных координатах). */
+    private void shaft() {
+        c.fill(0, -6, -1, 0, -1, -1, Blocks.COBBLESTONE);
+        c.fill(0, -6, 0, 0, -1, 0, facing(Blocks.LADDER, Direction.SOUTH));
+        c.set(0, 0, 0, Blocks.SPRUCE_TRAPDOOR.defaultBlockState().setValue(BlockStateProperties.HALF, Half.TOP)
+                .setValue(BlockStateProperties.OPEN, true).setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.NORTH));
+        c.mark(Marker.MINE_SHAFT, 0, -6, 0);
+        c.mark(Marker.MINE_DIR, 0, -6, 1);
     }
 
     private void smithy() {
@@ -604,8 +624,9 @@ public final class FortDesigner {
             c.set(s, 1, i, p.fence);
         }
         c.set(0, 1, s, facing(p.fenceGate, Direction.SOUTH));
-        c.set(-s + 1, 1, -s + 1, Blocks.HAY_BLOCK);
-        c.set(s - 1, 1, -s + 1, Blocks.WATER_CAULDRON.defaultBlockState().setValue(LayeredCauldronBlock.LEVEL, 3));
+        // Сено и поилка — снаружи у калитки: внутри у ограды по ним скот запрыгивает на неё и сбегает.
+        c.set(-2, 1, s + 1, Blocks.HAY_BLOCK);
+        c.set(2, 1, s + 1, Blocks.WATER_CAULDRON.defaultBlockState().setValue(LayeredCauldronBlock.LEVEL, 3));
         c.set(-s, 2, -s, Blocks.LANTERN);
         c.mark(Marker.PEN, 0, 1, 0);
     }
@@ -624,6 +645,9 @@ public final class FortDesigner {
         c.set(0, 1, -1, Blocks.COAL_ORE);
         c.set(1, 2, -1, Blocks.COBBLESTONE);
         c.set(-1, 1, -1, Blocks.IRON_ORE);
+        c.set(-1, 0, 0, Blocks.COBBLESTONE);
+        c.set(1, 0, 0, Blocks.COBBLESTONE);
+        shaft();
         c.mark(Marker.MINE, 0, 1, 1);
     }
 
@@ -639,9 +663,7 @@ public final class FortDesigner {
         c.set(1, 0, 0, Blocks.COBBLESTONE);
         c.set(0, 0, 1, Blocks.COBBLESTONE);
         // Ствол шахты под люком.
-        c.fill(0, -6, -1, 0, -1, -1, Blocks.COBBLESTONE);
-        c.fill(0, -6, 0, 0, -1, 0, facing(Blocks.LADDER, Direction.SOUTH));
-        c.set(0, 0, 0, Blocks.SPRUCE_TRAPDOOR.defaultBlockState().setValue(BlockStateProperties.HALF, Half.TOP));
+        shaft();
         c.set(0, 3, 0, Blocks.LANTERN.defaultBlockState().setValue(LanternBlock.HANGING, true));
         c.set(1, 1, 0, Blocks.IRON_ORE);
         c.set(-1, 1, 0, Blocks.COAL_ORE);

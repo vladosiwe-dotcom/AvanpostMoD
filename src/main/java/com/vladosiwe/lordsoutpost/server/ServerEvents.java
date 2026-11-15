@@ -110,13 +110,16 @@ public final class ServerEvents {
         event.setDisplayName(Component.translatable("lordsoutpost.title.prefix").withStyle(ChatFormatting.GOLD).append(" ").append(base.copy().withStyle(ChatFormatting.WHITE)));
     }
 
-    /** Добыча охотника уже учтена на складе — на землю она не падает. */
+    /** Добычу с животного, которое забил охотник или скотовод, житель сразу берёт в ношу и несёт на склад. */
     @SubscribeEvent
     public static void onDrops(LivingDropsEvent event) {
-        if (event.getEntity().getPersistentData().contains(NpcLifecycle.HUNTED_TAG)
-                && event.getSource().getEntity() instanceof com.vladosiwe.lordsoutpost.entity.WorkerEntity) {
-            event.setCanceled(true);
-        }
+        if (!(event.getSource().getEntity() instanceof com.vladosiwe.lordsoutpost.entity.WorkerEntity worker)) return;
+        event.getDrops().removeIf(item -> {
+            net.minecraft.world.item.ItemStack left = worker.collect(item.getItem());
+            if (left.isEmpty()) return true;
+            item.setItem(left);
+            return false;
+        });
     }
 
     /** Вьючное животное каравана, сохранившееся в чанке, не должно появиться второй раз: караван воссоздаётся из записи. */

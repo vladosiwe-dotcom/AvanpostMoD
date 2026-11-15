@@ -73,11 +73,27 @@ public final class NpcLifecycle {
         return out;
     }
 
+    /**
+     * Пост бойца. Стрелки занимают башни и стены (сверху вниз), бойцы ближнего боя — сперва двери склада,
+     * потом посты у ворот и во дворе.
+     */
     public static BlockPos postFor(Outpost o, Resident r) {
-        List<BlockPos> posts = new ArrayList<>(o.markers(Marker.GUARD_POST));
+        List<BlockPos> high = new ArrayList<>(o.markers(Marker.GUARD_POST));
+        high.sort(Comparator.comparingInt(p -> -p.getY()));
+        List<BlockPos> low = new ArrayList<>(o.markers(Marker.STORE_GUARD));
+        List<BlockPos> ground = new ArrayList<>(o.markers(Marker.GUARD_POST));
+        ground.sort(Comparator.comparingInt(BlockPos::getY));
+        low.addAll(ground);
+        List<Resident> posted = posted(o);
+        boolean ranged = r.role.ranged();
+        int index = 0;
+        for (Resident other : posted) {
+            if (other == r) break;
+            if (other.role.ranged() == ranged) index++;
+        }
+        List<BlockPos> posts = ranged ? high : low;
+        if (posts.isEmpty()) posts = high.isEmpty() ? low : high;
         if (posts.isEmpty()) return o.marker(Marker.YARD);
-        posts.sort(Comparator.comparingInt(p -> -p.getY()));
-        int index = Math.max(0, posted(o).indexOf(r));
         return posts.get(index % posts.size());
     }
 
@@ -93,6 +109,10 @@ public final class NpcLifecycle {
         Outpost o = data.byId(npc.outpostId());
         if (o == null) return;
         Resident r = npc.residentId() == null ? null : o.resident(npc.residentId());
+        // Недонесённая ноша не пропадает: её ресурсы засчитываются сразу.
+        if (npc instanceof com.vladosiwe.lordsoutpost.entity.WorkerEntity w && o.state == OutpostState.OWNED) {
+            com.vladosiwe.lordsoutpost.data.Storehouse.depositVirtually(o, w.inventory);
+        }
         if (r != null && npc.getUUID().equals(r.entity)) {
             r.entity = null;
             r.health = Math.max(0.05f, npc.getHealth() / Math.max(1f, npc.getMaxHealth()));

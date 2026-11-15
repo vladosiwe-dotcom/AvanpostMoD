@@ -71,18 +71,21 @@ public final class Simulation {
         double prod = days * OutpostConfig.get(OutpostConfig.PRODUCTION, 1.0) * o.law.production() * (o.starving ? 0.5 : 1.0);
         double boost = OutpostConfig.get(OutpostConfig.PLAYER_HELP_BOOST, 2.0);
 
-        o.add(Resource.WOOD, o.activeCount(Role.LUMBERJACK) * 320 * prod * (o.boosted(Resource.WOOD, now) ? boost : 1));
-        int miners = o.activeCount(Role.MINER);
+        // Жители, которые сейчас работают руками в мире (игрок рядом), добывают настоящие предметы и несут их на склад:
+        // их выработка здесь не считается, иначе ресурс засчитался бы дважды.
+        o.add(Resource.WOOD, virtualWorkers(o, Role.LUMBERJACK, now) * 320 * prod * (o.boosted(Resource.WOOD, now) ? boost : 1));
+        int miners = virtualWorkers(o, Role.MINER, now);
         o.add(Resource.STONE, miners * 260 * prod * (o.boosted(Resource.STONE, now) ? boost : 1));
-        o.add(Resource.IRON, miners * 24 * prod * (o.boosted(Resource.IRON, now) ? boost : 1));
+        // Железной руды в штреке мало, поэтому шахтёр в мире всё равно даёт половину железа «из промывки».
+        double ironMiners = miners + 0.5 * (o.activeCount(Role.MINER) - miners);
+        o.add(Resource.IRON, ironMiners * 24 * prod * (o.boosted(Resource.IRON, now) ? boost : 1));
         double foodBoost = o.boosted(Resource.FOOD, now) ? boost : 1;
-        int hunters = o.activeCount(Role.HUNTER);
+        int hunters = virtualWorkers(o, Role.HUNTER, now);
         o.add(Resource.FOOD, hunters * 36 * prod * foodBoost);
         o.add(Resource.HIDES, hunters * 10 * prod);
-        int herders = o.activeCount(Role.HERDER);
+        int herders = virtualWorkers(o, Role.HERDER, now);
         if (herders > 0) {
-            // Скотоводы пригоняют животных, пока загон не заполнится, и держат стадо.
-            o.growth += 0; // рост населения считается ниже; стадо растёт отдельно
+            // Вдали скотоводы пригоняют животных, пока загон не заполнится, и держат стадо.
             if (o.penAnimals < o.penCapacity() && rnd.nextDouble() < herders * 1.5 * days) o.penAnimals++;
             double herd = Math.min(o.penAnimals, herders * 8);
             o.add(Resource.FOOD, herd * 5 * prod * foodBoost);
@@ -113,6 +116,17 @@ public final class Simulation {
         Raids.tick(level, data, o, now, rnd);
         Caravans.tick(level, data, o, now, days, steward, rnd);
         o.boosts.values().removeIf(until -> until <= now);
+    }
+
+    /** Жители роли, чью выработку считает симуляция: все, кроме тех, кто сейчас добывает руками в мире. */
+    public static int virtualWorkers(Outpost o, Role role, long now) {
+        int n = 0;
+        for (Resident r : o.residents) {
+            if (r.role != role || !r.active()) continue;
+            boolean physical = o.online && r.entity != null && now - r.lastRealWork < 2400;
+            if (!physical) n++;
+        }
+        return n;
     }
 
     private static void heal(Outpost o, long now, double days) {

@@ -42,7 +42,7 @@ import java.util.Optional;
 
 /**
  * Команды администратора (уровень прав 2) для проверки и настройки:
- * /outpost nearest | list | info | create | capture | found | tier | sim | stock | raid | remove | reveal
+ * /outpost nearest | list | info | create | capture | found | tier | sim | stock | raid | mine | remove | reveal
  */
 public final class OutpostCommands {
     private OutpostCommands() {}
@@ -72,6 +72,28 @@ public final class OutpostCommands {
                                 .suggests((c, b) -> SharedSuggestionProvider.suggest(Arrays.stream(Resource.VALUES).map(r -> r.id), b))
                                 .then(Commands.argument("amount", IntegerArgumentType.integer(0, 1_000_000)).executes(OutpostCommands::stock))))
                 .then(Commands.literal("raid").executes(OutpostCommands::raid))
+                .then(Commands.literal("workers").executes(c -> {
+                    Outpost o = here(c);
+                    if (o == null) return 0;
+                    ServerLevel level = overworld(c);
+                    int n = 0;
+                    for (var w : level.getEntitiesOfClass(com.vladosiwe.lordsoutpost.entity.WorkerEntity.class,
+                            new net.minecraft.world.phys.AABB(o.center).inflate(96, 64, 96), w -> w.outpostId() == o.id)) {
+                        String line = w.role().id + " " + w.blockPosition().toShortString() + " " + (w.workGoal == null ? "-" : w.workGoal.status())
+                                + " " + w.goalClassNames();
+                        c.getSource().sendSuccess(() -> Component.literal(line), false);
+                        n++;
+                    }
+                    return n;
+                }))
+                .then(Commands.literal("mine").then(Commands.argument("column", IntegerArgumentType.integer(0, 1000)).executes(c -> {
+                    Outpost o = here(c);
+                    if (o == null) return 0;
+                    o.mineCursor = IntegerArgumentType.getInteger(c, "column");
+                    OutpostSavedData.get(overworld(c)).setDirty();
+                    c.getSource().sendSuccess(() -> Component.literal("mine = " + o.mineCursor), true);
+                    return 1;
+                })))
                 .then(Commands.literal("remove").executes(OutpostCommands::remove)));
     }
 
@@ -133,7 +155,10 @@ public final class OutpostCommands {
                 .append(" fighters=").append(o.fighters()).append(" steps=").append(o.steps).append('/').append(o.nextPlan().size())
                 .append(" placed=").append(o.placed).append(" placedTier=").append(o.placedTier).append(" online=").append(o.online)
                 .append(" law=").append(o.law.id).append(" caravans=").append(o.caravans.size()).append(" quests=").append(o.quests.size())
-                .append(" raid=").append(o.raid != null);
+                .append(" raid=").append(o.raid != null).append(" mine=").append(o.mineCursor).append(" delivered=").append(o.depositedItems)
+                .append(" pen=").append(o.penAnimals).append("@").append(o.marker(com.vladosiwe.lordsoutpost.blueprint.Marker.PEN).toShortString())
+                .append(" store@").append(o.marker(com.vladosiwe.lordsoutpost.blueprint.Marker.STORE_INSIDE).toShortString())
+                .append(" shaft@").append(o.marker(com.vladosiwe.lordsoutpost.blueprint.Marker.MINE_SHAFT).toShortString());
         c.getSource().sendSuccess(() -> Component.literal(sb.toString()), false);
         return 1;
     }

@@ -121,6 +121,7 @@ public final class OutpostManager {
         addSettler(o, Role.LUMBERJACK, rnd);
         addSettler(o, Role.MINER, rnd);
         addSettler(o, Role.HUNTER, rnd);
+        addSettler(o, Role.HERDER, rnd);
         addSettler(o, Role.SHIELDMAN, rnd);
         addSettler(o, Role.ARCHER, rnd);
         for (int i = o.residents.size(); i < o.populationCap() / 2 + 3; i++) addSettler(o, com.vladosiwe.lordsoutpost.data.Simulation.nextRole(o, rnd), rnd);

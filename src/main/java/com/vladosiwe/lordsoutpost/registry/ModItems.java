@@ -20,6 +20,8 @@ public final class ModItems {
             p -> new LordStandardItem(ModBlocks.LORD_STANDARD.get(), p), new Item.Properties().stacksTo(1).rarity(Rarity.EPIC).fireResistant());
     public static final DeferredItem<BlockItem> OUTPOST_GATE = ITEMS.registerSimpleBlockItem(ModBlocks.OUTPOST_GATE);
     public static final DeferredItem<BlockItem> QUEST_BOARD = ITEMS.registerSimpleBlockItem(ModBlocks.QUEST_BOARD);
+    public static final DeferredItem<net.minecraft.world.item.DoubleHighBlockItem> STOREHOUSE_DOOR = ITEMS.registerItem("storehouse_door",
+            p -> new net.minecraft.world.item.DoubleHighBlockItem(ModBlocks.STOREHOUSE_DOOR.get(), p));
 
     public static final DeferredHolder<CreativeModeTab, CreativeModeTab> TAB = TABS.register("main", () -> CreativeModeTab.builder()
             .title(Component.translatable("itemGroup.lordsoutpost"))
@@ -28,6 +30,7 @@ public final class ModItems {
                 out.accept(LORD_STANDARD.get());
                 out.accept(OUTPOST_GATE.get());
                 out.accept(QUEST_BOARD.get());
+                out.accept(STOREHOUSE_DOOR.get());
             })
             .build());
 
