@@ -69,7 +69,7 @@ public class WorkGoal extends Goal {
     private static final int DEPOSIT_AT = 24;
     private static final ItemStack AXE = new ItemStack(Items.IRON_AXE);
     private static final ItemStack PICKAXE = new ItemStack(Items.IRON_PICKAXE);
-    private static final int MAIN_TUNNEL = 32, BRANCH_EVERY = 4, BRANCH_LENGTH = 6;
+    private static final int MAIN_TUNNEL = 32, BRANCH_EVERY = 4, BRANCH_LENGTH = 6, GENERATIONS = 8;
 
     private final WorkerEntity mob;
     private Phase phase = Phase.DECIDE;
@@ -123,6 +123,18 @@ public class WorkGoal extends Goal {
         phase = Phase.DECIDE;
     }
 
+    @Nullable
+    private static BlockPos freeBed(ServerLevel level, BlockPos around) {
+        BlockPos best = null;
+        for (BlockPos p : BlockPos.betweenClosed(around.offset(-5, -1, -5), around.offset(5, 2, 5))) {
+            BlockState s = level.getBlockState(p);
+            if (s.getBlock() instanceof net.minecraft.world.level.block.BedBlock && s.getValue(net.minecraft.world.level.block.BedBlock.PART) == net.minecraft.world.level.block.state.properties.BedPart.HEAD
+                    && !s.getValue(net.minecraft.world.level.block.BedBlock.OCCUPIED)
+                    && (best == null || p.distSqr(around) < best.distSqr(around))) best = p.immutable();
+        }
+        return best;
+    }
+
     private void release() {
         Outpost o = mob.outpost();
         if (o != null && tree != null) o.claimedTrees.remove(tree);
@@ -141,7 +153,9 @@ public class WorkGoal extends Goal {
         if (o == null || r == null || !(mob.level() instanceof ServerLevel level)) return;
         Role role = r.role;
         long now = level.getGameTime();
+        if (!level.isNight() && mob.isSleeping()) mob.stopSleeping();
         if (level.isNight() && role != Role.BUILDER && phase != Phase.DEPOSIT) {
+            if (mob.isSleeping()) return;
             if (mob.carried() > 0) {
                 release();
                 phase = Phase.DEPOSIT;
@@ -150,7 +164,12 @@ public class WorkGoal extends Goal {
             release();
             List<BlockPos> beds = o.markers(Marker.HOUSING);
             BlockPos bed = beds.isEmpty() ? o.marker(Marker.YARD) : beds.get(Math.floorMod(r.id.hashCode(), beds.size()));
-            go(o, bed, 2.0, 400);
+            if (go(o, bed, 2.0, 400)) {
+                // Дошёл до дома: ложится в свободную кровать рядом.
+                BlockPos free = freeBed(level, bed);
+                if (free != null && mob.blockPosition().distSqr(free) < 16) mob.startSleeping(free);
+                else if (free != null) mob.getNavigation().moveTo(free.getX() + 0.5, free.getY(), free.getZ() + 0.5, 0.8);
+            }
             phase = Phase.DECIDE;
             return;
         }
@@ -315,7 +334,7 @@ public class WorkGoal extends Goal {
         OutpostSavedData data = OutpostSavedData.get(level);
         BlockPos best = null;
         double bestD = Double.MAX_VALUE;
-        int radius = 36;
+        int radius = 64;
         // Каждый столбец: ствол дерева шириной в один блок, через один его не найти.
         for (int dx = -radius; dx <= radius; dx++)
             for (int dz = -radius; dz <= radius; dz++) {
@@ -434,22 +453,29 @@ public class WorkGoal extends Goal {
         int dx = Integer.signum(dirPos.getX() - shaft.getX()), dz = Integer.signum(dirPos.getZ() - shaft.getZ());
         int lx = -dz, lz = dx;
         BlockPos prev = shaft;
+        // Поколение 0 — главный ход с короткими отвилками; каждое следующее удлиняет все отвилки ещё на BRANCH_LENGTH.
+        // Так штрек не кончается за пару дней, а уже выданные номера столбцов (mineCursor) остаются прежними.
         for (int k = 1; k <= MAIN_TUNNEL; k++) {
             BlockPos main = shaft.offset(dx * k, 0, dz * k);
             out.add(new Column(main, prev, k % 6 == 0));
             prev = main;
-            if (k % BRANCH_EVERY == 0) {
-                for (int side = -1; side <= 1; side += 2) {
-                    BlockPos stand = main;
-                    for (int j = 1; j <= BRANCH_LENGTH; j++) {
-                        BlockPos b = main.offset(lx * side * j, 0, lz * side * j);
-                        out.add(new Column(b, stand, false));
-                        stand = b;
-                    }
-                }
+            if (k % BRANCH_EVERY == 0) branch(out, main, lx, lz, 0);
+        }
+        for (int g = 1; g < GENERATIONS; g++)
+            for (int k = BRANCH_EVERY; k <= MAIN_TUNNEL; k += BRANCH_EVERY) branch(out, shaft.offset(dx * k, 0, dz * k), lx, lz, g);
+        return out;
+    }
+
+    private static void branch(List<Column> out, BlockPos main, int lx, int lz, int generation) {
+        for (int side = -1; side <= 1; side += 2) {
+            int from = generation * BRANCH_LENGTH;
+            BlockPos stand = main.offset(lx * side * from, 0, lz * side * from);
+            for (int j = from + 1; j <= from + BRANCH_LENGTH; j++) {
+                BlockPos b = main.offset(lx * side * j, 0, lz * side * j);
+                out.add(new Column(b, stand, j % 6 == 0));
+                stand = b;
             }
         }
-        return out;
     }
 
     /** Ствол есть в чертеже и его дно с полом штрека стоит над дном мира. */

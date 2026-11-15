@@ -204,6 +204,21 @@ public final class OutpostGameTests {
         h.succeed();
     }
 
+    /** Лава и вода во дворе убираются, вода, которую ставит сам чертёж (колодец), остаётся. */
+    @GameTest(template = "empty")
+    public static void yardFluidsAreCleared(GameTestHelper h) {
+        BlockPos c = h.absolutePos(new BlockPos(2, 1, 2));
+        ServerLevel level = h.getLevel();
+        for (int dx = -1; dx <= 1; dx++)
+            for (int dz = -1; dz <= 1; dz++) level.setBlock(c.offset(dx, 0, dz), net.minecraft.world.level.block.Blocks.LAVA.defaultBlockState(), 2);
+        level.setBlock(c.offset(1, 0, 1), net.minecraft.world.level.block.Blocks.WATER.defaultBlockState(), 2);
+        int n = com.vladosiwe.lordsoutpost.world.FortPlacer.clearFluids(level, c, 2, null, rel -> rel.equals(new BlockPos(1, 0, 1)));
+        h.assertTrue(n == 8, "убрано " + n + " вместо 8");
+        h.assertTrue(level.getBlockState(c).is(net.minecraft.world.level.block.Blocks.GRASS_BLOCK), "на месте лавы не трава");
+        h.assertTrue(level.getBlockState(c.offset(1, 0, 1)).is(net.minecraft.world.level.block.Blocks.WATER), "вода чертежа убрана");
+        h.succeed();
+    }
+
     /** Пока мир закрыт, игровое время стоит; при запуске форт проживает это время задним числом и растёт. */
     @GameTest(template = "empty")
     public static void outpostLivesWhileWorldClosed(GameTestHelper h) {
@@ -670,7 +685,7 @@ public final class OutpostGameTests {
             for (Rotation rot : Rotation.values()) {
                 Outpost o = new Outpost(data.nextManualId(), FAR.offset(24000, 0, 0), layout, Palette.TIMBER, rot, Difficulty.REDOUBT, true);
                 List<com.vladosiwe.lordsoutpost.entity.ai.WorkGoal.Column> cols = com.vladosiwe.lordsoutpost.entity.ai.WorkGoal.tunnel(o);
-                h.assertTrue(cols.size() == 32 + 8 * 2 * 6, layout.id + " " + rot + ": столбцов штрека " + cols.size());
+                h.assertTrue(cols.size() == 32 + 8 * 2 * 6 * 8, layout.id + " " + rot + ": столбцов штрека " + cols.size());
                 BlockPos shaft = o.marker(Marker.MINE_SHAFT);
                 for (var c : cols) {
                     h.assertTrue(c.stand().distManhattan(c.floor()) == 1 && c.floor().getY() == shaft.getY(), "столбец не примыкает к предыдущему: " + c);

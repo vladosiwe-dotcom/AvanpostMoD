@@ -31,8 +31,12 @@ public class FighterRenderer extends HumanoidMobRenderer<FighterEntity, Marauder
 
     public FighterRenderer(EntityRendererProvider.Context ctx) {
         super(ctx, new MarauderModel<>(ctx.bakeLayer(LAYER)), 0.5f);
-        addLayer(new HumanoidArmorLayer<>(this, new HumanoidModel<>(ctx.bakeLayer(ModelLayers.PLAYER_INNER_ARMOR)),
-                new HumanoidModel<>(ctx.bakeLayer(ModelLayers.PLAYER_OUTER_ARMOR)), ctx.getModelManager()));
+        // Epic Fight рисует бойцов скелетом иллагера, а броню натягивает по меркам игрока: она висит мимо тела.
+        // Поэтому с ним слой брони не добавляем (броня по-прежнему защищает, её просто не видно).
+        if (!net.neoforged.fml.ModList.get().isLoaded("epicfight")) {
+            addLayer(new HumanoidArmorLayer<>(this, new HumanoidModel<>(ctx.bakeLayer(ModelLayers.PLAYER_INNER_ARMOR)),
+                    new HumanoidModel<>(ctx.bakeLayer(ModelLayers.PLAYER_OUTER_ARMOR)), ctx.getModelManager()));
+        }
         addLayer(new VillagerHeadLayer(this));
     }
 

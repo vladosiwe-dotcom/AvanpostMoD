@@ -128,6 +128,10 @@ public final class ChunkReconciliation {
             }
         }
         FortBlueprint bp = o.blueprint();
+        // Лава и вода во дворе (озеро сгенерировалось раньше форта или натекло): убираем, кроме воды самого чертежа.
+        int cleared = com.vladosiwe.lordsoutpost.world.FortPlacer.clearFluids(level, o.center, o.reach() + Layout.MARGIN, null,
+                rel -> { for (int t = 1; t <= FortBlueprint.MAX_TIER; t++) if (bp.design(t).cells.containsKey(rel)) return true; return false; });
+        if (cleared > 0) com.vladosiwe.lordsoutpost.LordsOutpost.LOGGER.info("Форт #{}: убрано {} блоков жидкости с площадки", Long.toHexString(o.id), cleared);
         if (!o.basePlaced) {
             int baseTier = o.difficulty.tier;
             int baseSteps = Outpost.initialSteps(bp, o.difficulty);

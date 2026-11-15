@@ -68,4 +68,30 @@ public final class FortPlacer {
             }
         }
     }
+
+    /**
+     * Убирает жидкости с площадки форта: озёра лавы и воды генерируются раньше построек и иначе остаются во дворе.
+     * Клетки, которые сам чертёж заполняет водой (колодец), пропускаются через keep.
+     * Над уровнем двора — воздух, на уровне двора — трава, ниже — земля и камень.
+     */
+    public static int clearFluids(net.minecraft.world.level.LevelAccessor level, BlockPos center, int radius, @Nullable BoundingBox box,
+                                  java.util.function.Predicate<BlockPos> keep) {
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        int cleared = 0;
+        for (int dx = -radius; dx <= radius; dx++)
+            for (int dz = -radius; dz <= radius; dz++)
+                for (int dy = 4; dy >= -10; dy--) {
+                    pos.set(center.getX() + dx, center.getY() + dy, center.getZ() + dz);
+                    if (box != null && !box.isInside(pos)) continue;
+                    if (level.isOutsideBuildHeight(pos)) continue;
+                    BlockState s = level.getBlockState(pos);
+                    if (!(s.getBlock() instanceof net.minecraft.world.level.block.LiquidBlock)) continue;
+                    if (keep.test(new BlockPos(dx, dy, dz))) continue;
+                    BlockState fill = dy > 0 ? Blocks.AIR.defaultBlockState() : dy == 0 ? Blocks.GRASS_BLOCK.defaultBlockState()
+                            : dy >= -3 ? Blocks.DIRT.defaultBlockState() : Blocks.STONE.defaultBlockState();
+                    level.setBlock(pos, fill, Block.UPDATE_CLIENTS);
+                    cleared++;
+                }
+        return cleared;
+    }
 }

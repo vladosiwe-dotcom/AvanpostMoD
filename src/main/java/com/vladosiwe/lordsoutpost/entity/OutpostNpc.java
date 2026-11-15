@@ -171,7 +171,14 @@ public abstract class OutpostNpc extends PathfinderMob implements OutpostMember 
     }
 
     @Override
+    protected boolean isImmobile() {
+        return super.isImmobile() || isSleeping();
+    }
+
+    @Override
     public void remove(RemovalReason reason) {
+        // Иначе кровать останется «занятой» навсегда.
+        if (!level().isClientSide && isSleeping()) stopSleeping();
         if (!level().isClientSide && reason != RemovalReason.KILLED) NpcLifecycle.onUnloaded(this);
         super.remove(reason);
     }
