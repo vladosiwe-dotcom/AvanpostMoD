@@ -410,6 +410,8 @@ public final class OutpostGameTests {
         AABB area = new AABB(o.center).inflate(60, 40, 60);
         int[] stage = {0};
         int[] stepsAtFounding = {0};
+        long[] mark = {0};
+        net.minecraft.server.level.ServerPlayer[] viewer = {null};
         h.onEachTick(() -> {
             if (h.getTick() % 150 == 0) {
                 LordsOutpost.LOGGER.info("Форт в мире: тик {}, этап {}, online={}, base={}, состояние {}, жителей {}, сущностей {}, steps={}, placed={}, ground={}",
@@ -424,9 +426,35 @@ public final class OutpostGameTests {
                     List<CaptainEntity> captains = level.getEntitiesOfClass(CaptainEntity.class, area);
                     List<FighterEntity> fighters = level.getEntitiesOfClass(FighterEntity.class, area);
                     if (captains.isEmpty() || fighters.size() < o.difficulty.garrison) return;
-                    h.assertTrue(captains.size() == 1, "Капитанов: " + captains.size());
-                    h.assertTrue(captains.get(0).hostileFaction(), "Капитан не враждебен");
-                    captains.get(0).hurt(level.damageSources().genericKill(), Float.MAX_VALUE);
+                    h.assertTrue(captains.size() == 1, "Лордов мародёров: " + captains.size());
+                    CaptainEntity captain = captains.get(0);
+                    h.assertTrue(captain.hostileFaction(), "Лорд мародёров не враждебен");
+                    h.assertTrue(Math.abs(captain.getMaxHealth() - CaptainEntity.maxHealthFor(o.difficulty.skulls)) < 0.01
+                            && captain.getMaxHealth() <= 60, "здоровье Лорда мародёров: " + captain.getMaxHealth());
+                    h.assertTrue(captain.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.SCALE) == 1.0, "модель Лорда увеличена");
+                    // Полоса босса: у стен — видна.
+                    viewer[0] = h.makeMockServerPlayerInLevel();
+                    viewer[0].setGameMode(GameType.SURVIVAL);
+                    BlockPos gate = o.marker(Marker.GATE);
+                    viewer[0].teleportTo(gate.getX() + 0.5, gate.getY() + 0.5, gate.getZ() + 6.5);
+                    mark[0] = h.getTick();
+                    stage[0] = 10;
+                }
+                case 10 -> {
+                    if (h.getTick() - mark[0] < 25) return;
+                    CaptainEntity captain = level.getEntitiesOfClass(CaptainEntity.class, area).get(0);
+                    h.assertTrue(captain.bossBarViewers().contains(viewer[0]), "у стен форта полоса Лорда не видна");
+                    // ...а за 150 блоков — нет, хотя сущность всё ещё отслеживается.
+                    viewer[0].teleportTo(o.center.getX() + 150.5, o.center.getY() + 1, o.center.getZ() + 0.5);
+                    mark[0] = h.getTick();
+                    stage[0] = 11;
+                }
+                case 11 -> {
+                    if (h.getTick() - mark[0] < 25) return;
+                    CaptainEntity captain = level.getEntitiesOfClass(CaptainEntity.class, area).get(0);
+                    h.assertTrue(!captain.bossBarViewers().contains(viewer[0]), "полоса Лорда видна за 150 блоков от форта");
+                    viewer[0].discard();
+                    captain.hurt(level.damageSources().genericKill(), Float.MAX_VALUE);
                     stage[0] = 1;
                 }
                 case 1 -> {

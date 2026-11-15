@@ -19,7 +19,7 @@ add('block.lordsoutpost.outpost_gate', 'Решётка ворот аванпос
 add('block.lordsoutpost.quest_board', 'Доска заданий', 'Quest Board')
 add('item.lordsoutpost.lord_standard.desc', 'Установите во дворе захваченного аванпоста, чтобы стать его Лордом.', 'Place it in the yard of a conquered outpost to become its Lord.')
 add('entity.lordsoutpost.fighter', 'Боец аванпоста', 'Outpost Fighter')
-add('entity.lordsoutpost.captain', 'Капитан', 'Captain')
+add('entity.lordsoutpost.captain', 'Лорд мародёров', 'Marauder Lord')
 add('entity.lordsoutpost.worker', 'Житель аванпоста', 'Outpost Resident')
 add('key.categories.lordsoutpost', "Lord's Outpost", "Lord's Outpost")
 add('key.lordsoutpost.map', 'Карта аванпостов', 'Outpost map')
@@ -34,7 +34,7 @@ for k, ru, en in [('steward', 'Управляющий', 'Steward'), ('builder', 
                   ('herder', 'Скотовод', 'Herder'), ('miner', 'Шахтёр', 'Miner'), ('lumberjack', 'Лесоруб', 'Lumberjack'),
                   ('smith', 'Кузнец', 'Smith'), ('mage', 'Придворный Маг', 'Court Mage'), ('caravaneer', 'Караванщик', 'Caravaneer'),
                   ('shieldman', 'Щитовик', 'Shieldman'), ('berserker', 'Берсерк', 'Berserker'), ('archer', 'Лучник', 'Archer'),
-                  ('crossbowman', 'Арбалетчик', 'Crossbowman'), ('captain', 'Капитан', 'Captain')]:
+                  ('crossbowman', 'Арбалетчик', 'Crossbowman'), ('captain', 'Лорд', 'Lord')]:
     add(P + 'role.' + k, ru, en)
 for k, ru, en in [('wood', 'Дерево', 'Wood'), ('stone', 'Камень', 'Stone'), ('iron', 'Железо', 'Iron'), ('food', 'Еда', 'Food'),
                   ('hides', 'Шкуры', 'Hides'), ('gold', 'Казна', 'Treasury'), ('arcane', 'Эссенция', 'Arcane')]:
@@ -108,7 +108,7 @@ add(P + 'chat.founded', '%s поднимает Штандарт: отныне э
 
 # --- Штандарт ---
 add(P + 'standard.already_lord', 'У вас уже есть аванпост. Один Лорд — одно владение.', 'You already own an outpost. One Lord, one domain.')
-add(P + 'standard.not_conquered', 'Сначала победите Капитана этого аванпоста.', "Defeat this outpost's Captain first.")
+add(P + 'standard.not_conquered', 'Сначала победите Лорда мародёров этого аванпоста.', "Defeat this outpost's Marauder Lord first.")
 add(P + 'standard.outside', 'Штандарт ставится во дворе захваченного аванпоста.', 'The Standard must be placed in the yard of a conquered outpost.')
 add(P + 'standard.name_invalid', 'Недопустимое имя.', 'Invalid name.')
 
@@ -143,12 +143,12 @@ add(P + 'msg.caravan.invalid', 'Туда караван не отправить.
 # --- Жители ---
 add(P + 'npc.marauder', 'мародёр, %s', 'marauder, %s')
 add(P + 'npc.raider', 'Налётчик (%s)', 'Raider (%s)')
-add(P + 'npc.captain_bar', 'Капитан %s — %s', 'Captain %s — %s')
+add(P + 'npc.captain_bar', 'Лорд %s — %s', 'Lord %s — %s')
 
 # --- Хроника и оповещения ---
 add(P + 'event.founded', 'Лорд %s основал владение.', 'Lord %s founded the domain.')
 add(P + 'event.abandoned', 'Лорд %s покинул аванпост.', 'Lord %s abandoned the outpost.')
-add(P + 'event.conquered', 'Капитан пал, гарнизон разбежался.', 'The Captain fell and the garrison scattered.')
+add(P + 'event.conquered', 'Лорд мародёров пал, гарнизон разбежался.', 'The Marauder Lord fell and the garrison scattered.')
 add(P + 'event.reclaimed', 'Мародёры вернулись в брошенный форт.', 'Marauders returned to the abandoned fort.')
 add(P + 'event.tier_up', 'Достроен тир %s!', 'Tier %s complete!')
 add(P + 'event.settler', 'Новый житель: %s (%s).', 'New resident: %s (%s).')
@@ -301,7 +301,7 @@ add(P + 'cmd.created', 'Создан аванпост: ', 'Outpost created: ')
 add(P + 'cmd.too_close', 'Слишком близко к другому аванпосту: ', 'Too close to another outpost: ')
 add(P + 'cmd.not_wild', 'Этот аванпост уже не принадлежит мародёрам.', 'This outpost is no longer held by marauders.')
 add(P + 'cmd.not_owned', 'У этого аванпоста нет Лорда.', 'This outpost has no Lord.')
-add(P + 'cmd.captured', 'Гарнизон распущен. Штандарт Лорда выдан.', "Garrison dismissed. Lord's Standard given.")
+add(P + 'cmd.captured', 'Лорд мародёров повержен, гарнизон распущен. Штандарт Лорда выдан.', "Garrison dismissed. Lord's Standard given.")
 add(P + 'cmd.tier_down', 'Понизить тир нельзя.', 'The tier cannot be lowered.')
 add(P + 'cmd.bad_resource', 'Нет такого ресурса.', 'No such resource.')
 add(P + 'cmd.raid', 'Набег начнётся в ближайшие секунды.', 'A raid will start within seconds.')

@@ -23,21 +23,15 @@ jobs:
         run: |
           jar=$(ls /tmp/ef/*.jar | grep -i epic | head -1); echo "JAR $jar"
           mkdir -p /tmp/x && cd /tmp/x && unzip -q -o "$jar"
-          echo "==== classes mentioning mobpatch ===="
-          grep -rl --include=*.class -i "mobpatch" . | head -40
-          for f in $(grep -rl --include=*.class -i "mobpatch" . | head -12); do
-            echo "==== STRINGS $f ===="
-            strings -n 3 "$f" | grep -E '^[a-z_A-Z0-9:/.]+$' | sort -u | tr '\n' ' ' | fold -w 400
-            echo
+          echo "==== reloader classes ===="
+          ls yesman/epicfight/api/data/reloader/ | grep -i mobpatch
+          for c in $(ls yesman/epicfight/api/data/reloader/ | grep -i 'MobPatchReloadListener' | sed 's/.class$//'); do
+            echo "==== JAVAP $c ===="
+            javap -c -p -cp "$jar" "yesman.epicfight.api.data.reloader.$c" | grep -E "ldc|Method .*(get|has|deserialize|parse)|invokestatic|getstatic .*Animations|^  [a-z].*\(" | grep -vE "LineNumber|java/lang/StringBuilder" | sed 's/^ *//' | cut -c1-200
           done
-          echo "==== data/*/epicfight_mobpatch in jar ===="
-          find . -path '*epicfight_mobpatch*' | head -20
-          for f in $(find . -path '*epicfight_mobpatch*' -name '*.json' | head -3); do echo "== $f"; cat "$f"; echo; done
-          echo "==== animation resources (biped combat/living) ===="
-          find . -path '*animmodels/animations/biped*' -name '*.json' | sed 's#.*/animations/##' | sort | tr '\n' ' ' | fold -w 400
+          echo "==== condition classes ===="
+          find yesman/epicfight/data/conditions -name '*.class' | sort | tr '\n' ' '
           echo
-          echo "==== weapon categories ===="
-          javap -cp "$jar" yesman.epicfight.world.capabilities.item.CapabilityItem\$WeaponCategories 2>/dev/null | head -40
-          javap -cp "$jar" yesman.epicfight.world.capabilities.item.CapabilityItem\$Styles 2>/dev/null | head -20
-          echo "==== predicates ===="
-          for c in $(unzip -l "$jar" | awk '{print $4}' | grep -i 'BehaviorPredicate\|CombatBehaviors' | grep class | head -20); do echo "-- $c"; strings -n 3 "$c" | grep -E '^[a-z_]+$' | sort -u | tr '\n' ' '; echo; done
+          for f in $(find yesman/epicfight/data/conditions -maxdepth 1 -name '*Conditions*.class' -o -maxdepth 1 -name '*Registry*.class' | head -5); do echo "-- $f"; javap -c -p -cp "$jar" "$(echo ${f%.class} | tr / .)" | grep -E "ldc" | sed 's/^ *//' | cut -c1-160; done
+          echo "==== entity conditions ===="
+          for f in $(find yesman/epicfight/data/conditions/entity -name '*.class' | head -30); do echo "-- $f"; strings -n 3 "$f" | grep -E '^[a-z_]+$' | sort -u | tr '\n' ' '; echo; done

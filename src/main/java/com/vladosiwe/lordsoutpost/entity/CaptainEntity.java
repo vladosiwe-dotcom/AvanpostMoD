@@ -1,6 +1,7 @@
 package com.vladosiwe.lordsoutpost.entity;
 
 import com.vladosiwe.lordsoutpost.config.OutpostConfig;
+import com.vladosiwe.lordsoutpost.entity.ai.CaptainTacticsGoal;
 import com.vladosiwe.lordsoutpost.outpost.Outpost;
 import com.vladosiwe.lordsoutpost.outpost.Resident;
 import com.vladosiwe.lordsoutpost.registry.ModItems;
@@ -28,12 +29,25 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
- * Капитан — босс дикого аванпоста. Его смерть означает захват форта, а в награду падает Штандарт Лорда.
- * Приёмы открываются с ростом сложности: рывок (2 черепка), боевой клич с подкреплением (3),
- * клыки из земли (4), ярость на исходе сил (5).
+ * Лорд мародёров — босс дикого аванпоста. Его смерть означает захват форта, а в награду падает Штандарт Лорда.
+ *
+ * Ростом он с обычного бойца и здоровьем не перекачан: опасен он тем, что воюет с умом
+ * (см. {@link CaptainTacticsGoal}) — держится за спинами стражи под щитом, бросает её на врага,
+ * отступает и пьёт зелье, когда его теснят. С ростом сложности открываются приёмы: рывок (2 черепка),
+ * боевой клич с подкреплением (3), клыки из земли (4), ярость на исходе сил (5).
+ *
+ * Полоса здоровья видна только тем, кто подошёл к форту, а не всем в радиусе отслеживания сущности.
  */
 public class CaptainEntity extends FighterEntity {
+    /** Дальше этого от стен форта полоса босса не показывается. */
+    private static final int BAR_MARGIN = 12;
+    /** И не дальше этого от самого Лорда (если его вывели за стены). */
+    private static final double BAR_NEAR_CAPTAIN = 32;
+
     private final ServerBossEvent bossBar = new ServerBossEvent(Component.empty(), BossEvent.BossBarColor.RED, BossEvent.BossBarOverlay.NOTCHED_10);
     private int skulls = 1;
     private int leapCooldown = 100;
@@ -43,16 +57,26 @@ public class CaptainEntity extends FighterEntity {
 
     public CaptainEntity(EntityType<? extends CaptainEntity> type, Level level) {
         super(type, level);
-        bossBar.setVisible(false);
         xpReward = 40;
     }
 
     public static AttributeSupplier.Builder attributes() {
         return FighterEntity.attributes()
-                .add(Attributes.MAX_HEALTH, 100)
+                .add(Attributes.MAX_HEALTH, 60)
                 .add(Attributes.ATTACK_DAMAGE, 5)
-                .add(Attributes.KNOCKBACK_RESISTANCE, 0.6)
+                .add(Attributes.KNOCKBACK_RESISTANCE, 0.5)
                 .add(Attributes.FOLLOW_RANGE, 40);
+    }
+
+    /** Здоровье Лорда мародёров: 48 на одном черепке, 120 на пяти (умножается на настройку сервера). */
+    public static double maxHealthFor(int skulls) {
+        return (30 + 18 * skulls) * OutpostConfig.get(OutpostConfig.CAPTAIN_HEALTH, 1.0);
+    }
+
+    @Override
+    protected void registerGoals() {
+        super.registerGoals();
+        goalSelector.addGoal(1, new CaptainTacticsGoal(this));
     }
 
     @Override
@@ -60,16 +84,20 @@ public class CaptainEntity extends FighterEntity {
         skulls = o == null ? 1 : o.difficulty.skulls;
         super.equip(o, r);
         setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(skulls >= 5 ? Items.NETHERITE_AXE : skulls >= 3 ? Items.DIAMOND_SWORD : Items.IRON_SWORD));
-        setItemSlot(EquipmentSlot.OFFHAND, skulls >= 2 ? new ItemStack(Items.SHIELD) : ItemStack.EMPTY);
+        setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
         noDrops();
-        double health = (60 + 40 * skulls) * OutpostConfig.get(OutpostConfig.CAPTAIN_HEALTH, 1.0);
-        getAttribute(Attributes.MAX_HEALTH).setBaseValue(health);
-        getAttribute(Attributes.ATTACK_DAMAGE).setBaseValue(4 + skulls);
-        getAttribute(Attributes.ARMOR).setBaseValue(2 * skulls);
-        getAttribute(Attributes.SCALE).setBaseValue(1.1 + 0.05 * skulls);
+        getAttribute(Attributes.MAX_HEALTH).setBaseValue(maxHealthFor(skulls));
+        getAttribute(Attributes.ATTACK_DAMAGE).setBaseValue(3 + skulls);
+        getAttribute(Attributes.ARMOR).setBaseValue(skulls);
+        // Обычный рост: никакого увеличения модели.
+        getAttribute(Attributes.SCALE).setBaseValue(1.0);
         getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0.31);
         xpReward = 30 + 30 * skulls;
         bossBar.setName(Component.translatable("lordsoutpost.npc.captain_bar", r.name, o == null ? Component.empty() : o.difficulty.label()));
+    }
+
+    public int skulls() {
+        return skulls;
     }
 
     @Override
@@ -81,13 +109,13 @@ public class CaptainEntity extends FighterEntity {
     protected void customServerAiStep() {
         super.customServerAiStep();
         bossBar.setProgress(Mth.clamp(getHealth() / getMaxHealth(), 0f, 1f));
+        if (tickCount % 10 == 0) updateBossBarViewers();
         LivingEntity target = getTarget();
-        // Полоса босса появляется только в бою, а не у каждого, кто проходит мимо форта.
-        bossBar.setVisible(target != null || getHealth() < getMaxHealth());
         if (target == null || !target.isAlive()) return;
         double dist = distanceTo(target);
 
-        if (skulls >= 2 && --leapCooldown <= 0 && dist > 5 && dist < 13 && onGround()) {
+        // Рывок — только когда прикрыться некем: под защитой стражи Лорд сам в драку не лезет.
+        if (skulls >= 2 && --leapCooldown <= 0 && dist > 5 && dist < 13 && onGround() && CaptainTacticsGoal.guards(this).size() < 2) {
             leapCooldown = 140;
             Vec3 dir = target.position().subtract(position()).normalize();
             setDeltaMovement(dir.x * 1.1, 0.45, dir.z * 1.1);
@@ -98,18 +126,32 @@ public class CaptainEntity extends FighterEntity {
             cried = true;
             warCry();
         }
-        if (skulls >= 4 && --fangsCooldown <= 0 && dist < 14) {
+        if (skulls >= 4 && --fangsCooldown <= 0 && dist < 14 && hasLineOfSight(target)) {
             fangsCooldown = 180;
             fangs(target);
         }
-        if (skulls >= 5 && !enraged && getHealth() < getMaxHealth() * 0.35f) {
+        if (skulls >= 5 && !enraged && getHealth() < getMaxHealth() * 0.3f) {
             enraged = true;
-            addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 20 * 600, 1));
-            addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 20 * 600, 0));
-            addEffect(new MobEffectInstance(MobEffects.REGENERATION, 20 * 20, 1));
+            addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 20 * 60, 1));
+            addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 20 * 60, 0));
             playSound(SoundEvents.WITHER_SPAWN, 0.6f, 1.4f);
             if (level() instanceof ServerLevel sl) sl.sendParticles(ParticleTypes.ANGRY_VILLAGER, getX(), getY() + 2, getZ(), 12, 0.6, 0.4, 0.6, 0);
         }
+    }
+
+    /** Полосу видят игроки у стен форта или рядом с самим Лордом. */
+    private void updateBossBarViewers() {
+        if (!(level() instanceof ServerLevel sl)) return;
+        Outpost o = outpost();
+        List<ServerPlayer> near = new ArrayList<>();
+        for (ServerPlayer p : sl.players()) {
+            if (!p.isAlive() || p.isSpectator()) continue;
+            boolean atFort = o != null && o.insideHorizontally(p.getBlockX(), p.getBlockZ(), o.reach() + BAR_MARGIN)
+                    && Math.abs(p.getY() - o.center.getY()) < 40;
+            if (atFort || distanceToSqr(p) < BAR_NEAR_CAPTAIN * BAR_NEAR_CAPTAIN) near.add(p);
+        }
+        for (ServerPlayer p : new ArrayList<>(bossBar.getPlayers())) if (!near.contains(p)) bossBar.removePlayer(p);
+        for (ServerPlayer p : near) bossBar.addPlayer(p);
     }
 
     private void warCry() {
@@ -117,6 +159,7 @@ public class CaptainEntity extends FighterEntity {
         for (FighterEntity ally : level().getEntitiesOfClass(FighterEntity.class, getBoundingBox().inflate(24), this::isFriend)) {
             ally.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 20 * 25, 0));
             ally.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 20 * 25, 0));
+            if (ally != this && getTarget() != null) ally.setTarget(getTarget());
         }
         if (level() instanceof ServerLevel sl) {
             sl.sendParticles(ParticleTypes.CLOUD, getX(), getY() + 1, getZ(), 30, 1.5, 0.5, 1.5, 0.05);
@@ -146,12 +189,6 @@ public class CaptainEntity extends FighterEntity {
     }
 
     @Override
-    public void startSeenByPlayer(ServerPlayer player) {
-        super.startSeenByPlayer(player);
-        bossBar.addPlayer(player);
-    }
-
-    @Override
     public void stopSeenByPlayer(ServerPlayer player) {
         super.stopSeenByPlayer(player);
         bossBar.removePlayer(player);
@@ -161,5 +198,10 @@ public class CaptainEntity extends FighterEntity {
     public void remove(RemovalReason reason) {
         bossBar.removeAllPlayers();
         super.remove(reason);
+    }
+
+    /** Для тестов: кто сейчас видит полосу. */
+    public java.util.Collection<ServerPlayer> bossBarViewers() {
+        return bossBar.getPlayers();
     }
 }
