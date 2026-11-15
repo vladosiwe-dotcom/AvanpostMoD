@@ -1,0 +1,19 @@
+{
+  "variants": {
+    "facing=south": {
+      "model": "lordsoutpost:block/quest_board"
+    },
+    "facing=west": {
+      "model": "lordsoutpost:block/quest_board",
+      "y": 90
+    },
+    "facing=north": {
+      "model": "lordsoutpost:block/quest_board",
+      "y": 180
+    },
+    "facing=east": {
+      "model": "lordsoutpost:block/quest_board",
+      "y": 270
+    }
+  }
+}
