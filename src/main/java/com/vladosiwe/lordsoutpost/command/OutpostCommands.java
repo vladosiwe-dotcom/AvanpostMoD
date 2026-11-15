@@ -155,12 +155,22 @@ public final class OutpostCommands {
                 .append(" fighters=").append(o.fighters()).append(" steps=").append(o.steps).append('/').append(o.nextPlan().size())
                 .append(" placed=").append(o.placed).append(" placedTier=").append(o.placedTier).append(" online=").append(o.online)
                 .append(" law=").append(o.law.id).append(" caravans=").append(o.caravans.size()).append(" quests=").append(o.quests.size())
+                .append(" stalled=").append(o.stalledOn).append(" roles=").append(roleCounts(o))
                 .append(" raid=").append(o.raid != null).append(" mine=").append(o.mineCursor).append(" delivered=").append(o.depositedItems)
                 .append(" pen=").append(o.penAnimals).append("@").append(o.marker(com.vladosiwe.lordsoutpost.blueprint.Marker.PEN).toShortString())
                 .append(" store@").append(o.marker(com.vladosiwe.lordsoutpost.blueprint.Marker.STORE_INSIDE).toShortString())
                 .append(" shaft@").append(o.marker(com.vladosiwe.lordsoutpost.blueprint.Marker.MINE_SHAFT).toShortString());
         c.getSource().sendSuccess(() -> Component.literal(sb.toString()), false);
         return 1;
+    }
+
+    private static String roleCounts(Outpost o) {
+        StringBuilder sb = new StringBuilder();
+        for (com.vladosiwe.lordsoutpost.outpost.Role r : com.vladosiwe.lordsoutpost.outpost.Role.values()) {
+            int n = o.count(r);
+            if (n > 0) sb.append(r.id).append(':').append(n).append(',');
+        }
+        return sb.toString();
     }
 
     private static int reveal(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {

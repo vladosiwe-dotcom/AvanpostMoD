@@ -32,6 +32,10 @@ public final class Simulation {
     public static final double FOOD_PER_DAY = 6;
     public static final double BUILDER_STEPS_PER_DAY = 600;
     private static final double MAX_BUILD_CREDIT = 40;
+    /** Добыча в игровой день на работника. Камня нужно больше всего: каменные стены, башни и донжон. */
+    public static final double WOOD_PER_DAY = 450;
+    public static final double STONE_PER_DAY = 650;
+    private static final double BUILDER_GATHER_PER_DAY = 200;
 
     private Simulation() {}
 
@@ -73,9 +77,14 @@ public final class Simulation {
 
         // Жители, которые сейчас работают руками в мире (игрок рядом), добывают настоящие предметы и несут их на склад:
         // их выработка здесь не считается, иначе ресурс засчитался бы дважды.
-        o.add(Resource.WOOD, virtualWorkers(o, Role.LUMBERJACK, now) * 320 * prod * (o.boosted(Resource.WOOD, now) ? boost : 1));
+        // Стройка упёрлась в дерево или камень: строители без дела сами идут в лес и каменоломню.
+        Resource lacking = o.stalledOn;
+        if (!o.online && (lacking == Resource.WOOD || lacking == Resource.STONE)) {
+            o.add(lacking, o.activeCount(Role.BUILDER) * BUILDER_GATHER_PER_DAY * prod);
+        }
+        o.add(Resource.WOOD, virtualWorkers(o, Role.LUMBERJACK, now) * WOOD_PER_DAY * prod * (o.boosted(Resource.WOOD, now) ? boost : 1));
         int miners = virtualWorkers(o, Role.MINER, now);
-        o.add(Resource.STONE, miners * 260 * prod * (o.boosted(Resource.STONE, now) ? boost : 1));
+        o.add(Resource.STONE, miners * STONE_PER_DAY * prod * (o.boosted(Resource.STONE, now) ? boost : 1));
         // Железной руды в штреке мало, поэтому шахтёр в мире всё равно даёт половину железа «из промывки».
         double ironMiners = miners + 0.5 * (o.activeCount(Role.MINER) - miners);
         o.add(Resource.IRON, ironMiners * 24 * prod * (o.boosted(Resource.IRON, now) ? boost : 1));
@@ -304,6 +313,9 @@ public final class Simulation {
         for (Role role : PRIORITY) {
             int have = role == Role.SHIELDMAN ? o.fighters() : o.count(role);
             int deficit = desired(o, role) - have;
+            // Стройка стоит без ресурса: следующий поселенец — тот, кто его добывает.
+            if (o.stalledOn == Resource.STONE && role == Role.MINER && have < o.tier + 2) deficit += 2;
+            if (o.stalledOn == Resource.WOOD && role == Role.LUMBERJACK && have < o.tier + 2) deficit += 2;
             if (deficit > bestDeficit) {
                 bestDeficit = deficit;
                 best = role;
