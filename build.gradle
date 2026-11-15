@@ -21,6 +21,10 @@ neoForge {
         client {
             client()
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            // Для проверки: ./gradlew runClient -PquickPlay=localhost:25565 сразу подключает клиент к серверу.
+            if (project.hasProperty('quickPlay')) {
+                programArguments.addAll('--quickPlayMultiplayer', project.property('quickPlay').toString())
+            }
         }
         server {
             server()

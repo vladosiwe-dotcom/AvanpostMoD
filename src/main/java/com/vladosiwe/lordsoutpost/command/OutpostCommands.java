@@ -42,7 +42,7 @@ import java.util.Optional;
 
 /**
  * Команды администратора (уровень прав 2) для проверки и настройки:
- * /outpost nearest | list | info | create | capture | tier | sim | stock | raid | remove | reveal
+ * /outpost nearest | list | info | create | capture | found | tier | sim | stock | raid | remove | reveal
  */
 public final class OutpostCommands {
     private OutpostCommands() {}
@@ -63,6 +63,8 @@ public final class OutpostCommands {
                                                 .suggests((c, b) -> SharedSuggestionProvider.suggest(Arrays.stream(Palette.VALUES).map(p -> p.id), b))
                                                 .executes(c -> create(c, StringArgumentType.getString(c, "layout"), StringArgumentType.getString(c, "palette")))))))
                 .then(Commands.literal("capture").executes(OutpostCommands::capture))
+                .then(Commands.literal("found").executes(c -> found(c, null))
+                        .then(Commands.argument("name", StringArgumentType.greedyString()).executes(c -> found(c, StringArgumentType.getString(c, "name")))))
                 .then(Commands.literal("tier").then(Commands.argument("tier", IntegerArgumentType.integer(1, 3)).executes(OutpostCommands::tier)))
                 .then(Commands.literal("sim").then(Commands.argument("days", DoubleArgumentType.doubleArg(0.01, 100)).executes(OutpostCommands::sim)))
                 .then(Commands.literal("stock")
@@ -195,6 +197,27 @@ public final class OutpostCommands {
         ItemStack standard = new ItemStack(ModItems.LORD_STANDARD.get());
         if (!player.getInventory().add(standard)) player.drop(standard, false);
         c.getSource().sendSuccess(() -> Component.translatable("lordsoutpost.cmd.captured"), true);
+        return 1;
+    }
+
+    /** Сделать игрока Лордом аванпоста, в котором он стоит: гарнизон распускается, Штандарт ставится у ног. */
+    private static int found(CommandContext<CommandSourceStack> c, String name) throws CommandSyntaxException {
+        ServerPlayer player = c.getSource().getPlayerOrException();
+        Outpost o = here(c);
+        if (o == null) return 0;
+        ServerLevel level = overworld(c);
+        OutpostSavedData data = OutpostSavedData.get(level);
+        if (o.state == OutpostState.WILD) OutpostManager.conquer(data, o, level.getGameTime());
+        BlockPos pos = o.insideWalls(player.blockPosition()) ? player.blockPosition() : o.marker(com.vladosiwe.lordsoutpost.blueprint.Marker.YARD);
+        OutpostManager.FoundResult check = OutpostManager.canFound(data, o, player.getUUID(), pos);
+        if (check != OutpostManager.FoundResult.OK) {
+            c.getSource().sendFailure(Component.translatable("lordsoutpost.standard." + check.name().toLowerCase(java.util.Locale.ROOT)));
+            return 0;
+        }
+        if (level.isLoaded(pos)) level.setBlockAndUpdate(pos, com.vladosiwe.lordsoutpost.registry.ModBlocks.LORD_STANDARD.get().defaultBlockState());
+        com.vladosiwe.lordsoutpost.server.Captures.found(level, data, o, player, pos);
+        if (name != null && OutpostManager.validName(name)) o.name = name.trim();
+        c.getSource().sendSuccess(() -> describe(o), true);
         return 1;
     }
 

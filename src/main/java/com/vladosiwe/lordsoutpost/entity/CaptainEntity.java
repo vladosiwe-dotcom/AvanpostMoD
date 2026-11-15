@@ -43,6 +43,7 @@ public class CaptainEntity extends FighterEntity {
 
     public CaptainEntity(EntityType<? extends CaptainEntity> type, Level level) {
         super(type, level);
+        bossBar.setVisible(false);
         xpReward = 40;
     }
 
@@ -81,6 +82,8 @@ public class CaptainEntity extends FighterEntity {
         super.customServerAiStep();
         bossBar.setProgress(Mth.clamp(getHealth() / getMaxHealth(), 0f, 1f));
         LivingEntity target = getTarget();
+        // Полоса босса появляется только в бою, а не у каждого, кто проходит мимо форта.
+        bossBar.setVisible(target != null || getHealth() < getMaxHealth());
         if (target == null || !target.isAlive()) return;
         double dist = distanceTo(target);
 
