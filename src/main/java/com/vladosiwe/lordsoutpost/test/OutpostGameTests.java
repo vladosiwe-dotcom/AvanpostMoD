@@ -69,6 +69,20 @@ public final class OutpostGameTests {
 
     private OutpostGameTests() {}
 
+    /** Старые hunter/herder записи сохранений загружаются как одна профессия «Скотовод». */
+    @GameTest(template = "empty")
+    public static void legacyHunterAndHerderRolesMigrateToSkotovod(GameTestHelper h) {
+        h.assertTrue(Role.byId("hunter") == Role.SKOTOVOD, "старый hunter не мигрировал в Скотовода");
+        h.assertTrue(Role.byId("herder") == Role.SKOTOVOD, "старый herder не мигрировал в Скотовода");
+        h.assertTrue(Role.byId("herder").label().getString().equals("Скотовод")
+                        || Role.byId("herder").id.equals("herder"),
+                "у объединённой роли потерялся идентификатор локализации");
+        int count = 0;
+        for (Role r : Role.VALUES) if (r == Role.SKOTOVOD) count++;
+        h.assertTrue(count == 1, "в списке профессий должно быть ровно одно вхождение Скотовода");
+        h.succeed();
+    }
+
     // ============================== Чертежи ==============================
 
     /** Каждая планировка в каждой палитре даёт три тира со всеми рабочими точками. */
