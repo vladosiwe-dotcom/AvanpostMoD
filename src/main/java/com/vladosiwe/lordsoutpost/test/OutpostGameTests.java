@@ -10,6 +10,7 @@ import com.vladosiwe.lordsoutpost.blueprint.Palette;
 import com.vladosiwe.lordsoutpost.blueprint.Step;
 import com.vladosiwe.lordsoutpost.data.ALifeSimulationManager;
 import com.vladosiwe.lordsoutpost.data.Caravans;
+import com.vladosiwe.lordsoutpost.data.ChunkReconciliation;
 import com.vladosiwe.lordsoutpost.data.Diplomacy;
 import com.vladosiwe.lordsoutpost.data.OutpostSavedData;
 import com.vladosiwe.lordsoutpost.data.QuestBoard;
