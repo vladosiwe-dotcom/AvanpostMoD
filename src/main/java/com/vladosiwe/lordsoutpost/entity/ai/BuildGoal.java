@@ -161,6 +161,7 @@ public class BuildGoal extends Goal {
         claim = -1;
         workPosition = null;
         cooldown = retryTicks;
+        mob.getNavigation().stop();
     }
 
     @Override
