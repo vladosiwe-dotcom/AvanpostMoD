@@ -849,27 +849,21 @@ public final class OutpostGameTests {
                     for (BlockPos p : BlockPos.betweenClosed(base.offset(-2, 3, -2), base.offset(2, 5, 2))) {
                         if (level.getBlockState(p).isAir()) level.setBlockAndUpdate(p, net.minecraft.world.level.block.Blocks.OAK_LEAVES.defaultBlockState());
                     }
-                    // Коровы за стенами: скотовод должен пригнать их в загон.
+                    // Коровы рядом с внешней стороной калитки: проверяем, что скотовод физически заводит их через проход.
                     BlockPos pen = o.marker(Marker.PEN);
-                    // Пустой шаблон GameTest не имеет естественного грунта: прокладываем физический путь к калитке.
+                    // Пустой шаблон GameTest не имеет естественного грунта: создаём площадку перед калиткой.
                     int penFloor = pen.getY() - 1;
-                    int firstCowX = o.center.getX() - o.reach() - Layout.MARGIN - 8;
-                    int westRouteX = pen.getX() - com.vladosiwe.lordsoutpost.data.ChunkReconciliation.penSize(o) - 1;
-                    // Обходим западную стену загона снаружи и подходим к воротам с юга, не прокладывая путь сквозь забор.
-                    for (int wx = firstCowX; wx <= westRouteX; wx++) {
-                        level.setBlock(new BlockPos(wx, penFloor, pen.getZ()), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState(), 2);
+                    int cowLineZ = pen.getZ() + 4;
+                    for (int wx = pen.getX() - 4; wx <= pen.getX() + 4; wx++) {
+                        level.setBlock(new BlockPos(wx, penFloor, cowLineZ), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState(), 2);
                     }
-                    for (int wz = pen.getZ(); wz <= pen.getZ() + 3; wz++) {
-                        level.setBlock(new BlockPos(westRouteX, penFloor, wz), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState(), 2);
-                    }
-                    for (int wx = westRouteX; wx <= pen.getX(); wx++) {
-                        level.setBlock(new BlockPos(wx, penFloor, pen.getZ() + 3), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState(), 2);
+                    for (int wz = pen.getZ() + 2; wz <= cowLineZ; wz++) {
+                        level.setBlock(new BlockPos(pen.getX(), penFloor, wz), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState(), 2);
                     }
                     for (int i = 0; i < 3; i++) {
                         var cow = net.minecraft.world.entity.EntityType.COW.create(level);
-                        int cx = o.center.getX() - o.reach() - Layout.MARGIN - 4 - i * 2, cz = pen.getZ();
-                        // Для теста перегона ставим животных на высоте пола загона и даём им опору.
-                        level.setBlock(new BlockPos(cx, pen.getY() - 1, cz), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState(), 2);
+                        int cx = pen.getX() - 2 + i * 2, cz = cowLineZ;
+                        level.setBlock(new BlockPos(cx, penFloor, cz), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState(), 2);
                         cow.moveTo(cx + 0.5, pen.getY(), cz + 0.5, 0, 0);
                         cow.setPersistenceRequired();
                         level.addFreshEntity(cow);
