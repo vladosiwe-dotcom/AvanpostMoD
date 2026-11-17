@@ -933,6 +933,9 @@ public final class OutpostGameTests {
                     int logsLeft = 0;
                     for (BlockPos p : treeLogs) if (level.getBlockState(p).is(net.minecraft.tags.BlockTags.LOGS)) logsLeft++;
                     boolean litterGone = litter.stream().noneMatch(net.minecraft.world.entity.Entity::isAlive);
+                    boolean replanted = !treeLogs.isEmpty() && treeLogs.stream()
+                            .filter(p -> p.getY() == treeLogs.get(0).getY())
+                            .anyMatch(p -> level.getBlockState(p).getBlock() == net.minecraft.world.level.block.Blocks.OAK_SAPLING);
                     if ((h.getTick() - mark[0]) % 200 == 0) {
                         LordsOutpost.LOGGER.info("Работа жителей: тик {}, брёвен осталось {}, мусор подобран {}, донесено до склада {}, дерево {}",
                                 h.getTick() - mark[0], logsLeft, litterGone, o.depositedItems, o.claimedTrees);
@@ -946,7 +949,7 @@ public final class OutpostGameTests {
                     boolean minerWorked = level.getEntitiesOfClass(WorkerEntity.class, area,
                             w -> w.outpostId() == o.id && w.role() == Role.MINER && w.resident() != null && w.resident().miningXp > 0).size() > 0;
                     if ((h.getTick() - mark[0]) % 200 == 0) LordsOutpost.LOGGER.info("Работа жителей: в загоне {}, шахтёр добыл блоки {}", penned, minerWorked);
-                    if (logsLeft > 0 || !litterGone || o.depositedItems < 24 + 5 || maxPenned[0] < 3 || !minerWorked) return;
+                    if (logsLeft > 0 || !replanted || !litterGone || o.depositedItems < 24 + 5 || maxPenned[0] < 3 || !minerWorked) return;
                     // Склад: бочки отражают запас.
                     var barrels = com.vladosiwe.lordsoutpost.data.Storehouse.barrels(level, o);
                     h.assertTrue(!barrels.isEmpty(), "у склада нет бочек");
@@ -956,8 +959,8 @@ public final class OutpostGameTests {
                         h.assertTrue(diff < 10 || have.get(r) > 0, "бочки склада не совпадают с запасом: " + r + " " + have.get(r) + " / " + o.stock(r));
                     }
                     BlockPos sapling = treeLogs.get(0);
-                    LordsOutpost.LOGGER.info("Работа жителей: дерево свалено, саженец {}, мусор подобран, шахтёр получил опыт, донесено {}, максимум в загоне {}, склад {}",
-                            level.getBlockState(sapling).getBlock(), o.depositedItems, maxPenned[0], have);
+                    LordsOutpost.LOGGER.info("Работа жителей: дерево свалено и пересажено, мусор подобран, шахтёр получил опыт, донесено {}, максимум в загоне {}, склад {}",
+                            o.depositedItems, maxPenned[0], have);
                     OutpostManager.abandon(data, o, level.getGameTime());
                     data.remove(o);
                     for (var npc : level.getEntitiesOfClass(OutpostNpc.class, area)) npc.discard();
