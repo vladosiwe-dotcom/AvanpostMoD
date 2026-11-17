@@ -173,6 +173,7 @@ public class BuildGoal extends Goal {
                             || !level.getBlockState(feet.above()).getCollisionShape(level, feet.above()).isEmpty()) continue;
                     BlockPos floor = feet.below();
                     if (!level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP)) continue;
+                    if (!level.getEntitiesOfClass(WorkerEntity.class, new net.minecraft.world.phys.AABB(feet), other -> other != mob).isEmpty()) continue;
                     if (reservedByAnotherBuilder(level, o, feet)) continue;
 
                     double eyeY = feet.getY() + mob.getEyeHeight();
