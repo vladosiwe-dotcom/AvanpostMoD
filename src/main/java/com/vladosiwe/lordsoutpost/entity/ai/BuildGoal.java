@@ -108,7 +108,7 @@ public class BuildGoal extends Goal {
 
         if (ChunkReconciliation.clearNaturalObstruction(level, o, claim, mob)) {
             workPosition = null;
-            timeout = 160;
+            timeout = 200;
             return;
         }
         mob.swing(InteractionHand.MAIN_HAND);
