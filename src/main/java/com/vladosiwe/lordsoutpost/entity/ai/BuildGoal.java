@@ -140,13 +140,12 @@ public class BuildGoal extends Goal {
                     double eyeY = feet.getY() + mob.getEyeHeight();
                     double rx = tx - (feet.getX() + 0.5), ry = ty - eyeY, rz = tz - (feet.getZ() + 0.5);
                     if (rx * rx + ry * ry + rz * rz > 4.0 * 4.0) continue;
+                    double distance = mob.distanceToSqr(feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5);
+                    if (distance >= bestDistance) continue;
                     var path = mob.getNavigation().createPath(feet, 0);
                     if (path == null || !path.canReach()) continue;
-                    double distance = mob.distanceToSqr(feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5);
-                    if (distance < bestDistance) {
-                        bestDistance = distance;
-                        best = feet.immutable();
-                    }
+                    bestDistance = distance;
+                    best = feet.immutable();
                 }
             }
         }
