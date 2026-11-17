@@ -429,7 +429,8 @@ public class WorkGoal extends Goal {
         List<BlockPos> found = new ArrayList<>();
         queue.add(base);
         seen.add(base);
-        while (!queue.isEmpty() && found.size() < 64) {
+        // Крупные 2×2 и джунглевые деревья могут содержать заметно больше 64 брёвен.
+        while (!queue.isEmpty() && found.size() < 256) {
             BlockPos p = queue.poll();
             if (!level.getBlockState(p).is(BlockTags.LOGS)) continue;
             found.add(p);
