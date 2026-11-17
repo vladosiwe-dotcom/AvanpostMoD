@@ -195,6 +195,7 @@ public class WorkGoal extends Goal {
                 if (go(o, o.marker(Marker.STORE_INSIDE), 1.8, 500)) {
                     mob.swing(InteractionHand.MAIN_HAND);
                     Storehouse.deposit(level, o, mob.inventory);
+                    OutpostSavedData.get(level).setDirty();
                     level.playSound(null, mob.blockPosition(), SoundEvents.BARREL_CLOSE, SoundSource.NEUTRAL, 0.6f, 1.0f);
                     phase = Phase.PAUSE;
                     timer = 20;
@@ -591,6 +592,8 @@ public class WorkGoal extends Goal {
             level.destroyBlock(p, false, mob);
             r.miningXp++;
             r.lastRealWork = now;
+            // Записываем прогресс шахтёра и курс штрека в SavedData, а не ждём следующего макроцикла.
+            OutpostSavedData.get(level).setDirty();
         }
         if (c.torch && level.getBlockState(lower).isAir() && level.getBlockState(lower.below()).isFaceSturdy(level, lower.below(), Direction.UP)) {
             level.setBlockAndUpdate(lower, Blocks.TORCH.defaultBlockState());
