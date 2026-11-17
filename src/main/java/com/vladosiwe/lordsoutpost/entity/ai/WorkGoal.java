@@ -91,6 +91,7 @@ public class WorkGoal extends Goal {
     /** Скотовод чередует животноводство и охоту, чтобы одно направление не вытесняло другое. */
     private boolean skotovodHuntNext;
     private boolean skotovodHunting;
+    private boolean skotovodScheduleInitialized;
     private int huntPoint = -1;
     private int emptyPoints;
 
@@ -228,6 +229,11 @@ public class WorkGoal extends Goal {
             return;
         }
         Role role = r.role;
+        if (role == Role.SKOTOVOD && !skotovodScheduleInitialized) {
+            // Разводим работников по разным направлениям и сохраняем одинаковый порядок после пересоздания сущности.
+            skotovodHuntNext = (r.id.getLeastSignificantBits() & 1L) != 0L;
+            skotovodScheduleInitialized = true;
+        }
         boolean physical = role == Role.LUMBERJACK || role == Role.MINER || role == Role.SKOTOVOD;
         if (physical && now >= noJobUntil) {
             boolean found = switch (role) {
