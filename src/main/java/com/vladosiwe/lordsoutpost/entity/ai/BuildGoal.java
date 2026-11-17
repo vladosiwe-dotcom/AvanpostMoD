@@ -110,7 +110,8 @@ public class BuildGoal extends Goal {
                 mob.getNavigation().stop();
                 return;
             }
-            if (mob.getNavigation().isDone() || mob.tickCount % 20 == 0) {
+            Path path = mob.getNavigation().getPath();
+            if (path == null || path.isDone() || !workPosition.equals(path.getTarget())) {
                 mob.getNavigation().moveTo(wx, wy, wz, 1.0);
             }
             return;
@@ -189,7 +190,7 @@ public class BuildGoal extends Goal {
     }
 
     public String debugStatus() {
-        return "BuildGoal{idx=" + claim + ",target=" + target.toShortString()
+        return "BuildGoal{pos=" + mob.blockPosition().toShortString() + ",idx=" + claim + ",target=" + target.toShortString()
                 + ",block=" + mob.level().getBlockState(target)
                 + ",work=" + (workPosition == null ? "-" : workPosition.toShortString())
                 + ",timeout=" + timeout + ",cooldown=" + cooldown + ",state=" + lastResult + "}";
