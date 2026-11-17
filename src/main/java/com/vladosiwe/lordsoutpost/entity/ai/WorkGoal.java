@@ -515,7 +515,7 @@ public class WorkGoal extends Goal {
             int idx = o.mineCursor;
             int target = reachable(level, cols, idx, 12);
             if (target == idx) {
-                o.mineCursor++;
+                // Курсор сдвигается только после завершения столбца: сон/выгрузка не должны пропускать недокопанный блок.
                 redigTries = 0;
             } else if (target >= 0) {
                 if (target == redigColumn && ++redigTries > 3) {
@@ -600,6 +600,10 @@ public class WorkGoal extends Goal {
         }
         if (c.torch && level.getBlockState(lower).isAir() && level.getBlockState(lower.below()).isFaceSturdy(level, lower.below(), Direction.UP)) {
             level.setBlockAndUpdate(lower, Blocks.TORCH.defaultBlockState());
+        }
+        if (column == o.mineCursor) {
+            o.mineCursor++;
+            OutpostSavedData.get(level).setDirty();
         }
         if (mob.cargoReadyToDeposit()) return true;
         // Следующий столбец — сразу, не поднимаясь наверх; шахтёр работает до 75% ноши или конца штрека.
