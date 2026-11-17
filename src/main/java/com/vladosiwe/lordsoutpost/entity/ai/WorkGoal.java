@@ -401,7 +401,10 @@ public class WorkGoal extends Goal {
         BlockPos log = logs.pollFirst();
         BlockState state = level.getBlockState(log);
         if (state.is(BlockTags.LOGS)) {
-            for (ItemStack drop : Block.getDrops(state, level, log, null, mob, AXE)) mob.collect(drop);
+            for (ItemStack drop : Block.getDrops(state, level, log, null, mob, AXE)) {
+                ItemStack left = mob.collect(drop);
+                if (!left.isEmpty()) mob.spawnAtLocation(left);
+            }
             level.destroyBlock(log, false, mob);
             r.lastRealWork = now;
         }
@@ -578,7 +581,10 @@ public class WorkGoal extends Goal {
                 continue;
             }
             if (s.isAir() || s.getDestroySpeed(level, p) < 0 || o.design().cells.containsKey(p.subtract(o.center))) continue;
-            for (ItemStack drop : Block.getDrops(s, level, p, level.getBlockEntity(p), mob, PICKAXE)) mob.collect(drop);
+            for (ItemStack drop : Block.getDrops(s, level, p, level.getBlockEntity(p), mob, PICKAXE)) {
+                ItemStack left = mob.collect(drop);
+                if (!left.isEmpty()) mob.spawnAtLocation(left);
+            }
             level.destroyBlock(p, false, mob);
             r.lastRealWork = now;
         }
