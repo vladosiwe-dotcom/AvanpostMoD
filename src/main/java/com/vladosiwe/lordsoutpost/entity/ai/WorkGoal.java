@@ -506,13 +506,27 @@ public class WorkGoal extends Goal {
     }
 
     private int redigColumn = -1, redigTries;
+    private List<Column> cachedMinePlan = List.of();
+    @Nullable private Outpost cachedMineOutpost;
+    private int cachedMineMinY = Integer.MIN_VALUE;
+
+    /** План штрека неизменен для одного дизайна форта; не пересоздаём сотни колонн каждый тик. */
+    private List<Column> minePlan(ServerLevel level, Outpost o) {
+        int minY = level.getMinBuildHeight();
+        if (cachedMineOutpost != o || cachedMineMinY != minY || cachedMinePlan.isEmpty()) {
+            cachedMinePlan = tunnel(o, minY);
+            cachedMineOutpost = o;
+            cachedMineMinY = minY;
+        }
+        return cachedMinePlan;
+    }
 
     /**
      * Следующий столбец штрека. Если клетка, с которой его надо копать, завалена (осыпался гравий, клетку обошли),
      * сначала заново расчищается она: штрек не обрывается из-за одного завала.
      */
     private boolean claimColumn(ServerLevel level, Outpost o) {
-        List<Column> cols = tunnel(o, level.getMinBuildHeight());
+        List<Column> cols = minePlan(level, o);
         while (o.mineCursor < cols.size()) {
             int idx = o.mineCursor;
             int target = reachable(level, cols, idx, 12);
@@ -559,7 +573,7 @@ public class WorkGoal extends Goal {
 
     private boolean mine(ServerLevel level, Outpost o, Resident r, long now) {
         mob.refreshMinerTool(o, r);
-        List<Column> cols = tunnel(o, level.getMinBuildHeight());
+        List<Column> cols = minePlan(level, o);
         if (column < 0 || column >= cols.size()) return true;
         Column c = cols.get(column);
         if (timer < 0) {
