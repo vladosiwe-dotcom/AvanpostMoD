@@ -136,6 +136,11 @@ public final class OutpostGameTests {
                 "строитель должен распознавать чужую постройку как препятствие");
         h.assertTrue(level.getBlockState(target).is(net.minecraft.world.level.block.Blocks.CHEST),
                 "проверка не должна разрушать сундук игрока");
+        level.setBlockAndUpdate(target, net.minecraft.world.level.block.Blocks.WHEAT.defaultBlockState());
+        h.assertTrue(com.vladosiwe.lordsoutpost.data.ChunkReconciliation.blockedByForeignBlock(level, o, index),
+                "строитель не должен считать посевы естественным мусором");
+        h.assertTrue(level.getBlockState(target).is(net.minecraft.world.level.block.Blocks.WHEAT),
+                "посевы должны оставаться на месте");
         builder.discard();
         for (int cx = -2; cx <= 2; cx++)
             for (int cz = -2; cz <= 2; cz++) level.setChunkForced((center.getX() >> 4) + cx, (center.getZ() >> 4) + cz, false);
