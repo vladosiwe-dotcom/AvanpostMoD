@@ -89,8 +89,9 @@ public class BuildGoal extends Goal {
             return;
         }
 
+        if (workPosition != null && reservedByAnotherBuilder(level, o, workPosition)) workPosition = null;
         if (workPosition == null || !validWorkPosition(level, workPosition)) {
-            workPosition = findWorkPosition(level, target);
+            workPosition = findWorkPosition(level, o, target);
         }
         if (workPosition == null) {
             lastResult = "no-reachable-work-position";
@@ -146,14 +147,15 @@ public class BuildGoal extends Goal {
         return claim >= 0 && workPosition != null && workPosition.equals(pos);
     }
 
-    private boolean reservedByAnotherBuilder(ServerLevel level, BlockPos feet) {
-        return !level.getEntitiesOfClass(WorkerEntity.class, new net.minecraft.world.phys.AABB(feet).inflate(1.25),
-                other -> other != mob && other.reservesBuildPosition(feet)).isEmpty();
+    private boolean reservedByAnotherBuilder(ServerLevel level, Outpost o, BlockPos feet) {
+        return !level.getEntitiesOfClass(WorkerEntity.class, new net.minecraft.world.phys.AABB(o.center).inflate(128, 64, 128),
+                other -> other != mob && other.outpostId() == o.id
+                        && other.getUUID().compareTo(mob.getUUID()) < 0 && other.reservesBuildPosition(feet)).isEmpty();
     }
 
     /** Ищет устойчивую соседнюю клетку с воздухом для тела и свободным пространством над головой. */
     @Nullable
-    private BlockPos findWorkPosition(ServerLevel level, BlockPos block) {
+    private BlockPos findWorkPosition(ServerLevel level, Outpost o, BlockPos block) {
         BlockPos best = null;
         double bestDistance = Double.MAX_VALUE;
         double tx = block.getX() + 0.5, ty = block.getY() + 0.5, tz = block.getZ() + 0.5;
@@ -169,7 +171,7 @@ public class BuildGoal extends Goal {
                             || !level.getBlockState(feet.above()).getCollisionShape(level, feet.above()).isEmpty()) continue;
                     BlockPos floor = feet.below();
                     if (!level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP)) continue;
-                    if (reservedByAnotherBuilder(level, feet)) continue;
+                    if (reservedByAnotherBuilder(level, o, feet)) continue;
 
                     double eyeY = feet.getY() + mob.getEyeHeight();
                     double rx = tx - (feet.getX() + 0.5), ry = ty - eyeY, rz = tz - (feet.getZ() + 0.5);
