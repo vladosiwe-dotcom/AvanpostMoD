@@ -84,7 +84,8 @@ public class BuildGoal extends Goal {
                 return;
             }
             if (mob.getNavigation().isDone() || mob.tickCount % 20 == 0) {
-                double workY = tooFarVertically ? target.getY() + 1.0 : o.center.getY() + 1.0;
+                double workY = Math.abs(target.getY() - o.center.getY()) > 5.0
+                        ? target.getY() + 1.0 : o.center.getY() + 1.0;
                 mob.getNavigation().moveTo(target.getX() + 0.5, workY, target.getZ() + 0.5, 1.0);
             }
             return;
