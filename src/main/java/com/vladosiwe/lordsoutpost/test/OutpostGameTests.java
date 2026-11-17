@@ -183,6 +183,24 @@ public final class OutpostGameTests {
         h.succeed();
     }
 
+    /** Опыт шахтёра сохраняется, а уровни открываются на заданных порогах добычи. */
+    @GameTest(template = "empty")
+    public static void minerProgressionPersists(GameTestHelper h) {
+        Resident miner = new Resident(UUID.randomUUID(), Role.MINER, "Test Miner");
+        h.assertTrue(miner.miningLevel() == 1, "новый шахтёр должен иметь 1-й уровень");
+        miner.miningXp = 50;
+        h.assertTrue(miner.miningLevel() == 2, "50 блоков должны открыть 2-й уровень");
+        miner.miningXp = 150;
+        h.assertTrue(miner.miningLevel() == 3, "150 блоков должны открыть 3-й уровень");
+        miner.miningXp = 300;
+        h.assertTrue(miner.miningLevel() == 4, "300 блоков должны открыть 4-й уровень");
+        miner.miningXp = 500;
+        h.assertTrue(miner.miningLevel() == 5, "500 блоков должны открыть 5-й уровень");
+        Resident loaded = Resident.load(miner.save());
+        h.assertTrue(loaded.miningXp == 500 && loaded.miningLevel() == 5, "опыт шахтёра не сохранился");
+        h.succeed();
+    }
+
     private static Outpost virtualOutpost(ServerLevel level, OutpostSavedData data, BlockPos center, int skulls, UUID lord) {
         Outpost o = OutpostManager.createManual(data, center, Layout.SQUARE, Palette.TIMBER, Rotation.NONE, Difficulty.bySkulls(skulls), level.getGameTime(), level.random);
         if (lord != null) {
