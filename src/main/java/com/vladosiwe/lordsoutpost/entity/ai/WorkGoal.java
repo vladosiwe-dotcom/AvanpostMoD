@@ -77,6 +77,7 @@ public class WorkGoal extends Goal {
     @Nullable private ItemEntity item;
     // Лесоруб.
     @Nullable private BlockPos tree;
+    @Nullable private BlockPos vegetation;
     private final Deque<BlockPos> logs = new ArrayDeque<>();
     @Nullable private Block treeLog;
     // Шахтёр.
@@ -110,6 +111,7 @@ public class WorkGoal extends Goal {
                 + (animal != null ? " animal@" + animal.blockPosition().toShortString()
                         + " leash=" + animal.isLeashed() + " herdTimer=" + timer : "")
                 + (prey != null ? " prey@" + prey.blockPosition().toShortString() : "")
+                + (vegetation != null ? " clearing@" + vegetation.toShortString() : "")
                 + " noJob=" + noJobUntil + " carried=" + mob.carried()
                 + " slots=" + mob.occupiedSlots() + "/" + mob.inventory.getContainerSize() + mining;
     }
@@ -148,6 +150,7 @@ public class WorkGoal extends Goal {
         Outpost o = mob.outpost();
         if (o != null && tree != null) o.claimedTrees.remove(tree);
         tree = null;
+        vegetation = null;
         logs.clear();
         if (animal != null && animal.isLeashed() && animal.getLeashHolder() == mob) animal.dropLeash(true, false);
         animal = null;
@@ -188,7 +191,7 @@ public class WorkGoal extends Goal {
             case PICKUP -> pickup(o);
             case JOB -> {
                 boolean done = switch (role) {
-                    case LUMBERJACK -> chop(level, o, r, now);
+                    case LUMBERJACK -> vegetation != null ? clearVegetation(level, r, now) : chop(level, o, r, now);
                     case MINER -> mine(level, o, r, now);
                     case SKOTOVOD -> skotovodHunting ? hunt(level, o, r, now) : herd(level, o, r, now);
                     default -> true;
@@ -237,7 +240,7 @@ public class WorkGoal extends Goal {
         boolean physical = role == Role.LUMBERJACK || role == Role.MINER || role == Role.SKOTOVOD;
         if (physical && now >= noJobUntil) {
             boolean found = switch (role) {
-                case LUMBERJACK -> findTree(level, o);
+                case LUMBERJACK -> findVegetation(level, o) || findTree(level, o);
                 case MINER -> claimColumn(level, o);
                 case SKOTOVOD -> {
                     boolean huntFirst = skotovodHuntNext;
@@ -385,7 +388,8 @@ public class WorkGoal extends Goal {
                 Outpost occupied = data.findAt(base);
                 if ((occupied != null && occupied != o) || (occupied == o && !o.insideWalls(base))
                         || o.claimedTrees.contains(base) || !naturalLeaves(level, top)) continue;
-                double d = mob.distanceToSqr(base.getX(), base.getY(), base.getZ());
+                // Сначала освобождаем двор собственного форта, затем идём за деревьями за стенами.
+                double d = mob.distanceToSqr(base.getX(), base.getY(), base.getZ()) - (occupied == o ? 1_000_000.0 : 0.0);
                 if (d < bestD) {
                     bestD = d;
                     best = base;
@@ -396,6 +400,64 @@ public class WorkGoal extends Goal {
         o.claimedTrees.add(best);
         logs.clear();
         treeLog = level.getBlockState(best).getBlock();
+        return true;
+    }
+
+    /** Ищет естественную растительность внутри стен, которая мешает проходам и рабочим площадкам. */
+    private boolean findVegetation(ServerLevel level, Outpost o) {
+        BlockPos best = null;
+        double bestD = Double.MAX_VALUE;
+        int radius = o.radius();
+        int yMin = Math.max(level.getMinBuildHeight(), o.center.getY() - 2);
+        int yMax = Math.min(level.getMaxBuildHeight() - 2, o.center.getY() + 8);
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                int x = o.center.getX() + dx, z = o.center.getZ() + dz;
+                if (!o.insideWalls(x, o.center.getY() + 1, z) || !level.hasChunk(x >> 4, z >> 4)) continue;
+                int ground = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+                for (int y = Math.max(yMin, ground - 1); y <= Math.min(yMax, ground + 2); y++) {
+                    BlockPos pos = new BlockPos(x, y, z);
+                    BlockState state = level.getBlockState(pos);
+                    if (state.isAir() || !state.getFluidState().isEmpty() || level.getBlockEntity(pos) != null
+                            || state.is(BlockTags.CROPS) || state.is(BlockTags.LOGS) || state.is(BlockTags.LEAVES)) continue;
+                    if (!(state.canBeReplaced() || state.is(BlockTags.FLOWERS) || state.is(BlockTags.SAPLINGS)
+                            || state.is(BlockTags.REPLACEABLE_BY_TREES))) continue;
+                    double d = mob.distanceToSqr(pos.getX(), pos.getY(), pos.getZ());
+                    if (d < bestD) {
+                        bestD = d;
+                        best = pos.immutable();
+                    }
+                }
+            }
+        }
+        vegetation = best;
+        timer = 0;
+        return best != null;
+    }
+
+    /** Убирает траву, кусты, цветы и молодую поросль внутри стен; посевы и блоки с хранилищами не трогает. */
+    private boolean clearVegetation(ServerLevel level, Resident r, long now) {
+        if (vegetation == null) return true;
+        if (!go(mob.outpost(), vegetation, 2.0, 400)) return false;
+        BlockState state = level.getBlockState(vegetation);
+        if (state.isAir() || level.getBlockEntity(vegetation) != null || !state.getFluidState().isEmpty()) {
+            vegetation = null;
+            return true;
+        }
+        if (timer <= 0) timer = 8;
+        mob.getLookControl().setLookAt(vegetation.getX() + 0.5, vegetation.getY() + 0.5, vegetation.getZ() + 0.5);
+        if (--timer > 0) {
+            if (timer % 4 == 0) mob.swing(InteractionHand.MAIN_HAND);
+            return false;
+        }
+        for (ItemStack drop : Block.getDrops(state, level, vegetation, null, mob, AXE)) {
+            ItemStack left = mob.collect(drop);
+            if (!left.isEmpty()) mob.spawnAtLocation(left);
+        }
+        level.levelEvent(2001, vegetation, Block.getId(state));
+        level.destroyBlock(vegetation, false, mob);
+        r.lastRealWork = now;
+        vegetation = null;
         return true;
     }
 
