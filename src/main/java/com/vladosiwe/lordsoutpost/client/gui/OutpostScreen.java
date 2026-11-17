@@ -184,7 +184,7 @@ public class OutpostScreen extends Screen {
         Component pop = Component.translatable("lordsoutpost.ui.population", view.people.size(), view.popCap);
         g.drawString(font, pop, x, py, view.starving ? Ui.BAD : Ui.TEXT, false);
         if (view.starving) g.drawString(font, Component.translatable("lordsoutpost.ui.starving"), x + font.width(pop) + 6, py, Ui.BAD, false);
-        Role[] roles = {Role.BUILDER, Role.LUMBERJACK, Role.MINER, Role.HUNTER, Role.HERDER, Role.SMITH, Role.MAGE, Role.CARAVANEER};
+        Role[] roles = {Role.BUILDER, Role.LUMBERJACK, Role.MINER, Role.SKOTOVOD, Role.SMITH, Role.MAGE, Role.CARAVANEER};
         int col = 0, ry = py + 11;
         for (Role role : roles) {
             int n = view.count(role);
