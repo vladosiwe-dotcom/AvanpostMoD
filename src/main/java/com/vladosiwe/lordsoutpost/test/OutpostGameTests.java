@@ -259,6 +259,53 @@ public final class OutpostGameTests {
         h.succeed();
     }
 
+    /** При выгрузке чанка переполнение склада не уничтожает добычу жителя. */
+    @GameTest(template = "empty")
+    public static void virtualWorkerDepositPreservesOverflow(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        Outpost o = virtualOutpost(level, data, FAR.offset(128, 0, 0), 1, UUID.randomUUID());
+        try {
+            o.setStock(Resource.WOOD, o.capacity(Resource.WOOD) - 4);
+            net.minecraft.world.SimpleContainer cargo = new net.minecraft.world.SimpleContainer(1);
+            cargo.setItem(0, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.OAK_LOG, 2));
+            com.vladosiwe.lordsoutpost.data.Storehouse.depositVirtually(o, cargo);
+            h.assertTrue(Math.abs(o.stock(Resource.WOOD) - o.capacity(Resource.WOOD)) < 1e-6,
+                    "склад должен принять ровно один брусок до лимита");
+            h.assertTrue(cargo.isEmpty(), "после виртуальной разгрузки ноша должна быть пустой");
+            h.assertTrue(o.tribute.stream().anyMatch(st -> st.is(net.minecraft.world.item.Items.OAK_LOG) && st.getCount() == 1),
+                    "излишек должен сохраниться в дани");
+        } finally {
+            OutpostManager.abandon(data, o, level.getGameTime());
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
+    /** Тир кирки ограничен одновременно развитием форта и личным уровнем шахтёра. */
+    @GameTest(template = "empty")
+    public static void minerToolTierUsesBothProgressions(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        Outpost o = virtualOutpost(level, data, FAR.offset(256, 0, 0), 1, UUID.randomUUID());
+        try {
+            Resident miner = new Resident(UUID.randomUUID(), Role.MINER, "Tool Tester");
+            miner.miningXp = 500;
+            h.assertTrue(WorkerEntity.minerToolTier(o, miner) == 1, "форт первого тира не должен выдавать инструмент выше каменного");
+            o.tier = 2;
+            h.assertTrue(WorkerEntity.minerToolTier(o, miner) == 2, "форт второго тира должен ограничивать кирку железным тиром");
+            miner.miningXp = 149;
+            h.assertTrue(WorkerEntity.minerToolTier(o, miner) == 1, "шахтёр ниже 3-го уровня не должен получать железную кирку");
+            o.tier = 3;
+            miner.miningXp = 500;
+            h.assertTrue(WorkerEntity.minerToolTier(o, miner) == 3, "шахтёр 5-го уровня в форте 3-го тира должен получать алмазную кирку");
+        } finally {
+            OutpostManager.abandon(data, o, level.getGameTime());
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
     /** Лава и вода во дворе убираются, вода, которую ставит сам чертёж (колодец), остаётся. */
     @GameTest(template = "empty")
     public static void yardFluidsAreCleared(GameTestHelper h) {
