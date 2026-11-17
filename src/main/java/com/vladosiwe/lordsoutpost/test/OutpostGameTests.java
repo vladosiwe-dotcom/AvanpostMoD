@@ -161,13 +161,21 @@ public final class OutpostGameTests {
         h.assertTrue(worker.occupiedSlots() == 1, "одна стопка должна занимать один слот");
         h.assertTrue(!worker.cargoReadyToDeposit(), "одна стопка не должна считаться заполнением 75%");
 
+        net.minecraft.world.item.Item[] distinctItems = {
+                net.minecraft.world.item.Items.DIRT,
+                net.minecraft.world.item.Items.GRAVEL,
+                net.minecraft.world.item.Items.SAND,
+                net.minecraft.world.item.Items.OAK_LOG,
+                net.minecraft.world.item.Items.COAL,
+                net.minecraft.world.item.Items.IRON_INGOT
+        };
         for (int i = 1; i < 7; i++) {
-            worker.inventory.setItem(i, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.COBBLESTONE, 1));
+            worker.inventory.setItem(i, new net.minecraft.world.item.ItemStack(distinctItems[i - 1], 1));
         }
         h.assertTrue(worker.occupiedSlots() == 7, "ожидалось семь занятых слотов");
         h.assertTrue(!worker.cargoReadyToDeposit(), "7 из 12 слотов — меньше 75%");
 
-        worker.inventory.setItem(7, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.COBBLESTONE, 1));
+        worker.inventory.setItem(7, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.STICK, 1));
         h.assertTrue(worker.occupiedSlots() == 8, "ожидалось восемь занятых слотов");
         h.assertTrue(worker.cargoReadyToDeposit(), "8 из 12 слотов должны включать возврат на склад");
         h.assertTrue(!worker.inventoryFull(), "8 из 12 слотов не являются полной ношей");
