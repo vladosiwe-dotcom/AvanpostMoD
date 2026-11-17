@@ -72,11 +72,17 @@ public final class OutpostGameTests {
     /** Старые hunter/herder записи сохранений загружаются как одна профессия «Скотовод». */
     @GameTest(template = "empty")
     public static void legacyHunterAndHerderRolesMigrateToSkotovod(GameTestHelper h) {
-        h.assertTrue(Role.byId("hunter") == Role.SKOTOVOD, "старый hunter не мигрировал в Скотовода");
-        h.assertTrue(Role.byId("herder") == Role.SKOTOVOD, "старый herder не мигрировал в Скотовода");
-        h.assertTrue(Role.byId("herder").label().getString().equals("Скотовод")
-                        || Role.byId("herder").id.equals("herder"),
-                "у объединённой роли потерялся идентификатор локализации");
+        CompoundTag oldHunter = new CompoundTag();
+        oldHunter.putUUID("id", UUID.randomUUID());
+        oldHunter.putString("role", "hunter");
+        oldHunter.putString("name", "Legacy Hunter");
+        CompoundTag oldHerder = new CompoundTag();
+        oldHerder.putUUID("id", UUID.randomUUID());
+        oldHerder.putString("role", "herder");
+        oldHerder.putString("name", "Legacy Herder");
+
+        h.assertTrue(Resident.load(oldHunter).role == Role.SKOTOVOD, "старый hunter не мигрировал в Скотовода");
+        h.assertTrue(Resident.load(oldHerder).role == Role.SKOTOVOD, "старый herder не мигрировал в Скотовода");
         int count = 0;
         for (Role r : Role.VALUES) if (r == Role.SKOTOVOD) count++;
         h.assertTrue(count == 1, "в списке профессий должно быть ровно одно вхождение Скотовода");
