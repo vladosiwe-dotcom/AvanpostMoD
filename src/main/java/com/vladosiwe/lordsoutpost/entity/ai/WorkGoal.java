@@ -55,7 +55,7 @@ import java.util.Set;
 
 /**
  * Рабочий день жителя. Пока игрок рядом, жители не изображают работу, а делают её в мире:
- *  - лесоруб находит дерево за стенами, валит его бревно за бревном и сажает саженец;
+ *  - лесоруб расчищает естественные деревья и во дворе, и за стенами; за пределами форта сажает саженцы;
  *  - шахтёр спускается по стволу и ведёт штрек с отвилками, вынося камень и руду;
  *  - скотовод обслуживает стадо, разводит и стрижёт животных, забивает излишки, а также охотится за стенами из лука;
  *  - любой житель подбирает предметы, лежащие на территории форта.
@@ -443,11 +443,6 @@ public class WorkGoal extends Goal {
         return true;
     }
 
-    private boolean oInsideWalls(BlockPos base) {
-        Outpost o = mob.outpost();
-        return o != null && o.insideWalls(base);
-    }
-
     /** Все брёвна дерева (связанные, в пределах кроны), сверху вниз. */
     private void collectTree(ServerLevel level, BlockPos base) {
         Set<BlockPos> seen = new HashSet<>();
@@ -472,7 +467,8 @@ public class WorkGoal extends Goal {
 
     private void replant(ServerLevel level, BlockPos base) {
         // Внутри стен деревья расчищают под двор и постройки; саженцы возвращаются только за пределами форта.
-        if (oInsideWalls(base) || treeLog == null || !level.getBlockState(base).isAir()
+        Outpost o = mob.outpost();
+        if ((o != null && o.insideWalls(base)) || treeLog == null || !level.getBlockState(base).isAir()
                 || !level.getBlockState(base.below()).is(BlockTags.DIRT)) return;
         ResourceLocation id = BuiltInRegistries.BLOCK.getKey(treeLog);
         String path = id.getPath().replace("stripped_", "").replace("_log", "_sapling").replace("_wood", "_sapling");
