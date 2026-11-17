@@ -127,12 +127,14 @@ public final class Simulation {
         o.boosts.values().removeIf(until -> until <= now);
     }
 
-    /** Жители роли, чью выработку считает симуляция: все, кроме тех, кто сейчас добывает руками в мире. */
+    /** Жители роли, чью выработку считает симуляция: только те, чьи сущности сейчас не загружены в мир. */
     public static int virtualWorkers(Outpost o, Role role, long now) {
         int n = 0;
         for (Resident r : o.residents) {
             if (r.role != role || !r.active()) continue;
-            boolean physical = o.online && r.entity != null && now - r.lastRealWork < 2400;
+            // Загруженный NPC работает физически; нельзя включать ему виртуальную добычу только потому,
+            // что он долго шёл к цели или временно не нашёл ресурс.
+            boolean physical = o.online && r.entity != null;
             if (!physical) n++;
         }
         return n;
