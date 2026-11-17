@@ -847,8 +847,11 @@ public class WorkGoal extends Goal {
         // Загон — отдельная защищённая зона: охотник не должен принимать скот за добычу,
         // даже если загон оказался за пределами основного периметра форта.
         Set<Animal> penned = new HashSet<>(ChunkReconciliation.penAnimals((ServerLevel) mob.level(), o));
+        // Животные в радиусе сбора скота (32 блока от загона) зарезервированы для скотовода.
+        AABB livestockArea = new AABB(o.marker(Marker.PEN)).inflate(32, 8, 32);
         for (Animal a : mob.level().getEntitiesOfClass(Animal.class, mob.getBoundingBox().inflate(20, 6, 20))) {
-            if (!a.isAlive() || a.isBaby() || o.insideWalls(a.blockPosition()) || penned.contains(a) || a.isLeashed() || a.hasCustomName()
+            if (!a.isAlive() || a.isBaby() || o.insideWalls(a.blockPosition()) || penned.contains(a)
+                    || livestockArea.contains(a.getX(), a.getY(), a.getZ()) || a.isLeashed() || a.hasCustomName()
                     || a.getPersistentData().contains(NpcLifecycle.CARAVAN_TAG)) continue;
             if (a instanceof TamableAnimal t && t.isTame()) continue;
             if (a instanceof AbstractHorse h && h.isTamed()) continue;
