@@ -836,6 +836,9 @@ public final class OutpostGameTests {
                     o.autoCaravans = false;
                     // Этот тест отдельно проверяет перегон: отключаем плановое размножение, чтобы скотовод выбрал FETCH.
                     o.penActionAt = Long.MAX_VALUE / 4;
+                    // Фиксируем стартовое стадо, чтобы случайное блуждание при открытой калитке не делало тест нестабильным.
+                    for (net.minecraft.world.entity.animal.Animal penned
+                            : com.vladosiwe.lordsoutpost.data.ChunkReconciliation.penAnimals(level, o)) penned.setNoAi(true);
                     // Дерево за стенами, недалеко от дровяного двора.
                     BlockPos wood = o.marker(Marker.WOODYARD);
                     int tx = o.center.getX() + o.reach() + Layout.MARGIN + 6, tz = wood.getZ();
