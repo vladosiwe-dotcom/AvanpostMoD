@@ -274,8 +274,8 @@ public final class ChunkReconciliation {
     /** Признаки естественной растительности/мусора, который строитель может расчистить без разрушения построек. */
     public static boolean isNaturalObstruction(BlockState state) {
         return state.is(BlockTags.LOGS) || state.is(BlockTags.LEAVES) || state.is(BlockTags.FLOWERS)
-                || state.is(BlockTags.SAPLINGS) || state.is(BlockTags.CROPS) || state.is(BlockTags.REPLACEABLE_BY_TREES)
-                || (state.canBeReplaced() && state.getFluidState().isEmpty());
+                || state.is(BlockTags.SAPLINGS) || state.is(BlockTags.REPLACEABLE_BY_TREES)
+                || (state.canBeReplaced() && state.getFluidState().isEmpty() && !state.is(BlockTags.CROPS));
     }
 
     /** Не даём строителю перезаписывать блоки игрока, которые не принадлежат предыдущему чертежу форта. */
