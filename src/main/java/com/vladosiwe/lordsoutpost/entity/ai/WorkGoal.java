@@ -1016,7 +1016,7 @@ public class WorkGoal extends Goal {
                 if (dx == 0 && dz == 0) continue;
                 BlockPos crop = center.offset(dx, 0, dz);
                 BlockPos soil = crop.below();
-                if (!level.getBlockState(soil).is(Blocks.FARMLAND)) continue;
+                BlockState soilState = level.getBlockState(soil);
                 BlockState state = level.getBlockState(crop);
                 double distance = mob.distanceToSqr(crop.getX() + 0.5, crop.getY(), crop.getZ() + 0.5);
                 if (state.is(Blocks.WHEAT) && state.getValue(CropBlock.AGE) >= 7) {
@@ -1024,10 +1024,10 @@ public class WorkGoal extends Goal {
                         harvestDistance = distance;
                         harvest = crop.immutable();
                     }
-                } else if (state.isAir() && soil.is(Blocks.FARMLAND) && distance < plantDistance) {
+                } else if (state.isAir() && soilState.is(Blocks.FARMLAND) && distance < plantDistance) {
                     plantDistance = distance;
                     plant = crop.immutable();
-                } else if (state.isAir() && (soil.is(Blocks.DIRT) || soil.is(Blocks.GRASS_BLOCK)) && distance < tillDistance) {
+                } else if (state.isAir() && (soilState.is(Blocks.DIRT) || soilState.is(Blocks.GRASS_BLOCK)) && distance < tillDistance) {
                     tillDistance = distance;
                     till = crop.immutable();
                 }
@@ -1051,7 +1051,6 @@ public class WorkGoal extends Goal {
                 if (!left.isEmpty()) mob.spawnAtLocation(left);
             }
             level.destroyBlock(farmTarget, false, mob);
-            craftBread();
             r.lastRealWork = now;
             return true;
         }
@@ -1100,7 +1099,7 @@ public class WorkGoal extends Goal {
         mob.swing(InteractionHand.MAIN_HAND);
         ItemStack left = mob.collect(new ItemStack(Items.BREAD));
         if (!left.isEmpty()) mob.spawnAtLocation(left);
-        level.playSound(null, mob.blockPosition(), SoundEvents.CRAFTING_TABLE_USE, SoundSource.BLOCKS, 0.7f, 1.0f);
+        level.playSound(null, mob.blockPosition(), SoundEvents.GRASS_PLACE, SoundSource.BLOCKS, 0.7f, 1.0f);
         r.lastRealWork = now;
         phase = Phase.DEPOSIT;
     }
