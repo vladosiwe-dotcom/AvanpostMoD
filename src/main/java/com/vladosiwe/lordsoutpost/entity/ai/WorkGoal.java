@@ -89,6 +89,7 @@ public class WorkGoal extends Goal {
     // Скотовод.
     private int herdAction;
     @Nullable private Animal animal;
+    @Nullable private Animal breedingPartner;
     // Охотник.
     @Nullable private Animal prey;
     private int kills;
@@ -143,6 +144,7 @@ public class WorkGoal extends Goal {
         logs.clear();
         if (animal != null && animal.isLeashed() && animal.getLeashHolder() == mob) animal.dropLeash(true, false);
         animal = null;
+        breedingPartner = null;
         prey = null;
         item = null;
     }
@@ -627,6 +629,7 @@ public class WorkGoal extends Goal {
         List<Animal> inside = ChunkReconciliation.penAnimals(level, o);
         int cap = o.penCapacity();
         animal = null;
+        breedingPartner = null;
         if (inside.size() > cap || (inside.size() == cap && o.stock(Resource.FOOD) < o.residents.size() * 4)) {
             // Забить взрослое животное того вида, которого больше всего.
             animal = inside.stream().filter(a -> !a.isBaby())
@@ -642,6 +645,7 @@ public class WorkGoal extends Goal {
                 for (Animal b : inside) {
                     if (b != a && b.getType() == a.getType() && !b.isBaby() && !b.isInLove() && b.canFallInLove() && b.getAge() == 0) {
                         animal = a;
+                        breedingPartner = b;
                         herdAction = BREED;
                         break;
                     }
@@ -690,11 +694,15 @@ public class WorkGoal extends Goal {
                         else wool.setItem(left);
                     }
                 } else if (herdAction == BREED) {
-                    // Зерно на кормёжку берётся из запасов.
+                    // Одна порция корма обслуживает только выбранную пару, а не всё стадо.
+                    if (breedingPartner == null || !breedingPartner.isAlive()
+                            || !animal.canFallInLove() || !breedingPartner.canFallInLove()
+                            || animal.getAge() != 0 || breedingPartner.getAge() != 0
+                            || !ChunkReconciliation.penAnimals(level, o).contains(animal)
+                            || !ChunkReconciliation.penAnimals(level, o).contains(breedingPartner)) return true;
                     if (!o.take(Resource.FOOD, 2)) return true;
-                    for (Animal a : ChunkReconciliation.penAnimals(level, o)) {
-                        if (a.getType() == animal.getType() && !a.isBaby() && a.canFallInLove() && a.getAge() == 0) a.setInLove(null);
-                    }
+                    animal.setInLove(null);
+                    breedingPartner.setInLove(null);
                     level.playSound(null, animal.blockPosition(), SoundEvents.GENERIC_EAT, SoundSource.NEUTRAL, 0.6f, 1f);
                     o.penActionAt = now + 1200;
                 }
@@ -702,25 +710,28 @@ public class WorkGoal extends Goal {
                 return true;
             }
             default -> {
-                // Пригнать: подойти, взять на поводок, отвести к калитке, впустить.
+                // Пригнать: взять животное на поводок, открыть калитку и физически провести его в загон.
                 if (!animal.isLeashed()) {
                     if (!go(o, animal.blockPosition(), 2.0, 400)) return false;
                     animal.setLeashedTo(mob, true);
                     timer = -1;
                     return false;
                 }
-                if (!go(o, outside, 1.3, 600)) return false;
-                BlockState gs = level.getBlockState(gate);
-                if (gs.getBlock() instanceof FenceGateBlock) {
-                    level.setBlockAndUpdate(gate, gs.setValue(FenceGateBlock.OPEN, true));
-                    level.playSound(null, gate, SoundEvents.FENCE_GATE_OPEN, SoundSource.BLOCKS, 0.8f, 1f);
+                if (!ChunkReconciliation.penAnimals(level, o).contains(animal)) {
+                    if (!go(o, outside, 1.3, 600)) return false;
+                    BlockState gs = level.getBlockState(gate);
+                    if (gs.getBlock() instanceof FenceGateBlock && !gs.getValue(FenceGateBlock.OPEN)) {
+                        level.setBlockAndUpdate(gate, gs.setValue(FenceGateBlock.OPEN, true));
+                        level.playSound(null, gate, SoundEvents.FENCE_GATE_OPEN, SoundSource.BLOCKS, 0.8f, 1f);
+                    }
+                    // Не телепортируем скот: житель проходит через открытую калитку, животное следует за ним.
+                    if (!go(o, o.marker(Marker.PEN), 0.8, 800)) return false;
+                    return false;
                 }
-                BlockPos pen = o.marker(Marker.PEN);
                 animal.dropLeash(true, false);
-                animal.teleportTo(pen.getX() + 0.5, pen.getY(), pen.getZ() + 0.5);
                 animal.setPersistenceRequired();
                 BlockState after = level.getBlockState(gate);
-                if (after.getBlock() instanceof FenceGateBlock) {
+                if (after.getBlock() instanceof FenceGateBlock && after.getValue(FenceGateBlock.OPEN)) {
                     level.setBlockAndUpdate(gate, after.setValue(FenceGateBlock.OPEN, false));
                     level.playSound(null, gate, SoundEvents.FENCE_GATE_CLOSE, SoundSource.BLOCKS, 0.8f, 1f);
                 }
