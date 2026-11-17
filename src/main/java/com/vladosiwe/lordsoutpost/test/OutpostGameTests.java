@@ -177,8 +177,11 @@ public final class OutpostGameTests {
 
         worker.inventory.setItem(7, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.STICK, 1));
         h.assertTrue(worker.occupiedSlots() == 8, "ожидалось восемь занятых слотов");
-        h.assertTrue(worker.cargoReadyToDeposit(), "8 из 12 слотов должны включать возврат на склад");
-        h.assertTrue(!worker.inventoryFull(), "8 из 12 слотов не являются полной ношей");
+        h.assertTrue(!worker.cargoReadyToDeposit(), "8 из 12 слотов — меньше 75%");
+        worker.inventory.setItem(8, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.IRON_NUGGET, 1));
+        h.assertTrue(worker.occupiedSlots() == 9, "ожидалось девять занятых слотов");
+        h.assertTrue(worker.cargoReadyToDeposit(), "9 из 12 слотов должны включать возврат на склад");
+        h.assertTrue(!worker.inventoryFull(), "9 из 12 слотов не являются полной ношей");
         worker.discard();
         h.succeed();
     }
