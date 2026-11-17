@@ -90,13 +90,15 @@ public final class Simulation {
         o.add(Resource.IRON, ironMiners * 24 * prod * (o.boosted(Resource.IRON, now) ? boost : 1));
         double foodBoost = o.boosted(Resource.FOOD, now) ? boost : 1;
         int skotovods = virtualWorkers(o, Role.SKOTOVOD, now);
-        // Одна профессия совмещает охоту и животноводство; виртуальная экономика учитывает оба направления.
-        o.add(Resource.FOOD, skotovods * 36 * prod * foodBoost);
-        o.add(Resource.HIDES, skotovods * 10 * prod);
-        if (skotovods > 0) {
+        // Каждый скотовод делит рабочее время между охотой и стадом: половина выработки приходится на каждое направление.
+        double huntingWorkers = skotovods * 0.5;
+        double herdingWorkers = skotovods * 0.5;
+        o.add(Resource.FOOD, huntingWorkers * 36 * prod * foodBoost);
+        o.add(Resource.HIDES, huntingWorkers * 10 * prod);
+        if (herdingWorkers > 0) {
             // Вдали скотоводы пригоняют животных, пока загон не заполнится, и держат стадо.
-            if (o.penAnimals < o.penCapacity() && rnd.nextDouble() < skotovods * 1.5 * days) o.penAnimals++;
-            double herd = Math.min(o.penAnimals, skotovods * 8);
+            if (o.penAnimals < o.penCapacity() && rnd.nextDouble() < herdingWorkers * 1.5 * days) o.penAnimals++;
+            double herd = Math.min(o.penAnimals, herdingWorkers * 8);
             o.add(Resource.FOOD, herd * 5 * prod * foodBoost);
             o.add(Resource.HIDES, herd * 1.2 * prod);
         }
@@ -298,7 +300,8 @@ public final class Simulation {
             case BUILDER -> o.complete() ? 1 : 1 + t;
             case LUMBERJACK -> t == 1 ? 1 : 2;
             case MINER -> t;
-            case SKOTOVOD -> t == 3 ? 2 : 1;
+            // Сохраняем суммарную численность прежних двух ролей: охотник + скотовод.
+            case SKOTOVOD -> t == 3 ? 4 : 2;
             case SMITH -> t >= 2 ? 1 : 0;
             case CARAVANEER -> t - 1;
             case MAGE -> t >= 3 ? 1 : 0;
