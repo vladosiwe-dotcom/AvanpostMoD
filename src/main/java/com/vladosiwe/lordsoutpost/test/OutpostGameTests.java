@@ -958,7 +958,6 @@ public final class OutpostGameTests {
                         double diff = Math.abs(have.get(r) - o.stock(r));
                         h.assertTrue(diff < 10 || have.get(r) > 0, "бочки склада не совпадают с запасом: " + r + " " + have.get(r) + " / " + o.stock(r));
                     }
-                    BlockPos sapling = treeLogs.get(0);
                     LordsOutpost.LOGGER.info("Работа жителей: дерево свалено и пересажено, мусор подобран, шахтёр получил опыт, донесено {}, максимум в загоне {}, склад {}",
                             o.depositedItems, maxPenned[0], have);
                     OutpostManager.abandon(data, o, level.getGameTime());
