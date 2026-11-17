@@ -285,6 +285,16 @@ public final class ChunkReconciliation {
                 || (state.canBeReplaced() && state.getFluidState().isEmpty() && !state.is(BlockTags.CROPS));
     }
 
+    /** Естественный грунт можно заменить только там, где чертёж действительно строит блок, но не на пустом месте. */
+    private static boolean isNaturalTerrain(BlockState state) {
+        return state.is(Blocks.GRASS_BLOCK) || state.is(Blocks.DIRT) || state.is(Blocks.COARSE_DIRT)
+                || state.is(Blocks.ROOTED_DIRT) || state.is(Blocks.PODZOL) || state.is(Blocks.MYCELIUM);
+    }
+
+    private static boolean isNaturalObstruction(BlockState current, BlockState desired) {
+        return isNaturalObstruction(current) || (!desired.isAir() && isNaturalTerrain(current));
+    }
+
     /** Не даём строителю перезаписывать блоки игрока, которые не принадлежат предыдущему чертежу форта. */
     public static boolean blockedByForeignBlock(ServerLevel level, Outpost o, int index) {
         List<Step> plan = o.nextPlan();
@@ -292,10 +302,10 @@ public final class ChunkReconciliation {
         Step step = plan.get(index);
         BlockPos pos = o.world(step.pos());
         BlockState old = level.getBlockState(pos);
-        if (old.isAir() || old == step.state()) return false;
+        if (old.isAir() || old.equals(step.state())) return false;
         var previous = o.design().cells.get(step.pos());
         if (previous != null && previous.state() == old) return false;
-        return !isNaturalObstruction(old);
+        return !isNaturalObstruction(old, step.state());
     }
 
     /** Строитель вручную убирает естественную растительность, попавшую в ячейку нового здания. */
@@ -305,7 +315,7 @@ public final class ChunkReconciliation {
         Step step = plan.get(index);
         BlockPos pos = o.world(step.pos());
         BlockState old = level.getBlockState(pos);
-        if (old.isAir() || old == step.state() || level.getBlockEntity(pos) != null || !isNaturalObstruction(old)) return false;
+        if (old.isAir() || old.equals(step.state()) || level.getBlockEntity(pos) != null || !isNaturalObstruction(old, step.state())) return false;
         var previous = o.design().cells.get(step.pos());
         if (previous != null && previous.state() == old) return false;
         builder.swing(InteractionHand.MAIN_HAND);

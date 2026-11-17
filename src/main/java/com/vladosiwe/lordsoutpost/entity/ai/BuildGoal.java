@@ -73,6 +73,15 @@ public class BuildGoal extends Goal {
             lastResult = "claim-expired";
             return;
         }
+        if (level.getBlockState(target).equals(o.nextPlan().get(claim).state())) {
+            ChunkReconciliation.place(level, o, claim, false);
+            lastResult = "already-correct";
+            claim = -1;
+            workPosition = null;
+            cooldown = 2;
+            return;
+        }
+
         if (ChunkReconciliation.blockedByForeignBlock(level, o, claim)) {
             // Не сносим сундуки, посевы, декор и постройки игрока ради автоматического чертежа.
             lastResult = "blocked-foreign:" + level.getBlockState(target);
@@ -133,6 +142,15 @@ public class BuildGoal extends Goal {
         cooldown = 8;
     }
 
+    public boolean reservesWorkPosition(BlockPos pos) {
+        return claim >= 0 && workPosition != null && workPosition.equals(pos);
+    }
+
+    private boolean reservedByAnotherBuilder(ServerLevel level, BlockPos feet) {
+        return !level.getEntitiesOfClass(WorkerEntity.class, new net.minecraft.world.phys.AABB(feet).inflate(1.25),
+                other -> other != mob && other.reservesBuildPosition(feet)).isEmpty();
+    }
+
     /** Ищет устойчивую соседнюю клетку с воздухом для тела и свободным пространством над головой. */
     @Nullable
     private BlockPos findWorkPosition(ServerLevel level, BlockPos block) {
@@ -151,6 +169,7 @@ public class BuildGoal extends Goal {
                             || !level.getBlockState(feet.above()).getCollisionShape(level, feet.above()).isEmpty()) continue;
                     BlockPos floor = feet.below();
                     if (!level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP)) continue;
+                    if (reservedByAnotherBuilder(level, feet)) continue;
 
                     double eyeY = feet.getY() + mob.getEyeHeight();
                     double rx = tx - (feet.getX() + 0.5), ry = ty - eyeY, rz = tz - (feet.getZ() + 0.5);

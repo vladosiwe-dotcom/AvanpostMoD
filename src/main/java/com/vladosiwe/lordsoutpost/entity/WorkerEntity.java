@@ -86,6 +86,15 @@ public class WorkerEntity extends OutpostNpc {
         if (!getMainHandItem().is(required)) setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(required));
     }
 
+    /** Строитель сообщает соседним строителям, занят ли уже этот рабочий блок. */
+    public boolean reservesBuildPosition(BlockPos pos) {
+        for (var wrapped : goalSelector.getAvailableGoals()) {
+            if (wrapped.getGoal() instanceof com.vladosiwe.lordsoutpost.entity.ai.BuildGoal build
+                    && build.reservesWorkPosition(pos)) return true;
+        }
+        return false;
+    }
+
     public java.util.List<String> goalClassNames() {
         java.util.List<String> out = new java.util.ArrayList<>();
         goalSelector.getAvailableGoals().stream().filter(w -> w.isRunning()).forEach(w -> {

@@ -154,6 +154,11 @@ public final class OutpostGameTests {
         h.assertTrue(!com.vladosiwe.lordsoutpost.data.ChunkReconciliation.blockedByForeignBlock(level, o, index),
                 "после расчистки клетка всё ещё считается занятой");
 
+        level.setBlockAndUpdate(target, net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState());
+        h.assertTrue(com.vladosiwe.lordsoutpost.data.ChunkReconciliation.clearNaturalObstruction(level, o, index, builder),
+                "строитель не заменил естественный дерновый грунт");
+        h.assertTrue(level.getBlockState(target).isAir(), "дерновый грунт не был очищен под строительный блок");
+
         level.setBlockAndUpdate(target, net.minecraft.world.level.block.Blocks.CHEST.defaultBlockState());
         h.assertTrue(com.vladosiwe.lordsoutpost.data.ChunkReconciliation.blockedByForeignBlock(level, o, index),
                 "строитель должен распознавать чужую постройку как препятствие");
