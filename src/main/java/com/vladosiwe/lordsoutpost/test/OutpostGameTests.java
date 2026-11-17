@@ -272,8 +272,8 @@ public final class OutpostGameTests {
             Resident miner = new Resident(UUID.randomUUID(), Role.MINER, "Loaded Miner");
             o.residents.add(miner);
             o.online = true;
-            int baseline = Simulation.virtualWorkers(o, Role.MINER, level.getGameTime());
             miner.entity = UUID.randomUUID();
+            int baseline = Simulation.virtualWorkers(o, Role.MINER, level.getGameTime());
             miner.lastRealWork = level.getGameTime() - 100_000;
             h.assertTrue(Simulation.virtualWorkers(o, Role.MINER, level.getGameTime()) == baseline,
                     "загруженный шахтёр не должен получать виртуальную добычу даже после долгого простоя");
