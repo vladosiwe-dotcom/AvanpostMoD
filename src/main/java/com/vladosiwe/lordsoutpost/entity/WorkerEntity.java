@@ -70,6 +70,22 @@ public class WorkerEntity extends OutpostNpc {
         return occupiedSlots() == inventory.getContainerSize();
     }
 
+    /** Уровень инструмента шахтёра ограничен и тиром форта, и личным опытом шахтёра. */
+    public static int minerToolTier(Outpost outpost, Resident resident) {
+        return Math.max(1, Math.min(3, Math.min(outpost.tier, 1 + (resident.miningLevel() - 1) / 2)));
+    }
+
+    /** Подбирает кирку по развитию шахтёра и аванпоста, не сбрасывая её прочность без необходимости. */
+    public void refreshMinerTool(Outpost outpost, Resident resident) {
+        int tier = minerToolTier(outpost, resident);
+        net.minecraft.world.item.Item required = switch (tier) {
+            case 3 -> Items.DIAMOND_PICKAXE;
+            case 2 -> Items.IRON_PICKAXE;
+            default -> Items.STONE_PICKAXE;
+        };
+        if (!getMainHandItem().is(required)) setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(required));
+    }
+
     public java.util.List<String> goalClassNames() {
         java.util.List<String> out = new java.util.ArrayList<>();
         goalSelector.getAvailableGoals().stream().filter(w -> w.isRunning()).forEach(w -> out.add(w.getGoal().getClass().getSimpleName()));
@@ -113,7 +129,11 @@ public class WorkerEntity extends OutpostNpc {
             case BUILDER -> new ItemStack(Items.IRON_SHOVEL);
             case HUNTER -> new ItemStack(Items.BOW);
             case HERDER -> new ItemStack(Items.WHEAT);
-            case MINER -> new ItemStack(Items.IRON_PICKAXE);
+            case MINER -> new ItemStack(switch (o == null ? 2 : minerToolTier(o, r)) {
+                case 3 -> Items.DIAMOND_PICKAXE;
+                case 2 -> Items.IRON_PICKAXE;
+                default -> Items.STONE_PICKAXE;
+            });
             case LUMBERJACK -> new ItemStack(Items.IRON_AXE);
             case SMITH -> new ItemStack(Items.IRON_INGOT);
             case MAGE -> new ItemStack(Items.BOOK);
