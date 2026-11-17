@@ -909,6 +909,7 @@ public class WorkGoal extends Goal {
             case HERDER -> o.marker(Marker.PEN);
             case HUNTER -> {
                 List<BlockPos> outer = o.markers(Marker.OUTER_PATROL);
+                if (outer.isEmpty()) yield o.marker(Marker.YARD);
                 BlockPos p = outer.get(mob.getRandom().nextInt(outer.size()));
                 yield NpcLifecycle.groundAt(level, o, p.getX(), p.getZ());
             }
