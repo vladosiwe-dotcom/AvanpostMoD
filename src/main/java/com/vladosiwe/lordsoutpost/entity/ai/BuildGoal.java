@@ -64,6 +64,11 @@ public class BuildGoal extends Goal {
             timeout = 200;
         }
 
+        if (!ChunkReconciliation.renewClaim(o, claim, level.getGameTime())) {
+            claim = -1;
+            workPosition = null;
+            return;
+        }
         if (ChunkReconciliation.blockedByForeignBlock(level, o, claim)) {
             // Не сносим сундуки, посевы, декор и постройки игрока ради автоматического чертежа.
             release(o, 40);
