@@ -283,12 +283,12 @@ public final class ChunkReconciliation {
         List<Step> plan = o.nextPlan();
         if (index < 0 || index >= plan.size()) return true;
         Step step = plan.get(index);
-        if (step.state().isAir()) return false;
         BlockPos pos = o.world(step.pos());
         BlockState old = level.getBlockState(pos);
-        if (old.isAir() || old == step.state() || isNaturalObstruction(old)) return false;
+        if (old.isAir() || old == step.state()) return false;
         var previous = o.design().cells.get(step.pos());
-        return previous == null || previous.state() != old;
+        if (previous != null && previous.state() == old) return false;
+        return !isNaturalObstruction(old);
     }
 
     /** Строитель вручную убирает естественную растительность, попавшую в ячейку нового здания. */
@@ -296,7 +296,6 @@ public final class ChunkReconciliation {
         List<Step> plan = o.nextPlan();
         if (index < 0 || index >= plan.size()) return false;
         Step step = plan.get(index);
-        if (step.state().isAir()) return false;
         BlockPos pos = o.world(step.pos());
         BlockState old = level.getBlockState(pos);
         if (old.isAir() || old == step.state() || level.getBlockEntity(pos) != null || !isNaturalObstruction(old)) return false;
