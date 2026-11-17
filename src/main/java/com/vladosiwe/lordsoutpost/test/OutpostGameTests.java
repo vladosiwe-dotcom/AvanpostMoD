@@ -269,14 +269,17 @@ public final class OutpostGameTests {
         OutpostSavedData data = OutpostSavedData.get(level);
         Outpost o = virtualOutpost(level, data, FAR.offset(96, 0, 0), 1, UUID.randomUUID());
         try {
+            o.residents.clear();
             Resident miner = new Resident(UUID.randomUUID(), Role.MINER, "Loaded Miner");
             o.residents.add(miner);
             o.online = true;
             miner.entity = UUID.randomUUID();
             int baseline = Simulation.virtualWorkers(o, Role.MINER, level.getGameTime());
             miner.lastRealWork = level.getGameTime() - 100_000;
-            h.assertTrue(Simulation.virtualWorkers(o, Role.MINER, level.getGameTime()) == baseline,
-                    "загруженный шахтёр не должен получать виртуальную добычу даже после долгого простоя");
+            int loadedCount = Simulation.virtualWorkers(o, Role.MINER, level.getGameTime());
+            h.assertTrue(baseline == 0 && loadedCount == 0,
+                    "загруженный шахтёр не должен получать виртуальную добычу: baseline=" + baseline
+                            + ", actual=" + loadedCount + ", online=" + o.online + ", entity=" + miner.entity);
             miner.entity = null;
             h.assertTrue(Simulation.virtualWorkers(o, Role.MINER, level.getGameTime()) == baseline + 1,
                     "выгруженный шахтёр должен учитываться в A-Life симуляции");
