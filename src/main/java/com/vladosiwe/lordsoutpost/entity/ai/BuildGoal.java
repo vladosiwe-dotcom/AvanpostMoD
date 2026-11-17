@@ -12,8 +12,8 @@ import net.minecraft.world.entity.ai.goal.Goal;
 import java.util.EnumSet;
 
 /**
- * Строитель берёт следующий шаг плана, подходит и ставит блок. Темп задаёт симуляция (ресурсы и время),
- * а если строитель застрял, блок через несколько секунд встанет сам — стройка не останавливается из-за поиска пути.
+ * Строитель берёт конкретный шаг чертежа, подходит к площадке, расчищает естественные препятствия
+ * и только после этого физически ставит блок. Недоступный шаг освобождается, а не появляется сам собой.
  */
 public class BuildGoal extends Goal {
     private final WorkerEntity mob;
@@ -50,17 +50,45 @@ public class BuildGoal extends Goal {
                 cooldown = 10;
                 return;
             }
+            if (claim >= o.nextPlan().size()) {
+                ChunkReconciliation.releaseClaim(o, claim);
+                claim = -1;
+                cooldown = 20;
+                return;
+            }
             target = o.world(o.nextPlan().get(claim).pos());
-            timeout = 100;
+            timeout = 120;
         }
+
+        if (ChunkReconciliation.clearNaturalObstruction(level, o, claim, mob)) {
+            timeout = 120;
+            return;
+        }
+        if (ChunkReconciliation.blockedByForeignBlock(level, o, claim)) {
+            // Не сносим сундуки, декор и постройки игрока ради автоматического чертежа.
+            ChunkReconciliation.releaseClaim(o, claim);
+            claim = -1;
+            cooldown = 40;
+            return;
+        }
+
         mob.getLookControl().setLookAt(target.getX() + 0.5, target.getY() + 0.5, target.getZ() + 0.5);
-        double dx = mob.getX() - (target.getX() + 0.5), dz = mob.getZ() - (target.getZ() + 0.5);
-        if (dx * dx + dz * dz > 3.5 * 3.5 && --timeout > 0) {
+        double dx = mob.getX() - (target.getX() + 0.5);
+        double dz = mob.getZ() - (target.getZ() + 0.5);
+        if (dx * dx + dz * dz > 3.5 * 3.5) {
+            if (--timeout <= 0) {
+                ChunkReconciliation.releaseClaim(o, claim);
+                claim = -1;
+                cooldown = 40;
+                mob.getNavigation().stop();
+                return;
+            }
             if (mob.getNavigation().isDone() || mob.tickCount % 20 == 0) {
                 mob.getNavigation().moveTo(target.getX() + 0.5, o.center.getY() + 1, target.getZ() + 0.5, 1.0);
             }
             return;
         }
+
         mob.getNavigation().stop();
         mob.swing(InteractionHand.MAIN_HAND);
         ChunkReconciliation.place(level, o, claim, true);
@@ -70,7 +98,8 @@ public class BuildGoal extends Goal {
 
     @Override
     public void stop() {
-        // Незавершённая заявка истечёт сама, и блок поставит согласование.
+        ChunkReconciliation.releaseClaim(mob.outpost(), claim);
         claim = -1;
+        mob.getNavigation().stop();
     }
 }
