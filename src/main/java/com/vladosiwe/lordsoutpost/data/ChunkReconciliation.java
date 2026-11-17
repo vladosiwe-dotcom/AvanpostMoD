@@ -257,7 +257,7 @@ public final class ChunkReconciliation {
         return -1;
     }
 
-    /** Строитель берёт шаг. Если он не поставит блок вовремя, это сделает согласование. */
+    /** Строитель резервирует следующий доступный шаг чертежа. */
     public static int claim(Outpost o, long now) {
         if (!hasWork(o)) return -1;
         int idx = nextFree(o, Math.min(o.steps, o.nextPlan().size()));
@@ -266,8 +266,8 @@ public final class ChunkReconciliation {
     }
 
     /** Освобождает шаг, если строитель не смог до него добраться или был прерван. */
-    public static void releaseClaim(Outpost o, int index) {
-        if (index >= 0) o.claims.remove(index);
+    public static void releaseClaim(@Nullable Outpost o, int index) {
+        if (o != null && index >= 0) o.claims.remove(index);
     }
 
     /** Признаки естественной растительности/мусора, который строитель может расчистить без разрушения построек. */
