@@ -906,7 +906,7 @@ public class WorkGoal extends Goal {
             case MINER -> o.marker(Marker.MINE);
             case SMITH -> o.design().markers(Marker.SMITHY).isEmpty() ? o.marker(Marker.STORAGE) : o.marker(Marker.SMITHY);
             case MAGE -> o.design().markers(Marker.MAGE).isEmpty() ? o.marker(Marker.THRONE) : o.marker(Marker.MAGE);
-            case HERDER -> o.marker(Marker.PEN);
+            case HERDER -> o.design().markers(Marker.PEN).isEmpty() ? o.marker(Marker.YARD) : o.marker(Marker.PEN);
             case HUNTER -> {
                 List<BlockPos> outer = o.markers(Marker.OUTER_PATROL);
                 if (outer.isEmpty()) yield o.marker(Marker.YARD);
@@ -920,7 +920,7 @@ public class WorkGoal extends Goal {
             };
             case CARAVANEER -> {
                 List<BlockPos> yard = o.markers(Marker.YARD);
-                yield yard.get(yard.size() - 1);
+                yield yard.isEmpty() ? o.marker(Marker.STORAGE) : yard.get(yard.size() - 1);
             }
             default -> o.marker(Marker.YARD);
         };
