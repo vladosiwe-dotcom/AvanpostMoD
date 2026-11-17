@@ -121,7 +121,7 @@ public final class OutpostManager {
         addSettler(o, Role.LUMBERJACK, rnd);
         addSettler(o, Role.MINER, rnd);
         addSettler(o, Role.SKOTOVOD, rnd);
-        addSettler(o, Role.SKOTOVOD, rnd);
+        // Второй скотовод приходит при росте населения; фермер занимает стартовое место.
         addSettler(o, Role.FARMER, rnd);
         addSettler(o, Role.SHIELDMAN, rnd);
         addSettler(o, Role.ARCHER, rnd);

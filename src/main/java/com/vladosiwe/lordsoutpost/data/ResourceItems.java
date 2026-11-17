@@ -57,7 +57,7 @@ public final class ResourceItems {
             return new Value(Resource.ARCANE, 4);
         }
         if (item == Items.WHEAT_SEEDS) return new Value(Resource.SEEDS, 1);
-        if (item == Items.WHEAT) return new Value(Resource.FOOD, 1);
+        if (item == Items.WHEAT) return new Value(Resource.WHEAT, 1);
         if (item == Items.HAY_BLOCK) return new Value(Resource.FOOD, 9);
         FoodProperties food = stack.get(DataComponents.FOOD);
         if (food != null && food.nutrition() > 0 && item != Items.ROTTEN_FLESH && item != Items.SPIDER_EYE && item != Items.POISONOUS_POTATO) {

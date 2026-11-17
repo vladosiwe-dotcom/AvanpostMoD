@@ -94,6 +94,7 @@ public final class QuestBoard {
             case WOOD -> 0.15;
             case STONE -> 0.12;
             case FOOD -> 0.3;
+            case WHEAT -> 0.15;
             case SEEDS -> 0.05;
             case HIDES -> 0.6;
             case IRON -> 1.0;

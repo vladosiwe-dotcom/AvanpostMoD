@@ -30,7 +30,7 @@ import java.util.List;
  */
 public final class Storehouse {
     /** Ресурсы, которые лежат в бочках. Казна и эссенция хранятся в цитадели и в бочки не выкладываются. */
-    public static final Resource[] PHYSICAL = {Resource.WOOD, Resource.STONE, Resource.IRON, Resource.FOOD, Resource.SEEDS, Resource.HIDES};
+    public static final Resource[] PHYSICAL = {Resource.WOOD, Resource.STONE, Resource.IRON, Resource.FOOD, Resource.WHEAT, Resource.SEEDS, Resource.HIDES};
 
     private Storehouse() {}
 
@@ -46,6 +46,7 @@ public final class Storehouse {
             case STONE -> new ItemStack(Items.COBBLESTONE);
             case IRON -> new ItemStack(Items.IRON_INGOT);
             case FOOD -> new ItemStack(Items.BREAD);
+            case WHEAT -> new ItemStack(Items.WHEAT);
             case SEEDS -> new ItemStack(Items.WHEAT_SEEDS);
             case HIDES -> new ItemStack(Items.LEATHER);
             default -> ItemStack.EMPTY;
@@ -145,6 +146,16 @@ public final class Storehouse {
             c.setChanged();
         }
         return count - left;
+    }
+
+    /** Считает конкретный предмет в бочках, не смешивая его с другими видами того же ресурса. */
+    public static int countItem(ServerLevel level, Outpost o, net.minecraft.world.item.Item item) {
+        int count = 0;
+        for (Container c : barrels(level, o)) for (int s = 0; s < c.getContainerSize(); s++) {
+            ItemStack st = c.getItem(s);
+            if (st.is(item)) count += st.getCount();
+        }
+        return count;
     }
 
     /**

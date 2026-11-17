@@ -35,8 +35,8 @@ public final class Simulation {
     /** Добыча в игровой день на работника. Камня нужно больше всего: каменные стены, башни и донжон. */
     public static final double WOOD_PER_DAY = 450;
     public static final double STONE_PER_DAY = 650;
-    /** Офлайн-выработка одного фермера: продовольствие и возврат семян в оборот. */
-    public static final double FARM_FOOD_PER_DAY = 24;
+    /** Офлайн-выработка одного фермера: пшеница и возврат семян в оборот. */
+    public static final double FARM_WHEAT_PER_DAY = 24;
     public static final double FARM_SEEDS_PER_DAY = 4;
     private static final double BUILDER_GATHER_PER_DAY = 200;
 
@@ -87,7 +87,7 @@ public final class Simulation {
         }
         o.add(Resource.WOOD, virtualWorkers(o, Role.LUMBERJACK, now) * WOOD_PER_DAY * prod * (o.boosted(Resource.WOOD, now) ? boost : 1));
         int farmers = virtualWorkers(o, Role.FARMER, now);
-        o.add(Resource.FOOD, farmers * FARM_FOOD_PER_DAY * prod * (o.boosted(Resource.FOOD, now) ? boost : 1));
+        o.add(Resource.WHEAT, farmers * FARM_WHEAT_PER_DAY * prod * (o.boosted(Resource.WHEAT, now) ? boost : 1));
         o.add(Resource.SEEDS, farmers * FARM_SEEDS_PER_DAY * prod);
         int miners = virtualWorkers(o, Role.MINER, now);
         o.add(Resource.STONE, miners * STONE_PER_DAY * prod * (o.boosted(Resource.STONE, now) ? boost : 1));
@@ -109,11 +109,16 @@ public final class Simulation {
             o.add(Resource.HIDES, herd * 1.2 * prod);
         }
 
-        // Еда.
+        // Еда: сначала готовые продукты, затем пшеница. Так запас зерна сохраняется для хлеба,
+        // пока в кладовой есть другая пища.
         double eat = o.residents.size() * FOOD_PER_DAY * days * o.law.foodUse();
         boolean wasStarving = o.starving;
-        if (!o.take(Resource.FOOD, eat)) {
-            o.setStock(Resource.FOOD, 0);
+        double fromFood = Math.min(o.stock(Resource.FOOD), eat);
+        if (fromFood > 0) o.take(Resource.FOOD, fromFood);
+        double remainingFood = Math.max(0, eat - fromFood);
+        double fromWheat = Math.min(o.stock(Resource.WHEAT), remainingFood);
+        if (fromWheat > 0) o.take(Resource.WHEAT, fromWheat);
+        if (fromFood + fromWheat + 1e-6 < eat) {
             o.starving = true;
             if (!wasStarving) {
                 o.log(now, "lordsoutpost.event.starving");

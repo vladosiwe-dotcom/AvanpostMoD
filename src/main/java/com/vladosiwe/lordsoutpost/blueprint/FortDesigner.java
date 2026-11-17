@@ -159,7 +159,7 @@ public final class FortDesigner {
         // Одно постоянное поле на каждый форт. Координаты не пересекаются с модулями всех трёх тиров.
         int farmX = layout == Layout.SQUARE ? 3 : 0;
         int farmZ = layout == Layout.SQUARE ? -2 : 11;
-        c.fill(farmX - 2, 0, farmZ - 2, farmX + 2, 0, farmZ + 2, Blocks.FARMLAND);
+        // Землю не кладём чертежом: фермер сам вручную вспашет естественный грунт вокруг воды.
         c.set(farmX, 0, farmZ, Blocks.WATER);
         c.mark(Marker.FARM, farmX, 1, farmZ);
         if (tier == 1) {
