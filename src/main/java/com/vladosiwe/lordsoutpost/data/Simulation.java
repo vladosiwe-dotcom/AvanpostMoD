@@ -89,14 +89,14 @@ public final class Simulation {
         double ironMiners = miners + 0.5 * (o.activeCount(Role.MINER) - miners);
         o.add(Resource.IRON, ironMiners * 24 * prod * (o.boosted(Resource.IRON, now) ? boost : 1));
         double foodBoost = o.boosted(Resource.FOOD, now) ? boost : 1;
-        int hunters = virtualWorkers(o, Role.HUNTER, now);
-        o.add(Resource.FOOD, hunters * 36 * prod * foodBoost);
-        o.add(Resource.HIDES, hunters * 10 * prod);
-        int herders = virtualWorkers(o, Role.HERDER, now);
-        if (herders > 0) {
+        int skotovods = virtualWorkers(o, Role.SKOTOVOD, now);
+        // Одна профессия совмещает охоту и животноводство; виртуальная экономика учитывает оба направления.
+        o.add(Resource.FOOD, skotovods * 36 * prod * foodBoost);
+        o.add(Resource.HIDES, skotovods * 10 * prod);
+        if (skotovods > 0) {
             // Вдали скотоводы пригоняют животных, пока загон не заполнится, и держат стадо.
-            if (o.penAnimals < o.penCapacity() && rnd.nextDouble() < herders * 1.5 * days) o.penAnimals++;
-            double herd = Math.min(o.penAnimals, herders * 8);
+            if (o.penAnimals < o.penCapacity() && rnd.nextDouble() < skotovods * 1.5 * days) o.penAnimals++;
+            double herd = Math.min(o.penAnimals, skotovods * 8);
             o.add(Resource.FOOD, herd * 5 * prod * foodBoost);
             o.add(Resource.HIDES, herd * 1.2 * prod);
         }
@@ -287,8 +287,8 @@ public final class Simulation {
 
     // ============================== Состав поселения ==============================
 
-    private static final Role[] PRIORITY = {Role.STEWARD, Role.BUILDER, Role.LUMBERJACK, Role.MINER, Role.HUNTER, Role.SHIELDMAN,
-            Role.HERDER, Role.SMITH, Role.CARAVANEER, Role.MAGE};
+    private static final Role[] PRIORITY = {Role.STEWARD, Role.BUILDER, Role.LUMBERJACK, Role.MINER, Role.SKOTOVOD, Role.SHIELDMAN,
+            Role.SMITH, Role.CARAVANEER, Role.MAGE};
 
     /** Сколько жителей каждой роли нужно поселению этого тира (для бойцов — общее число, ключ SHIELDMAN). */
     public static int desired(Outpost o, Role role) {
@@ -298,8 +298,7 @@ public final class Simulation {
             case BUILDER -> o.complete() ? 1 : 1 + t;
             case LUMBERJACK -> t == 1 ? 1 : 2;
             case MINER -> t;
-            case HUNTER -> t == 3 ? 2 : 1;
-            case HERDER -> t == 3 ? 2 : 1;
+            case SKOTOVOD -> t == 3 ? 2 : 1;
             case SMITH -> t >= 2 ? 1 : 0;
             case CARAVANEER -> t - 1;
             case MAGE -> t >= 3 ? 1 : 0;
