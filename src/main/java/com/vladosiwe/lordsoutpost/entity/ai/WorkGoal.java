@@ -513,7 +513,7 @@ public class WorkGoal extends Goal {
     /** План штрека неизменен для одного дизайна форта; не пересоздаём сотни колонн каждый тик. */
     private List<Column> minePlan(ServerLevel level, Outpost o) {
         int minY = level.getMinBuildHeight();
-        if (cachedMineOutpost != o || cachedMineMinY != minY || cachedMinePlan.isEmpty()) {
+        if (cachedMineOutpost != o || cachedMineMinY != minY) {
             cachedMinePlan = tunnel(o, minY);
             cachedMineOutpost = o;
             cachedMineMinY = minY;
