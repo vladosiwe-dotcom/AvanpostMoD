@@ -71,7 +71,11 @@ public class BuildGoal extends Goal {
         mob.getLookControl().setLookAt(target.getX() + 0.5, target.getY() + 0.5, target.getZ() + 0.5);
         double dx = mob.getX() - (target.getX() + 0.5);
         double dz = mob.getZ() - (target.getZ() + 0.5);
-        if (dx * dx + dz * dz > 3.5 * 3.5) {
+        // Высокие части башен и донжона строитель возводит с уже построенных площадок/лестниц,
+        // а не ставит блоки с уровня земли на любой высоте.
+        boolean tooFarHorizontally = dx * dx + dz * dz > 3.5 * 3.5;
+        boolean tooFarVertically = Math.abs(mob.getY() - (target.getY() + 1.0)) > 5.0;
+        if (tooFarHorizontally || tooFarVertically) {
             if (--timeout <= 0) {
                 ChunkReconciliation.releaseClaim(o, claim);
                 claim = -1;
@@ -80,7 +84,8 @@ public class BuildGoal extends Goal {
                 return;
             }
             if (mob.getNavigation().isDone() || mob.tickCount % 20 == 0) {
-                mob.getNavigation().moveTo(target.getX() + 0.5, o.center.getY() + 1, target.getZ() + 0.5, 1.0);
+                double workY = tooFarVertically ? target.getY() + 1.0 : o.center.getY() + 1.0;
+                mob.getNavigation().moveTo(target.getX() + 0.5, workY, target.getZ() + 0.5, 1.0);
             }
             return;
         }
