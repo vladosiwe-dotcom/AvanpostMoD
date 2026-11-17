@@ -262,6 +262,35 @@ public final class OutpostGameTests {
         h.succeed();
     }
 
+    /** Загруженный в мир житель не должен одновременно давать виртуальную выработку, даже если долго не работал. */
+    @GameTest(template = "empty")
+    public static void loadedWorkerIsNotCountedAsVirtual(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        Outpost o = virtualOutpost(level, data, FAR.offset(96, 0, 0), 1, UUID.randomUUID());
+        try {
+            Resident miner = new Resident(UUID.randomUUID(), Role.MINER, "Loaded Miner");
+            o.residents.add(miner);
+            o.online = true;
+            int baseline = Simulation.virtualWorkers(o, Role.MINER, level.getGameTime());
+            miner.entity = UUID.randomUUID();
+            miner.lastRealWork = level.getGameTime() - 100_000;
+            h.assertTrue(Simulation.virtualWorkers(o, Role.MINER, level.getGameTime()) == baseline,
+                    "загруженный шахтёр не должен получать виртуальную добычу даже после долгого простоя");
+            miner.entity = null;
+            h.assertTrue(Simulation.virtualWorkers(o, Role.MINER, level.getGameTime()) == baseline + 1,
+                    "выгруженный шахтёр должен учитываться в A-Life симуляции");
+            miner.entity = UUID.randomUUID();
+            o.online = false;
+            h.assertTrue(Simulation.virtualWorkers(o, Role.MINER, level.getGameTime()) == baseline + 1,
+                    "при выгруженном аванпосте шахтёр должен учитываться виртуально");
+        } finally {
+            OutpostManager.abandon(data, o, level.getGameTime());
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
     /** При выгрузке чанка переполнение склада не уничтожает добычу жителя. */
     @GameTest(template = "empty")
     public static void virtualWorkerDepositPreservesOverflow(GameTestHelper h) {
