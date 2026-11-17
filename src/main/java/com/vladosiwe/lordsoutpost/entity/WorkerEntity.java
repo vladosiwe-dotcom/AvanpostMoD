@@ -128,6 +128,7 @@ public class WorkerEntity extends OutpostNpc {
         ItemStack tool = switch (r.role) {
             case BUILDER -> new ItemStack(Items.IRON_AXE);
             case SKOTOVOD -> new ItemStack(Items.BOW);
+            case FARMER -> new ItemStack(Items.IRON_HOE);
             case MINER -> new ItemStack(switch (o == null ? 2 : minerToolTier(o, r)) {
                 case 3 -> Items.DIAMOND_PICKAXE;
                 case 2 -> Items.IRON_PICKAXE;

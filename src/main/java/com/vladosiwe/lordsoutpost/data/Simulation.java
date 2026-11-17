@@ -35,6 +35,9 @@ public final class Simulation {
     /** Добыча в игровой день на работника. Камня нужно больше всего: каменные стены, башни и донжон. */
     public static final double WOOD_PER_DAY = 450;
     public static final double STONE_PER_DAY = 650;
+    /** Офлайн-выработка одного фермера: продовольствие и возврат семян в оборот. */
+    public static final double FARM_FOOD_PER_DAY = 24;
+    public static final double FARM_SEEDS_PER_DAY = 4;
     private static final double BUILDER_GATHER_PER_DAY = 200;
 
     private Simulation() {}
@@ -83,6 +86,9 @@ public final class Simulation {
             o.add(lacking, o.activeCount(Role.BUILDER) * BUILDER_GATHER_PER_DAY * prod);
         }
         o.add(Resource.WOOD, virtualWorkers(o, Role.LUMBERJACK, now) * WOOD_PER_DAY * prod * (o.boosted(Resource.WOOD, now) ? boost : 1));
+        int farmers = virtualWorkers(o, Role.FARMER, now);
+        o.add(Resource.FOOD, farmers * FARM_FOOD_PER_DAY * prod * (o.boosted(Resource.FOOD, now) ? boost : 1));
+        o.add(Resource.SEEDS, farmers * FARM_SEEDS_PER_DAY * prod);
         int miners = virtualWorkers(o, Role.MINER, now);
         o.add(Resource.STONE, miners * STONE_PER_DAY * prod * (o.boosted(Resource.STONE, now) ? boost : 1));
         // Железной руды в штреке мало, поэтому шахтёр в мире всё равно даёт половину железа «из промывки».
@@ -289,7 +295,7 @@ public final class Simulation {
 
     // ============================== Состав поселения ==============================
 
-    private static final Role[] PRIORITY = {Role.STEWARD, Role.BUILDER, Role.LUMBERJACK, Role.MINER, Role.SKOTOVOD, Role.SHIELDMAN,
+    private static final Role[] PRIORITY = {Role.STEWARD, Role.BUILDER, Role.LUMBERJACK, Role.MINER, Role.SKOTOVOD, Role.FARMER, Role.SHIELDMAN,
             Role.SMITH, Role.CARAVANEER, Role.MAGE};
 
     /** Сколько жителей каждой роли нужно поселению этого тира (для бойцов — общее число, ключ SHIELDMAN). */
@@ -302,6 +308,7 @@ public final class Simulation {
             case MINER -> t;
             // Сохраняем суммарную численность прежних двух ролей: охотник + скотовод.
             case SKOTOVOD -> t == 3 ? 4 : 2;
+            case FARMER -> 1;
             case SMITH -> t >= 2 ? 1 : 0;
             case CARAVANEER -> t - 1;
             case MAGE -> t >= 3 ? 1 : 0;

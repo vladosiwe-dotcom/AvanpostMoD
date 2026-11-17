@@ -56,6 +56,7 @@ public final class ResourceItems {
         if (id.getNamespace().equals("irons_spellbooks") && (id.getPath().equals("arcane_essence") || id.getPath().endsWith("_rune"))) {
             return new Value(Resource.ARCANE, 4);
         }
+        if (item == Items.WHEAT_SEEDS) return new Value(Resource.SEEDS, 1);
         if (item == Items.WHEAT) return new Value(Resource.FOOD, 1);
         if (item == Items.HAY_BLOCK) return new Value(Resource.FOOD, 9);
         FoodProperties food = stack.get(DataComponents.FOOD);

@@ -36,6 +36,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.CropBlock;
 import net.minecraft.world.level.block.FenceGateBlock;
 import net.minecraft.world.level.block.LeavesBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -88,6 +89,8 @@ public class WorkGoal extends Goal {
     @Nullable private Animal breedingPartner;
     // Охота (вторая обязанность скотовода).
     @Nullable private Animal prey;
+    @Nullable private BlockPos farmTarget;
+    private boolean farmHarvest;
     private int kills;
     /** Скотовод чередует животноводство и охоту, чтобы одно направление не вытесняло другое. */
     private boolean skotovodHuntNext;
@@ -156,6 +159,8 @@ public class WorkGoal extends Goal {
         animal = null;
         breedingPartner = null;
         prey = null;
+        farmTarget = null;
+        farmHarvest = false;
         item = null;
     }
 
@@ -194,6 +199,7 @@ public class WorkGoal extends Goal {
                     case LUMBERJACK -> vegetation != null ? clearVegetation(level, o, r, now) : chop(level, o, r, now);
                     case MINER -> mine(level, o, r, now);
                     case SKOTOVOD -> skotovodHunting ? hunt(level, o, r, now) : herd(level, o, r, now);
+                    case FARMER -> farm(level, o, r, now);
                     default -> true;
                 };
                 if (done) {
@@ -222,6 +228,7 @@ public class WorkGoal extends Goal {
     // ============================== Что делать дальше ==============================
 
     private void decide(ServerLevel level, Outpost o, Resident r, long now) {
+        if (r.role == Role.FARMER) craftBread();
         if (mob.carried() > 0 && mob.cargoReadyToDeposit()) {
             phase = Phase.DEPOSIT;
             return;
@@ -237,11 +244,12 @@ public class WorkGoal extends Goal {
             skotovodHuntNext = (r.id.getLeastSignificantBits() & 1L) != 0L;
             skotovodScheduleInitialized = true;
         }
-        boolean physical = role == Role.LUMBERJACK || role == Role.MINER || role == Role.SKOTOVOD;
+        boolean physical = role == Role.LUMBERJACK || role == Role.MINER || role == Role.SKOTOVOD || role == Role.FARMER;
         if (physical && now >= noJobUntil) {
             boolean found = switch (role) {
                 case LUMBERJACK -> findVegetation(level, o) || findTree(level, o);
                 case MINER -> claimColumn(level, o);
+                case FARMER -> findFarmTask(level, o);
                 case SKOTOVOD -> {
                     boolean huntFirst = skotovodHuntNext;
                     boolean selected = huntFirst ? startHunt() : planHerd(level, o, now);
@@ -981,6 +989,86 @@ public class WorkGoal extends Goal {
         return best;
     }
 
+    // ============================== Фермер ==============================
+
+    /** Выбирает созревшую пшеницу раньше пустой грядки, чтобы урожай не пропадал. */
+    private boolean findFarmTask(ServerLevel level, Outpost o) {
+        BlockPos center = o.marker(Marker.FARM);
+        if (!level.hasChunk(center.getX() >> 4, center.getZ() >> 4)) return false;
+        BlockPos harvest = null;
+        BlockPos plant = null;
+        double harvestDistance = Double.MAX_VALUE;
+        double plantDistance = Double.MAX_VALUE;
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                if (dx == 0 && dz == 0) continue;
+                BlockPos crop = center.offset(dx, 0, dz);
+                BlockPos soil = crop.below();
+                if (!level.getBlockState(soil).is(Blocks.FARMLAND)) continue;
+                BlockState state = level.getBlockState(crop);
+                double distance = mob.distanceToSqr(crop.getX() + 0.5, crop.getY(), crop.getZ() + 0.5);
+                if (state.is(Blocks.WHEAT) && state.getValue(CropBlock.AGE) >= 7) {
+                    if (distance < harvestDistance) {
+                        harvestDistance = distance;
+                        harvest = crop.immutable();
+                    }
+                } else if (state.isAir() && distance < plantDistance) {
+                    plantDistance = distance;
+                    plant = crop.immutable();
+                }
+            }
+        }
+        farmHarvest = harvest != null;
+        farmTarget = farmHarvest ? harvest : plant;
+        return farmTarget != null;
+    }
+
+    /** Физически собирает зрелую пшеницу или тратит реальное семя со склада на посадку. */
+    private boolean farm(ServerLevel level, Outpost o, Resident r, long now) {
+        if (farmTarget == null) return true;
+        if (!go(o, farmTarget, 2.2, 300)) return false;
+        BlockState crop = level.getBlockState(farmTarget);
+        if (farmHarvest && crop.is(Blocks.WHEAT) && crop.getValue(CropBlock.AGE) >= 7) {
+            mob.swing(InteractionHand.MAIN_HAND);
+            for (ItemStack drop : Block.getDrops(crop, level, farmTarget, null, mob, mob.getMainHandItem())) {
+                ItemStack left = mob.collect(drop);
+                if (!left.isEmpty()) mob.spawnAtLocation(left);
+            }
+            level.destroyBlock(farmTarget, false, mob);
+            craftBread();
+            r.lastRealWork = now;
+            return true;
+        }
+        if (crop.isAir() && level.getBlockState(farmTarget.below()).is(Blocks.FARMLAND)) {
+            if (!Storehouse.takeItem(level, o, Items.WHEAT_SEEDS, 1)) {
+                noJobUntil = now + 600;
+                return true;
+            }
+            mob.swing(InteractionHand.MAIN_HAND);
+            level.setBlockAndUpdate(farmTarget, Blocks.WHEAT.defaultBlockState());
+            level.playSound(null, farmTarget, SoundEvents.GRASS_PLACE, SoundSource.BLOCKS, 0.7f, 1.0f);
+            r.lastRealWork = now;
+            return true;
+        }
+        return true;
+    }
+
+    /** Три настоящих пшеничных предмета превращаются в один хлеб; при нехватке места сырьё не расходуется. */
+    private void craftBread() {
+        for (int slot = 0; slot < mob.inventory.getContainerSize(); slot++) {
+            ItemStack wheat = mob.inventory.getItem(slot);
+            while (wheat.is(Items.WHEAT) && wheat.getCount() >= 3) {
+                if (wheat.getCount() == 3) {
+                    mob.inventory.setItem(slot, new ItemStack(Items.BREAD));
+                    break;
+                }
+                ItemStack remainder = mob.inventory.addItem(new ItemStack(Items.BREAD));
+                if (!remainder.isEmpty()) break;
+                wheat.shrink(3);
+            }
+        }
+    }
+
     // ============================== Работа у места (без добычи в мире) ==============================
 
     private void chore(ServerLevel level, Outpost o, Role role) {
@@ -1006,6 +1094,7 @@ public class WorkGoal extends Goal {
     private BlockPos workplace(ServerLevel level, Outpost o, Role role) {
         return switch (role) {
             case LUMBERJACK -> o.marker(Marker.WOODYARD);
+            case FARMER -> o.marker(Marker.FARM);
             case MINER -> o.marker(Marker.MINE);
             case SMITH -> o.design().markers(Marker.SMITHY).isEmpty() ? o.marker(Marker.STORAGE) : o.marker(Marker.SMITHY);
             case MAGE -> o.design().markers(Marker.MAGE).isEmpty() ? o.marker(Marker.THRONE) : o.marker(Marker.MAGE);
@@ -1030,7 +1119,7 @@ public class WorkGoal extends Goal {
             case MINER -> SoundEvents.STONE_HIT;
             case SMITH -> SoundEvents.SMITHING_TABLE_USE;
             case MAGE -> SoundEvents.BOOK_PAGE_TURN;
-            case SKOTOVOD -> SoundEvents.GRASS_STEP;
+            case SKOTOVOD, FARMER -> SoundEvents.GRASS_STEP;
             case STEWARD -> SoundEvents.BOOK_PAGE_TURN;
             default -> null;
         };

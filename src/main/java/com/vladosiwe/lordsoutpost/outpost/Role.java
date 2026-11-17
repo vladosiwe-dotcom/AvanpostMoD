@@ -7,6 +7,7 @@ public enum Role {
     STEWARD("steward", false),
     BUILDER("builder", false),
     SKOTOVOD("herder", false),
+    FARMER("farmer", false),
     MINER("miner", false),
     LUMBERJACK("lumberjack", false),
     SMITH("smith", false),

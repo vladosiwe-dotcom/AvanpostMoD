@@ -30,7 +30,7 @@ import java.util.List;
  */
 public final class Storehouse {
     /** Ресурсы, которые лежат в бочках. Казна и эссенция хранятся в цитадели и в бочки не выкладываются. */
-    public static final Resource[] PHYSICAL = {Resource.WOOD, Resource.STONE, Resource.IRON, Resource.FOOD, Resource.HIDES};
+    public static final Resource[] PHYSICAL = {Resource.WOOD, Resource.STONE, Resource.IRON, Resource.FOOD, Resource.SEEDS, Resource.HIDES};
 
     private Storehouse() {}
 
@@ -46,6 +46,7 @@ public final class Storehouse {
             case STONE -> new ItemStack(Items.COBBLESTONE);
             case IRON -> new ItemStack(Items.IRON_INGOT);
             case FOOD -> new ItemStack(Items.BREAD);
+            case SEEDS -> new ItemStack(Items.WHEAT_SEEDS);
             case HIDES -> new ItemStack(Items.LEATHER);
             default -> ItemStack.EMPTY;
         };
@@ -144,6 +145,42 @@ public final class Storehouse {
             c.setChanged();
         }
         return count - left;
+    }
+
+    /**
+     * Забирает реальные предметы из бочек для производственного процесса NPC.
+     * Сначала проверяет весь объём, затем меняет и инвентарь, и числовой запас.
+     */
+    public static boolean takeItem(ServerLevel level, Outpost o, net.minecraft.world.item.Item item, int count) {
+        if (count <= 0) return true;
+        ResourceItems.Value value = ResourceItems.of(new ItemStack(item));
+        if (value == null || !physical(value.resource())) return false;
+        double amount = count * value.perItem();
+        if (o.stock(value.resource()) + 1e-6 < amount) return false;
+        List<Container> barrels = barrels(level, o);
+        int available = 0;
+        for (Container c : barrels) for (int s = 0; s < c.getContainerSize(); s++) {
+            ItemStack st = c.getItem(s);
+            if (st.is(item)) available += st.getCount();
+        }
+        if (available < count) return false;
+        int left = count;
+        for (Container c : barrels) {
+            for (int s = 0; s < c.getContainerSize() && left > 0; s++) {
+                ItemStack st = c.getItem(s);
+                if (!st.is(item)) continue;
+                int n = Math.min(left, st.getCount());
+                st.shrink(n);
+                left -= n;
+                c.setChanged();
+            }
+            if (left == 0) break;
+        }
+        if (left != 0) return false;
+        o.take(value.resource(), amount);
+        o.storeLast.merge(value.resource(), -amount, Double::sum);
+        o.dirtyForClients = true;
+        return true;
     }
 
     /**

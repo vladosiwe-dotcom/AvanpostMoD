@@ -156,6 +156,12 @@ public final class FortDesigner {
         c.mark(Marker.CARAVAN, 0, 1, r + 8);
         c.mark(Marker.YARD, 0, 1, r - 6);
         c.mark(Marker.YARD, 3, 1, r - 7);
+        // Одно постоянное поле на каждый форт. Координаты не пересекаются с модулями всех трёх тиров.
+        int farmX = layout == Layout.SQUARE ? 3 : 0;
+        int farmZ = layout == Layout.SQUARE ? -2 : 11;
+        c.fill(farmX - 2, 0, farmZ - 2, farmX + 2, 0, farmZ + 2, Blocks.FARMLAND);
+        c.set(farmX, 0, farmZ, Blocks.WATER);
+        c.mark(Marker.FARM, farmX, 1, farmZ);
         if (tier == 1) {
             for (int side = -1; side <= 1; side += 2) {
                 c.fill(side * 2, 1, r, side * 2, 5, r, p.log);

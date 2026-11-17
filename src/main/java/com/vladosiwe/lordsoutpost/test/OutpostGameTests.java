@@ -70,6 +70,28 @@ public final class OutpostGameTests {
 
     private OutpostGameTests() {}
 
+    /** Фермер имеет одно поле и отдельный оборот семян; офлайн-выработка не зависит от загрузки чанков. */
+    @GameTest(template = "empty")
+    public static void farmerFieldAndOfflineProduction(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        Outpost o = virtualOutpost(level, data, FAR.offset(17000, 0, 0), 1, UUID.randomUUID());
+        try {
+            h.assertTrue(o.count(Role.FARMER) == 1, "при основании должен появляться один фермер");
+            h.assertTrue(o.design().markers(Marker.FARM).size() == 1, "в чертеже нет единственного поля");
+            long farmland = o.design().cells.values().stream().filter(cell -> cell.state().is(Blocks.FARMLAND)).count();
+            h.assertTrue(farmland == 24, "поле должно содержать 24 грядки вокруг воды, найдено " + farmland);
+            h.assertTrue(o.design().cells.values().stream().anyMatch(cell -> cell.state().is(Blocks.WATER)), "у поля нет источника воды");
+            o.setStock(Resource.SEEDS, 0);
+            long end = simulate(level, data, o, level.getGameTime(), 1.0);
+            h.assertTrue(o.stock(Resource.SEEDS) > 0, "виртуальный фермер не пополнил запас семян");
+            h.assertTrue(Simulation.virtualWorkers(o, Role.FARMER, end) == 1, "выгруженный фермер не участвует в A-Life");
+        } finally {
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
     /** Старые hunter/herder записи сохранений загружаются как одна профессия «Скотовод». */
     @GameTest(template = "empty")
     public static void legacyHunterAndHerderRolesMigrateToSkotovod(GameTestHelper h) {
