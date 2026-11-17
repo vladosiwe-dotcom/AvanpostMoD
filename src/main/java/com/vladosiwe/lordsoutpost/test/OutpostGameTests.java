@@ -851,7 +851,9 @@ public final class OutpostGameTests {
                     for (int i = 0; i < 3; i++) {
                         var cow = net.minecraft.world.entity.EntityType.COW.create(level);
                         int cx = o.center.getX() - o.reach() - Layout.MARGIN - 4 - i * 2, cz = pen.getZ();
-                        cow.moveTo(cx + 0.5, level.getChunk(cx >> 4, cz >> 4).getHeight(Heightmap.Types.WORLD_SURFACE, cx & 15, cz & 15), cz + 0.5, 0, 0);
+                        // Для теста перегона ставим животных на высоте пола загона и даём им опору.
+                        level.setBlock(new BlockPos(cx, pen.getY() - 1, cz), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState(), 2);
+                        cow.moveTo(cx + 0.5, pen.getY(), cz + 0.5, 0, 0);
                         cow.setPersistenceRequired();
                         level.addFreshEntity(cow);
                     }
