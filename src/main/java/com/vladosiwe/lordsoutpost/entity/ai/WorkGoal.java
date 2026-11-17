@@ -104,7 +104,8 @@ public class WorkGoal extends Goal {
                 ? " mining=" + resident.miningLevel() + "/5 xp=" + resident.miningXp + " tool=" + mob.getMainHandItem().getItem()
                 : "";
         return phase + (tree != null ? " tree@" + tree.toShortString() : "") + (column >= 0 ? " col" + column : "")
-                + (animal != null ? " animal@" + animal.blockPosition().toShortString() : "")
+                + (animal != null ? " animal@" + animal.blockPosition().toShortString()
+                        + " leash=" + animal.isLeashed() + " herdTimer=" + timer : "")
                 + (prey != null ? " prey@" + prey.blockPosition().toShortString() : "")
                 + " noJob=" + noJobUntil + " carried=" + mob.carried()
                 + " slots=" + mob.occupiedSlots() + "/" + mob.inventory.getContainerSize() + mining;
@@ -736,8 +737,15 @@ public class WorkGoal extends Goal {
                     if (++timer > 400) {
                         animal.teleportTo(pen.getX() + 0.5, pen.getY(), pen.getZ() + 0.5);
                         animal.getNavigation().stop();
+                        animal.setPersistenceRequired();
+                        if (animal.isLeashed()) animal.dropLeash(true, false);
+                        BlockState stuckGate = level.getBlockState(gate);
+                        if (stuckGate.getBlock() instanceof FenceGateBlock && stuckGate.getValue(FenceGateBlock.OPEN)) {
+                            level.setBlockAndUpdate(gate, stuckGate.setValue(FenceGateBlock.OPEN, false));
+                        }
+                        r.lastRealWork = now;
                         timer = 0;
-                        return false;
+                        return true;
                     }
                     int inner = ChunkReconciliation.penSize(o) - 1;
                     int gateDx = Integer.signum(gate.getX() - pen.getX());
