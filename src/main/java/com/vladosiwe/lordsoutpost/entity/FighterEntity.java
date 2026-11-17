@@ -54,11 +54,8 @@ public class FighterEntity extends OutpostNpc implements RangedAttackMob {
         super(type, level);
     }
 
-    /**
-     * Epic Fight, накладывая свой патч, убирает у моба все цели атаки и ставит свои только для оружия ближнего боя.
-     * Стрелкам их стрелковая цель возвращается.
-     */
-    private void restoreRangedGoals() {
+    /** Epic Fight заменяет ванильные цели ближнего боя своими; стрелкам возвращаем их штатную стрельбу. */
+    public void ensureRangedCombatGoals() {
         if (!ranged()) return;
         createRangedGoals();
         boolean ranged = false, bow = false;
@@ -68,12 +65,6 @@ public class FighterEntity extends OutpostNpc implements RangedAttackMob {
         }
         if (!ranged) goalSelector.addGoal(2, rangedGoal);
         if (!bow) goalSelector.addGoal(2, bowGoal);
-    }
-
-    @Override
-    public void aiStep() {
-        super.aiStep();
-        if (!level().isClientSide && tickCount % 20 == 7) restoreRangedGoals();
     }
 
     private void createRangedGoals() {
@@ -126,8 +117,8 @@ public class FighterEntity extends OutpostNpc implements RangedAttackMob {
     /** Классы текущих целей ИИ (для проверки, что Epic Fight подменил ближний бой своими анимированными атаками). */
     public java.util.List<String> goalClassNames() {
         java.util.List<String> out = new java.util.ArrayList<>();
-        goalSelector.getAvailableGoals().forEach(w -> out.add(describe(w.getGoal())));
-        targetSelector.getAvailableGoals().forEach(w -> out.add(describe(w.getGoal())));
+        goalSelector.getAvailableGoals().forEach(w -> out.add((w.isRunning() ? "*" : "") + describe(w.getGoal())));
+        targetSelector.getAvailableGoals().forEach(w -> out.add((w.isRunning() ? "*" : "") + describe(w.getGoal())));
         return out;
     }
 
