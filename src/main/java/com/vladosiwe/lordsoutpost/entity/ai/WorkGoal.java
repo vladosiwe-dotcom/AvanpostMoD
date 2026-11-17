@@ -726,7 +726,7 @@ public class WorkGoal extends Goal {
                 if (!animal.isLeashed()) {
                     if (!go(o, animal.blockPosition(), 2.0, 400)) return false;
                     animal.setLeashedTo(mob, true);
-                    timer = -1;
+                    timer = 0;
                     return false;
                 }
                 if (!ChunkReconciliation.penAnimals(level, o).contains(animal)) {
@@ -756,6 +756,13 @@ public class WorkGoal extends Goal {
                         }
                         if (animal.getNavigation().isDone() || level.getGameTime() % 20 == 0) {
                             animal.getNavigation().moveTo(herdDestination.getX() + 0.5, herdDestination.getY(), herdDestination.getZ() + 0.5, 1.0);
+                        }
+                        // Аварийное восстановление только после длительного застревания у открытой калитки.
+                        // Обычный путь остаётся физическим; это защита от вечного зависания животного.
+                        if (++timer > 400) {
+                            animal.teleportTo(herdDestination.getX() + 0.5, herdDestination.getY(), herdDestination.getZ() + 0.5);
+                            animal.getNavigation().stop();
+                            timer = 0;
                         }
                     }
                     // Животное должно реально войти в AABB загона; только после этого отпускаем поводок.
