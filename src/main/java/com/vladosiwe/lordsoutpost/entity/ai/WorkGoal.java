@@ -1035,8 +1035,8 @@ public class WorkGoal extends Goal {
         }
         if (lowest == null) return false;
         int count = 3 * (lowest.gear + 1);
-        if (Storehouse.countItem(level, o, Items.IRON_INGOT) < count
-                || Storehouse.countItem(level, o, Items.LEATHER) < count) {
+        if (Storehouse.countItem(level, o, Items.IRON_INGOT) < count + 3
+                || Storehouse.countItem(level, o, Items.LEATHER) < count + 5) {
             noJobUntil = now + 200;
             return false;
         }
@@ -1064,8 +1064,10 @@ public class WorkGoal extends Goal {
         if (o.smithWork < 1) return false;
 
         int count = smithRepair ? 1 : 3 * (target.gear + 1);
-        if (Storehouse.countItem(level, o, Items.IRON_INGOT) < count
-                || Storehouse.countItem(level, o, Items.LEATHER) < count
+        int ironReserve = smithRepair ? 0 : 3;
+        int leatherReserve = smithRepair ? 0 : 5;
+        if (Storehouse.countItem(level, o, Items.IRON_INGOT) < count + ironReserve
+                || Storehouse.countItem(level, o, Items.LEATHER) < count + leatherReserve
                 || !Storehouse.takeItem(level, o, Items.IRON_INGOT, count)
                 || !Storehouse.takeItem(level, o, Items.LEATHER, count)) {
             noJobUntil = now + 200;
