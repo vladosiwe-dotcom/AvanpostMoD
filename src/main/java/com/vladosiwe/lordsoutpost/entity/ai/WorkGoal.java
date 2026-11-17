@@ -191,7 +191,7 @@ public class WorkGoal extends Goal {
             case PICKUP -> pickup(o);
             case JOB -> {
                 boolean done = switch (role) {
-                    case LUMBERJACK -> vegetation != null ? clearVegetation(level, r, now) : chop(level, o, r, now);
+                    case LUMBERJACK -> vegetation != null ? clearVegetation(level, o, r, now) : chop(level, o, r, now);
                     case MINER -> mine(level, o, r, now);
                     case SKOTOVOD -> skotovodHunting ? hunt(level, o, r, now) : herd(level, o, r, now);
                     default -> true;
@@ -413,7 +413,7 @@ public class WorkGoal extends Goal {
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dz = -radius; dz <= radius; dz++) {
                 int x = o.center.getX() + dx, z = o.center.getZ() + dz;
-                if (!o.insideWalls(x, o.center.getY() + 1, z) || !level.hasChunk(x >> 4, z >> 4)) continue;
+                if (!o.insideWalls(new BlockPos(x, o.center.getY() + 1, z)) || !level.hasChunk(x >> 4, z >> 4)) continue;
                 int ground = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
                 for (int y = Math.max(yMin, ground - 1); y <= Math.min(yMax, ground + 2); y++) {
                     BlockPos pos = new BlockPos(x, y, z);
@@ -436,9 +436,9 @@ public class WorkGoal extends Goal {
     }
 
     /** Убирает траву, кусты, цветы и молодую поросль внутри стен; посевы и блоки с хранилищами не трогает. */
-    private boolean clearVegetation(ServerLevel level, Resident r, long now) {
+    private boolean clearVegetation(ServerLevel level, Outpost o, Resident r, long now) {
         if (vegetation == null) return true;
-        if (!go(mob.outpost(), vegetation, 2.0, 400)) return false;
+        if (!go(o, vegetation, 2.0, 400)) return false;
         BlockState state = level.getBlockState(vegetation);
         if (state.isAir() || level.getBlockEntity(vegetation) != null || !state.getFluidState().isEmpty()) {
             vegetation = null;
