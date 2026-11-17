@@ -865,6 +865,14 @@ public final class OutpostGameTests {
                         level.addFreshEntity(e);
                         litter.add(e);
                     }
+                    // Пустой GameTest-мир не содержит природной породы: заполняем первые колонны штрека камнем,
+                    // чтобы проверить реальную добычу, а не только наличие шахтёра и его маршрута.
+                    for (com.vladosiwe.lordsoutpost.entity.ai.WorkGoal.Column column
+                            : com.vladosiwe.lordsoutpost.entity.ai.WorkGoal.tunnel(o, level.getMinBuildHeight())) {
+                        level.setBlockAndUpdate(column.floor(), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState());
+                        level.setBlockAndUpdate(column.floor().below(), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState());
+                        level.setBlockAndUpdate(column.floor().above(), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+                    }
                     mark[0] = h.getTick();
                     stage[0] = 1;
                 }
