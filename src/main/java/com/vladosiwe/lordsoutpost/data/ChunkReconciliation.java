@@ -512,7 +512,7 @@ public final class ChunkReconciliation {
         Marker m = switch (r.role) {
             case LUMBERJACK -> Marker.WOODYARD;
             case MINER -> Marker.MINE;
-            case HERDER, HUNTER -> Marker.STORAGE;
+            case SKOTOVOD -> Marker.STORAGE;
             default -> Marker.YARD;
         };
         return o.marker(m);
