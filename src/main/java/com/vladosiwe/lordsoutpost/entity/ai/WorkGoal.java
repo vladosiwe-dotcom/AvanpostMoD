@@ -597,7 +597,7 @@ public class WorkGoal extends Goal {
                 if (!left.isEmpty()) mob.spawnAtLocation(left);
             }
             level.destroyBlock(p, false, mob);
-            r.miningXp++;
+            r.miningXp = Math.min(500, r.miningXp + 1);
             r.lastRealWork = now;
             // Записываем прогресс шахтёра и курс штрека в SavedData, а не ждём следующего макроцикла.
             OutpostSavedData.get(level).setDirty();
