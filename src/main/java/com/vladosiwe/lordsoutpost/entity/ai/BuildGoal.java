@@ -23,6 +23,7 @@ public class BuildGoal extends Goal {
     private int claim = -1;
     private BlockPos target = BlockPos.ZERO;
     @Nullable private BlockPos workPosition;
+    @Nullable private Path workPath;
     private int timeout;
     private int cooldown;
     private String lastResult = "idle";
@@ -90,7 +91,10 @@ public class BuildGoal extends Goal {
             return;
         }
 
-        if (workPosition != null && reservedByAnotherBuilder(level, o, workPosition)) workPosition = null;
+        if (workPosition != null && reservedByAnotherBuilder(level, o, workPosition)) {
+            workPosition = null;
+            workPath = null;
+        }
         if (workPosition == null || !validWorkPosition(level, workPosition)) {
             workPosition = findWorkPosition(level, o, target);
         }
@@ -113,7 +117,8 @@ public class BuildGoal extends Goal {
             }
             Path path = mob.getNavigation().getPath();
             if (path == null || path.isDone() || !workPosition.equals(path.getTarget())) {
-                mob.getNavigation().moveTo(wx, wy, wz, 1.0);
+                if (workPath != null && workPath.canReach()) mob.getNavigation().moveTo(workPath, 1.0);
+                else mob.getNavigation().moveTo(wx, wy, wz, 1.0);
             }
             return;
         }
@@ -159,6 +164,8 @@ public class BuildGoal extends Goal {
     @Nullable
     private BlockPos findWorkPosition(ServerLevel level, Outpost o, BlockPos block) {
         BlockPos best = null;
+        Path bestPath = null;
+        workPath = null;
         double bestDistance = Double.MAX_VALUE;
         double tx = block.getX() + 0.5, ty = block.getY() + 0.5, tz = block.getZ() + 0.5;
         for (int dy = 1; dy >= -4; dy--) {
@@ -181,13 +188,15 @@ public class BuildGoal extends Goal {
                     if (rx * rx + ry * ry + rz * rz > 4.0 * 4.0) continue;
                     double distance = mob.distanceToSqr(feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5);
                     if (distance >= bestDistance) continue;
-                    var path = mob.getNavigation().createPath(feet, 0);
+                    Path path = mob.getNavigation().createPath(feet, 0);
                     if (path == null || !path.canReach()) continue;
                     bestDistance = distance;
                     best = feet.immutable();
+                    bestPath = path;
                 }
             }
         }
+        workPath = bestPath;
         return best;
     }
 
@@ -195,6 +204,7 @@ public class BuildGoal extends Goal {
         return "BuildGoal{pos=" + mob.blockPosition().toShortString() + ",idx=" + claim + ",target=" + target.toShortString()
                 + ",block=" + mob.level().getBlockState(target)
                 + ",work=" + (workPosition == null ? "-" : workPosition.toShortString())
+                + ",path=" + (workPath == null ? "-" : workPath.getTarget().toShortString() + "/" + workPath.getNodeCount())
                 + ",timeout=" + timeout + ",cooldown=" + cooldown + ",state=" + lastResult + "}";
     }
 
@@ -211,6 +221,7 @@ public class BuildGoal extends Goal {
         ChunkReconciliation.releaseClaim(o, claim);
         claim = -1;
         workPosition = null;
+        workPath = null;
         cooldown = retryTicks;
         mob.getNavigation().stop();
     }
@@ -220,6 +231,7 @@ public class BuildGoal extends Goal {
         ChunkReconciliation.releaseClaim(mob.outpost(), claim);
         claim = -1;
         workPosition = null;
+        workPath = null;
         mob.getNavigation().stop();
     }
 }
