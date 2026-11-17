@@ -202,17 +202,17 @@ public final class Simulation {
     }
 
     private static void smith(Outpost o, long now, double days, double boost) {
-        int smiths = o.activeCount(Role.SMITH);
+        int smiths = virtualWorkers(o, Role.SMITH, now);
         if (smiths == 0) return;
         boolean helped = o.boosted(Resource.HIDES, now) || o.boosted(Resource.IRON, now);
-        o.smithWork = Math.min(8, o.smithWork + smiths * 4 * days * (helped ? boost : 1));
+        o.smithWork = Math.min(8, o.smithWork + smiths * 30 * days * (helped ? boost : 1));
         while (o.smithWork >= 1) {
             Resident worst = null;
             for (Resident r : o.residents) if (r.role.combat && r.armor < 0.95f && (worst == null || r.armor < worst.armor)) worst = r;
             if (worst != null) {
-                if (o.stock(Resource.HIDES) < 1 || o.stock(Resource.IRON) < 1) return;
-                o.take(Resource.HIDES, 1);
-                o.take(Resource.IRON, 1);
+                if (o.stock(Resource.HIDES) < 2 || o.stock(Resource.IRON) < 4) return;
+                o.take(Resource.HIDES, 2);
+                o.take(Resource.IRON, 4);
                 worst.armor = Math.min(1f, worst.armor + 0.25f);
             } else {
                 // Броня цела — кузнец перековывает снаряжение на следующий уровень.

@@ -5,6 +5,7 @@ import com.vladosiwe.lordsoutpost.data.ChunkReconciliation;
 import com.vladosiwe.lordsoutpost.data.OutpostSavedData;
 import com.vladosiwe.lordsoutpost.data.Storehouse;
 import com.vladosiwe.lordsoutpost.entity.WorkerEntity;
+import com.vladosiwe.lordsoutpost.entity.FighterEntity;
 import com.vladosiwe.lordsoutpost.outpost.Outpost;
 import com.vladosiwe.lordsoutpost.outpost.OutpostState;
 import com.vladosiwe.lordsoutpost.outpost.Resident;
@@ -53,6 +54,7 @@ import java.util.Deque;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
+import java.util.UUID;
 import java.util.Set;
 
 /**
@@ -95,6 +97,8 @@ public class WorkGoal extends Goal {
     @Nullable private Animal prey;
     @Nullable private BlockPos farmTarget;
     private boolean farmHarvest;
+    @Nullable private UUID smithTarget;
+    private boolean smithRepair;
     private boolean farmTill;
     private int kills;
     /** Скотовод чередует животноводство и охоту, чтобы одно направление не вытесняло другое. */
@@ -167,6 +171,8 @@ public class WorkGoal extends Goal {
         farmTarget = null;
         farmHarvest = false;
         farmTill = false;
+        smithTarget = null;
+        smithRepair = false;
         item = null;
     }
 
@@ -206,6 +212,7 @@ public class WorkGoal extends Goal {
                     case MINER -> mine(level, o, r, now);
                     case SKOTOVOD -> skotovodHunting ? hunt(level, o, r, now) : herd(level, o, r, now);
                     case FARMER -> farm(level, o, r, now);
+                    case SMITH -> smith(level, o, r, now);
                     default -> true;
                 };
                 if (done) {
@@ -254,12 +261,13 @@ public class WorkGoal extends Goal {
             skotovodHuntNext = (r.id.getLeastSignificantBits() & 1L) != 0L;
             skotovodScheduleInitialized = true;
         }
-        boolean physical = role == Role.LUMBERJACK || role == Role.MINER || role == Role.SKOTOVOD || role == Role.FARMER;
+        boolean physical = role == Role.LUMBERJACK || role == Role.MINER || role == Role.SKOTOVOD || role == Role.FARMER || role == Role.SMITH;
         if (physical && now >= noJobUntil) {
             boolean found = switch (role) {
                 case LUMBERJACK -> findVegetation(level, o) || findTree(level, o);
                 case MINER -> claimColumn(level, o);
                 case FARMER -> findFarmTask(level, o);
+                case SMITH -> findSmithTask(level, o, now);
                 case SKOTOVOD -> {
                     boolean huntFirst = skotovodHuntNext;
                     boolean selected = huntFirst ? startHunt() : planHerd(level, o, now);
@@ -997,6 +1005,84 @@ public class WorkGoal extends Goal {
             }
         }
         return best;
+    }
+
+    // ============================== Кузнец ==============================
+
+    /** Ремонт имеет приоритет; когда броня исправна, кузнец повышает уровень снаряжения бойцов. */
+    private boolean findSmithTask(ServerLevel level, Outpost o, long now) {
+        Resident worst = null;
+        for (Resident candidate : o.residents) {
+            if (candidate.active() && candidate.role.combat && candidate.armor < 0.95f
+                    && (worst == null || candidate.armor < worst.armor)) worst = candidate;
+        }
+        if (worst != null) {
+            if (Storehouse.countItem(level, o, Items.IRON_INGOT) < 1
+                    || Storehouse.countItem(level, o, Items.LEATHER) < 1) {
+                noJobUntil = now + 200;
+                return false;
+            }
+            smithTarget = worst.id;
+            smithRepair = true;
+            return true;
+        }
+
+        int maxGear = Math.min(Resident.MAX_GEAR, o.tier);
+        Resident lowest = null;
+        for (Resident candidate : o.residents) {
+            if (candidate.active() && candidate.role.combat && candidate.gear < maxGear
+                    && (lowest == null || candidate.gear < lowest.gear)) lowest = candidate;
+        }
+        if (lowest == null) return false;
+        int count = 3 * (lowest.gear + 1);
+        if (Storehouse.countItem(level, o, Items.IRON_INGOT) < count
+                || Storehouse.countItem(level, o, Items.LEATHER) < count) {
+            noJobUntil = now + 200;
+            return false;
+        }
+        smithTarget = lowest.id;
+        smithRepair = false;
+        return true;
+    }
+
+    /** Работает у кузницы; реальные слитки и кожа списываются со склада при завершении операции. */
+    private boolean smith(ServerLevel level, Outpost o, Resident worker, long now) {
+        if (smithTarget == null) return true;
+        Resident target = o.resident(smithTarget);
+        if (target == null || !target.active() || !target.role.combat) {
+            smithTarget = null;
+            return true;
+        }
+        if (!go(o, o.marker(Marker.SMITHY), 1.6, 500)) return false;
+
+        if (mob.tickCount % 80 == 0) {
+            mob.swing(InteractionHand.MAIN_HAND);
+            mob.playSound(SoundEvents.SMITHING_TABLE_USE, 0.75f, 0.9f + mob.getRandom().nextFloat() * 0.2f);
+        }
+        // Та же шкала smithWork используется офлайн: загрузка чанка не удваивает производство.
+        o.smithWork = Math.min(8, o.smithWork + 30.0 / 24000.0);
+        if (o.smithWork < 1) return false;
+
+        int count = smithRepair ? 1 : 3 * (target.gear + 1);
+        if (Storehouse.countItem(level, o, Items.IRON_INGOT) < count
+                || Storehouse.countItem(level, o, Items.LEATHER) < count
+                || !Storehouse.takeItem(level, o, Items.IRON_INGOT, count)
+                || !Storehouse.takeItem(level, o, Items.LEATHER, count)) {
+            noJobUntil = now + 200;
+            smithTarget = null;
+            return true;
+        }
+
+        if (smithRepair) target.armor = Math.min(1f, target.armor + 0.25f);
+        else target.gear = Math.min(Resident.MAX_GEAR, target.gear + 1);
+        o.smithWork -= 1;
+        o.dirtyForClients = true;
+        if (target.entity != null && level.getEntity(target.entity) instanceof FighterEntity fighter) {
+            fighter.refreshResidentEquipment();
+        }
+        worker.lastRealWork = now;
+        smithTarget = null;
+        return true;
     }
 
     // ============================== Фермер ==============================
