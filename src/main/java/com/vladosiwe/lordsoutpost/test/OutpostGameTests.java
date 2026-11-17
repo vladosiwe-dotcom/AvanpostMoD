@@ -854,11 +854,16 @@ public final class OutpostGameTests {
                     // Пустой шаблон GameTest не имеет естественного грунта: прокладываем физический путь к калитке.
                     int penFloor = pen.getY() - 1;
                     int firstCowX = o.center.getX() - o.reach() - Layout.MARGIN - 8;
-                    for (int wx = firstCowX; wx <= pen.getX(); wx++) {
+                    int westRouteX = pen.getX() - com.vladosiwe.lordsoutpost.data.ChunkReconciliation.penSize(o) - 1;
+                    // Обходим западную стену загона снаружи и подходим к воротам с юга, не прокладывая путь сквозь забор.
+                    for (int wx = firstCowX; wx <= westRouteX; wx++) {
                         level.setBlock(new BlockPos(wx, penFloor, pen.getZ()), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState(), 2);
                     }
                     for (int wz = pen.getZ(); wz <= pen.getZ() + 3; wz++) {
-                        level.setBlock(new BlockPos(pen.getX(), penFloor, wz), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState(), 2);
+                        level.setBlock(new BlockPos(westRouteX, penFloor, wz), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState(), 2);
+                    }
+                    for (int wx = westRouteX; wx <= pen.getX(); wx++) {
+                        level.setBlock(new BlockPos(wx, penFloor, pen.getZ() + 3), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState(), 2);
                     }
                     for (int i = 0; i < 3; i++) {
                         var cow = net.minecraft.world.entity.EntityType.COW.create(level);
