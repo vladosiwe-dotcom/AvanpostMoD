@@ -534,6 +534,7 @@ public class WorkGoal extends Goal {
                 // Курсор сдвигается только после завершения столбца: сон/выгрузка не должны пропускать недокопанный блок.
                 redigTries = 0;
             } else if (target >= 0) {
+                if (target != redigColumn) redigTries = 0;
                 if (target == redigColumn && ++redigTries > 3) {
                     // Эту клетку не расчистить (бедрок и т. п.) — столбец пропускается.
                     o.mineCursor++;
