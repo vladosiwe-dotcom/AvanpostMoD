@@ -698,9 +698,10 @@ public final class OutpostGameTests {
         net.minecraft.server.level.ServerPlayer[] viewer = {null};
         h.onEachTick(() -> {
             if (h.getTick() % 150 == 0) {
-                LordsOutpost.LOGGER.info("Форт в мире: тик {}, этап {}, online={}, base={}, состояние {}, жителей {}, сущностей {}, steps={}, placed={}, ground={}",
+                LordsOutpost.LOGGER.info("Форт в мире: тик {}, этап {}, online={}, base={}, состояние {}, жителей {}, сущностей {}, steps={}, placed={}, ground={}, placedTier={}, plan={}, hasWork={}, workers={}",
                         h.getTick(), stage[0], o.online, o.basePlaced, o.state, o.residents.size(), level.getEntitiesOfClass(OutpostNpc.class, area).size(),
-                        o.steps, o.placed, o.groundTier);
+                        o.steps, o.placed, o.groundTier, o.placedTier, o.nextPlan().size(), ChunkReconciliation.hasWork(o),
+                        level.getEntitiesOfClass(WorkerEntity.class, area).stream().map(WorkerEntity::goalClassNames).toList());
             }
             switch (stage[0]) {
                 case 0 -> {

@@ -88,7 +88,10 @@ public class WorkerEntity extends OutpostNpc {
 
     public java.util.List<String> goalClassNames() {
         java.util.List<String> out = new java.util.ArrayList<>();
-        goalSelector.getAvailableGoals().stream().filter(w -> w.isRunning()).forEach(w -> out.add(w.getGoal().getClass().getSimpleName()));
+        goalSelector.getAvailableGoals().stream().filter(w -> w.isRunning()).forEach(w -> {
+            var goal = w.getGoal();
+            out.add(goal instanceof com.vladosiwe.lordsoutpost.entity.ai.BuildGoal build ? build.debugStatus() : goal.getClass().getSimpleName());
+        });
         return out;
     }
 

@@ -24,6 +24,7 @@ public class BuildGoal extends Goal {
     @Nullable private BlockPos workPosition;
     private int timeout;
     private int cooldown;
+    private String lastResult = "idle";
 
     public BuildGoal(WorkerEntity mob) {
         this.mob = mob;
@@ -50,6 +51,7 @@ public class BuildGoal extends Goal {
             if (--cooldown > 0) return;
             claim = ChunkReconciliation.claim(o, level.getGameTime());
             if (claim < 0) {
+                lastResult = "no-claim";
                 cooldown = 10;
                 return;
             }
@@ -62,15 +64,18 @@ public class BuildGoal extends Goal {
             target = o.world(o.nextPlan().get(claim).pos());
             workPosition = null;
             timeout = 200;
+            lastResult = "claimed";
         }
 
         if (!ChunkReconciliation.renewClaim(o, claim, level.getGameTime())) {
             claim = -1;
             workPosition = null;
+            lastResult = "claim-expired";
             return;
         }
         if (ChunkReconciliation.blockedByForeignBlock(level, o, claim)) {
             // Не сносим сундуки, посевы, декор и постройки игрока ради автоматического чертежа.
+            lastResult = "blocked-foreign:" + level.getBlockState(target);
             release(o, 40);
             return;
         }
@@ -79,6 +84,7 @@ public class BuildGoal extends Goal {
             workPosition = findWorkPosition(level, target);
         }
         if (workPosition == null) {
+            lastResult = "no-reachable-work-position";
             if (--timeout <= 0) release(o, 40);
             return;
         }
@@ -88,6 +94,7 @@ public class BuildGoal extends Goal {
         double wy = workPosition.getY();
         double wz = workPosition.getZ() + 0.5;
         if (mob.distanceToSqr(wx, wy, wz) > 0.64) {
+            lastResult = "walking";
             if (--timeout <= 0) {
                 release(o, 40);
                 mob.getNavigation().stop();
@@ -107,17 +114,20 @@ public class BuildGoal extends Goal {
         double dz = target.getZ() + 0.5 - (mob.getZ());
         if (dx * dx + dy * dy + dz * dz > 4.5 * 4.5) {
             workPosition = null;
+            lastResult = "out-of-reach";
             if (--timeout <= 0) release(o, 40);
             return;
         }
 
         if (ChunkReconciliation.clearNaturalObstruction(level, o, claim, mob)) {
+            lastResult = "cleared-natural-obstruction";
             workPosition = null;
             timeout = 200;
             return;
         }
         mob.swing(InteractionHand.MAIN_HAND);
         ChunkReconciliation.place(level, o, claim, true);
+        lastResult = "placed";
         claim = -1;
         workPosition = null;
         cooldown = 8;
@@ -155,6 +165,13 @@ public class BuildGoal extends Goal {
             }
         }
         return best;
+    }
+
+    public String debugStatus() {
+        return "BuildGoal{idx=" + claim + ",target=" + target.toShortString()
+                + ",block=" + mob.level().getBlockState(target)
+                + ",work=" + (workPosition == null ? "-" : workPosition.toShortString())
+                + ",timeout=" + timeout + ",cooldown=" + cooldown + ",state=" + lastResult + "}";
     }
 
     private boolean validWorkPosition(ServerLevel level, BlockPos feet) {
