@@ -82,7 +82,7 @@ public class BuildGoal extends Goal {
         double wx = workPosition.getX() + 0.5;
         double wy = workPosition.getY();
         double wz = workPosition.getZ() + 0.5;
-        if (mob.distanceToSqr(wx, wy, wz) > 2.25) {
+        if (mob.distanceToSqr(wx, wy, wz) > 0.64) {
             if (--timeout <= 0) {
                 release(o, 40);
                 mob.getNavigation().stop();
@@ -130,14 +130,16 @@ public class BuildGoal extends Goal {
                     if (dx == 0 && dz == 0) continue;
                     BlockPos feet = new BlockPos(block.getX() + dx, block.getY() + dy, block.getZ() + dz);
                     if (level.isOutsideBuildHeight(feet) || level.isOutsideBuildHeight(feet.above())) continue;
-                    if (!level.getBlockState(feet).getCollisionShape(level, feet).isEmpty()
+                    if (!level.getBlockState(feet).getFluidState().isEmpty()
+                            || !level.getBlockState(feet.above()).getFluidState().isEmpty()
+                            || !level.getBlockState(feet).getCollisionShape(level, feet).isEmpty()
                             || !level.getBlockState(feet.above()).getCollisionShape(level, feet.above()).isEmpty()) continue;
                     BlockPos floor = feet.below();
                     if (!level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP)) continue;
 
                     double eyeY = feet.getY() + mob.getEyeHeight();
                     double rx = tx - (feet.getX() + 0.5), ry = ty - eyeY, rz = tz - (feet.getZ() + 0.5);
-                    if (rx * rx + ry * ry + rz * rz > 4.5 * 4.5) continue;
+                    if (rx * rx + ry * ry + rz * rz > 4.0 * 4.0) continue;
                     double distance = mob.distanceToSqr(feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5);
                     if (distance < bestDistance) {
                         bestDistance = distance;
@@ -151,7 +153,9 @@ public class BuildGoal extends Goal {
 
     private boolean validWorkPosition(ServerLevel level, BlockPos feet) {
         if (level.isOutsideBuildHeight(feet) || level.isOutsideBuildHeight(feet.above())) return false;
-        return level.getBlockState(feet).getCollisionShape(level, feet).isEmpty()
+        return level.getBlockState(feet).getFluidState().isEmpty()
+                && level.getBlockState(feet.above()).getFluidState().isEmpty()
+                && level.getBlockState(feet).getCollisionShape(level, feet).isEmpty()
                 && level.getBlockState(feet.above()).getCollisionShape(level, feet.above()).isEmpty()
                 && level.getBlockState(feet.below()).isFaceSturdy(level, feet.below(), Direction.UP);
     }
