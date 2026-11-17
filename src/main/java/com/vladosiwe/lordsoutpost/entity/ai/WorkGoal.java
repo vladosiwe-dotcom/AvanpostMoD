@@ -720,14 +720,22 @@ public class WorkGoal extends Goal {
                     return false;
                 }
                 if (!ChunkReconciliation.penAnimals(level, o).contains(animal)) {
-                    if (!go(o, outside, 1.3, 600)) return false;
-                    BlockState gs = level.getBlockState(gate);
-                    if (gs.getBlock() instanceof FenceGateBlock && !gs.getValue(FenceGateBlock.OPEN)) {
-                        level.setBlockAndUpdate(gate, gs.setValue(FenceGateBlock.OPEN, true));
-                        level.playSound(null, gate, SoundEvents.FENCE_GATE_OPEN, SoundSource.BLOCKS, 0.8f, 1f);
+                    BlockPos pen = o.marker(Marker.PEN);
+                    int inner = ChunkReconciliation.penSize(o) - 1;
+                    boolean workerInside = Math.abs(mob.getX() - (pen.getX() + 0.5)) <= inner + 0.5
+                            && Math.abs(mob.getZ() - (pen.getZ() + 0.5)) <= inner + 0.5
+                            && Math.abs(mob.getY() - pen.getY()) <= 2.0;
+                    if (!workerInside) {
+                        if (!go(o, outside, 1.3, 600)) return false;
+                        BlockState gs = level.getBlockState(gate);
+                        if (gs.getBlock() instanceof FenceGateBlock && !gs.getValue(FenceGateBlock.OPEN)) {
+                            level.setBlockAndUpdate(gate, gs.setValue(FenceGateBlock.OPEN, true));
+                            level.playSound(null, gate, SoundEvents.FENCE_GATE_OPEN, SoundSource.BLOCKS, 0.8f, 1f);
+                        }
+                        // Не телепортируем скот: житель проходит через открытую калитку, животное следует за ним.
+                        go(o, pen, 0.8, 800);
                     }
-                    // Не телепортируем скот: житель проходит через открытую калитку, животное следует за ним.
-                    if (!go(o, o.marker(Marker.PEN), 0.8, 800)) return false;
+                    // Уже внутри загона — ждём, пока животное само пройдёт за поводком, не возвращаясь к воротам.
                     return false;
                 }
                 animal.dropLeash(true, false);
