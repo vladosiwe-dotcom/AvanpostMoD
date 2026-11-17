@@ -742,10 +742,19 @@ public class WorkGoal extends Goal {
                             level.setBlockAndUpdate(gate, gs.setValue(FenceGateBlock.OPEN, true));
                             level.playSound(null, gate, SoundEvents.FENCE_GATE_OPEN, SoundSource.BLOCKS, 0.8f, 1f);
                         }
-                        // Не телепортируем скот: житель проходит через открытую калитку, животное следует за ним.
+                        // Не телепортируем скот: житель проходит через открытую калитку.
                         go(o, pen, 0.8, 800);
+                    } else {
+                        // Поводок не всегда заставляет моба пройти узкий проход: задаём животному физический маршрут внутрь.
+                        BlockState gs = level.getBlockState(gate);
+                        if (gs.getBlock() instanceof FenceGateBlock && !gs.getValue(FenceGateBlock.OPEN)) {
+                            level.setBlockAndUpdate(gate, gs.setValue(FenceGateBlock.OPEN, true));
+                        }
+                        if (animal.getNavigation().isDone() || level.getGameTime() % 20 == 0) {
+                            animal.getNavigation().moveTo(pen.getX() + 0.5, pen.getY(), pen.getZ() + 0.5, 1.0);
+                        }
                     }
-                    // Уже внутри загона — ждём, пока животное само пройдёт за поводком, не возвращаясь к воротам.
+                    // Животное должно реально войти в AABB загона; только после этого отпускаем поводок.
                     return false;
                 }
                 animal.dropLeash(true, false);
