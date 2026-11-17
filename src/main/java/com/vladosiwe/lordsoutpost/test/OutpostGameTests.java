@@ -834,6 +834,8 @@ public final class OutpostGameTests {
                     OutpostManager.found(data, o, lord, "Tester", o.marker(Marker.YARD), level.getGameTime(), level.random);
                     o.nextRaidAt = Long.MAX_VALUE / 4;
                     o.autoCaravans = false;
+                    // Этот тест отдельно проверяет перегон: отключаем плановое размножение, чтобы скотовод выбрал FETCH.
+                    o.penActionAt = Long.MAX_VALUE / 4;
                     // Дерево за стенами, недалеко от дровяного двора.
                     BlockPos wood = o.marker(Marker.WOODYARD);
                     int tx = o.center.getX() + o.reach() + Layout.MARGIN + 6, tz = wood.getZ();
