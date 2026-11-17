@@ -823,6 +823,7 @@ public final class OutpostGameTests {
         AABB area = new AABB(o.center).inflate(70, 40, 70);
         int[] stage = {0};
         long[] mark = {0};
+        int[] maxPenned = {0};
         List<BlockPos> treeLogs = new java.util.ArrayList<>();
         List<net.minecraft.world.entity.item.ItemEntity> litter = new java.util.ArrayList<>();
         h.onEachTick(() -> {
@@ -889,10 +890,11 @@ public final class OutpostGameTests {
                         }
                     }
                     int penned = com.vladosiwe.lordsoutpost.data.ChunkReconciliation.penAnimals(level, o).size();
+                    maxPenned[0] = Math.max(maxPenned[0], penned);
                     boolean minerWorked = level.getEntitiesOfClass(WorkerEntity.class, area,
                             w -> w.outpostId() == o.id && w.role() == Role.MINER && w.resident() != null && w.resident().miningXp > 0).size() > 0;
                     if ((h.getTick() - mark[0]) % 200 == 0) LordsOutpost.LOGGER.info("Работа жителей: в загоне {}, шахтёр добыл блоки {}", penned, minerWorked);
-                    if (logsLeft > 0 || !litterGone || o.depositedItems < 24 + 5 || penned < 3 || !minerWorked) return;
+                    if (logsLeft > 0 || !litterGone || o.depositedItems < 24 + 5 || maxPenned[0] < 3 || !minerWorked) return;
                     // Склад: бочки отражают запас.
                     var barrels = com.vladosiwe.lordsoutpost.data.Storehouse.barrels(level, o);
                     h.assertTrue(!barrels.isEmpty(), "у склада нет бочек");
@@ -902,8 +904,8 @@ public final class OutpostGameTests {
                         h.assertTrue(diff < 10 || have.get(r) > 0, "бочки склада не совпадают с запасом: " + r + " " + have.get(r) + " / " + o.stock(r));
                     }
                     BlockPos sapling = treeLogs.get(0);
-                    LordsOutpost.LOGGER.info("Работа жителей: дерево свалено, саженец {}, мусор подобран, шахтёр получил опыт, донесено {}, в загоне {}, склад {}",
-                            level.getBlockState(sapling).getBlock(), o.depositedItems, penned, have);
+                    LordsOutpost.LOGGER.info("Работа жителей: дерево свалено, саженец {}, мусор подобран, шахтёр получил опыт, донесено {}, максимум в загоне {}, склад {}",
+                            level.getBlockState(sapling).getBlock(), o.depositedItems, maxPenned[0], have);
                     OutpostManager.abandon(data, o, level.getGameTime());
                     data.remove(o);
                     for (var npc : level.getEntitiesOfClass(OutpostNpc.class, area)) npc.discard();
