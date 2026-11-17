@@ -51,9 +51,23 @@ public class WorkerEntity extends OutpostNpc {
         return n;
     }
 
+    /** Количество занятых слотов ноши. Заполнение измеряется слотами, а не числом предметов. */
+    public int occupiedSlots() {
+        int occupied = 0;
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            if (!inventory.getItem(i).isEmpty()) occupied++;
+        }
+        return occupied;
+    }
+
+    /** Пора возвращаться на склад при заполнении не менее 75% слотов ноши. */
+    public boolean cargoReadyToDeposit() {
+        int slots = inventory.getContainerSize();
+        return slots > 0 && occupiedSlots() * 4 >= slots * 3;
+    }
+
     public boolean inventoryFull() {
-        for (int i = 0; i < inventory.getContainerSize(); i++) if (inventory.getItem(i).isEmpty()) return false;
-        return true;
+        return occupiedSlots() == inventory.getContainerSize();
     }
 
     public java.util.List<String> goalClassNames() {
