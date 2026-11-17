@@ -521,12 +521,14 @@ public class WorkGoal extends Goal {
                 if (target == redigColumn && ++redigTries > 3) {
                     // Эту клетку не расчистить (бедрок и т. п.) — столбец пропускается.
                     o.mineCursor++;
+                    OutpostSavedData.get(level).setDirty();
                     redigTries = 0;
                     continue;
                 }
                 redigColumn = target;
             } else {
                 o.mineCursor++;
+                OutpostSavedData.get(level).setDirty();
                 continue;
             }
             column = target;
