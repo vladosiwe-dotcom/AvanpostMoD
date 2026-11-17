@@ -721,9 +721,11 @@ public class WorkGoal extends Goal {
             }
             default -> {
                 // Пригнать: взять животное на поводок, открыть калитку и физически провести его в загон.
-                if (!animal.isLeashed()) {
+                if (!animal.isLeashed() && timer < 0) {
                     if (!go(o, animal.blockPosition(), 2.0, 400)) return false;
                     animal.setLeashedTo(mob, true);
+                    // Не сбрасываем этот маркер, если конкретный тип сущности/мод не поддерживает поводок на NPC.
+                    // В таком случае дальше работает прямое наведение навигации животного.
                     timer = 0;
                     return false;
                 }
@@ -767,7 +769,7 @@ public class WorkGoal extends Goal {
                     // Животное должно реально войти в AABB загона; только после этого отпускаем поводок.
                     return false;
                 }
-                animal.dropLeash(true, false);
+                if (animal.isLeashed()) animal.dropLeash(true, false);
                 animal.setPersistenceRequired();
                 BlockState after = level.getBlockState(gate);
                 if (after.getBlock() instanceof FenceGateBlock && after.getValue(FenceGateBlock.OPEN)) {
