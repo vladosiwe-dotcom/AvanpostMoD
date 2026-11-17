@@ -102,8 +102,15 @@ public class WorkGoal extends Goal {
 
     /** Коротко: чем житель занят (для журнала и отладки). */
     public String status() {
+        Resident resident = mob.resident();
+        String mining = resident != null && resident.role == Role.MINER
+                ? " mining=" + resident.miningLevel() + "/5 xp=" + resident.miningXp + " tool=" + mob.getMainHandItem().getItem()
+                : "";
         return phase + (tree != null ? " tree@" + tree.toShortString() : "") + (column >= 0 ? " col" + column : "")
-                + (animal != null ? " animal" : "") + (prey != null ? " prey" : "") + " noJob=" + noJobUntil + " carried=" + mob.carried();
+                + (animal != null ? " animal@" + animal.blockPosition().toShortString() : "")
+                + (prey != null ? " prey@" + prey.blockPosition().toShortString() : "")
+                + " noJob=" + noJobUntil + " carried=" + mob.carried()
+                + " slots=" + mob.occupiedSlots() + "/" + mob.inventory.getContainerSize() + mining;
     }
 
     @Override
