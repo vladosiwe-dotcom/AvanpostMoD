@@ -884,7 +884,7 @@ public class WorkGoal extends Goal {
     private Animal findPrey(Outpost o) {
         Animal best = null;
         double bestD = 20 * 20;
-        // Загон — отдельная защищённая зона: охотник не должен принимать скот за добычу,
+        // Загон — отдельная защищённая зона: скотовод не должен принимать своё стадо за добычу,
         // даже если загон оказался за пределами основного периметра форта.
         Set<Animal> penned = new HashSet<>();
         AABB livestockArea = null;
