@@ -891,6 +891,9 @@ public final class OutpostGameTests {
                     stage[0] = 1;
                 }
                 case 1 -> {
+                    // Фиксируем каждое животное сразу после входа: тест проверяет перегон, а не случайное блуждание стада.
+                    for (net.minecraft.world.entity.animal.Animal penned
+                            : com.vladosiwe.lordsoutpost.data.ChunkReconciliation.penAnimals(level, o)) penned.setNoAi(true);
                     int logsLeft = 0;
                     for (BlockPos p : treeLogs) if (level.getBlockState(p).is(net.minecraft.tags.BlockTags.LOGS)) logsLeft++;
                     boolean litterGone = litter.stream().noneMatch(net.minecraft.world.entity.Entity::isAlive);
