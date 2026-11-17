@@ -66,7 +66,8 @@ import java.util.Set;
 public class WorkGoal extends Goal {
     private enum Phase { DECIDE, PICKUP, JOB, DEPOSIT, CHORE, PAUSE }
 
-    private static final int DEPOSIT_AT = 24;
+    /** Лимит по предметам нужен только для длинных работ в шахте/на охоте; обычный порог — 75% слотов. */
+    private static final int MAX_CARRIED_BEFORE_RETURN = 48;
     private static final ItemStack AXE = new ItemStack(Items.IRON_AXE);
     private static final ItemStack PICKAXE = new ItemStack(Items.IRON_PICKAXE);
     private static final int MAIN_TUNNEL = 32, BRANCH_EVERY = 4, BRANCH_LENGTH = 6, GENERATIONS = 8;
@@ -208,7 +209,7 @@ public class WorkGoal extends Goal {
     // ============================== Что делать дальше ==============================
 
     private void decide(ServerLevel level, Outpost o, Resident r, long now) {
-        if (mob.carried() > 0 && (mob.carried() >= DEPOSIT_AT || mob.inventoryFull())) {
+        if (mob.carried() > 0 && mob.cargoReadyToDeposit()) {
             phase = Phase.DEPOSIT;
             return;
         }
@@ -268,8 +269,17 @@ public class WorkGoal extends Goal {
         if (mob.distanceToSqr(item) <= 2.6 || go(o, item.blockPosition(), 1.2, 200)) {
             ItemStack left = mob.collect(item.getItem());
             mob.level().playSound(null, mob.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.NEUTRAL, 0.3f, 1.2f);
-            if (left.isEmpty()) item.discard();
-            else item.setItem(left);
+            if (left.isEmpty()) {
+                item.discard();
+            } else {
+                // Ноша заполнена: не уничтожаем остаток выпавшего стака, который не поместился.
+                item.setItem(left);
+                if (mob.cargoReadyToDeposit()) {
+                    item = null;
+                    phase = Phase.DEPOSIT;
+                    return;
+                }
+            }
             item = null;
             phase = Phase.DECIDE;
         }
@@ -576,7 +586,7 @@ public class WorkGoal extends Goal {
             level.setBlockAndUpdate(lower, Blocks.TORCH.defaultBlockState());
         }
         dugInRun++;
-        if (dugInRun >= 8 || mob.carried() >= 48 || mob.inventoryFull()) return true;
+        if (dugInRun >= 8 || mob.carried() >= MAX_CARRIED_BEFORE_RETURN || mob.cargoReadyToDeposit()) return true;
         // Следующий столбец — сразу, не поднимаясь наверх.
         int before = dugInRun;
         if (!claimColumn(level, o)) return true;
@@ -731,7 +741,7 @@ public class WorkGoal extends Goal {
             kills++;
             r.lastRealWork = now;
             prey = null;
-            if (kills >= 2 || mob.carried() >= 16) return true;
+            if (kills >= 2 || mob.cargoReadyToDeposit()) return true;
         }
         if (prey == null) {
             prey = findPrey(o);
