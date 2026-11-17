@@ -382,7 +382,9 @@ public class WorkGoal extends Goal {
                 BlockPos base = top;
                 while (level.getBlockState(base.below()).is(BlockTags.LOGS) && top.getY() - base.getY() < 24) base = base.below();
                 if (!level.getBlockState(base.below()).is(BlockTags.DIRT)) continue;
-                if (data.findAt(base) != null || o.claimedTrees.contains(base) || !naturalLeaves(level, top)) continue;
+                Outpost occupied = data.findAt(base);
+                if ((occupied != null && occupied != o) || (occupied == o && !o.insideWalls(base))
+                        || o.claimedTrees.contains(base) || !naturalLeaves(level, top)) continue;
                 double d = mob.distanceToSqr(base.getX(), base.getY(), base.getZ());
                 if (d < bestD) {
                     bestD = d;
@@ -441,6 +443,11 @@ public class WorkGoal extends Goal {
         return true;
     }
 
+    private boolean oInsideWalls(BlockPos base) {
+        Outpost o = mob.outpost();
+        return o != null && o.insideWalls(base);
+    }
+
     /** Все брёвна дерева (связанные, в пределах кроны), сверху вниз. */
     private void collectTree(ServerLevel level, BlockPos base) {
         Set<BlockPos> seen = new HashSet<>();
@@ -464,7 +471,9 @@ public class WorkGoal extends Goal {
     }
 
     private void replant(ServerLevel level, BlockPos base) {
-        if (treeLog == null || !level.getBlockState(base).isAir() || !level.getBlockState(base.below()).is(BlockTags.DIRT)) return;
+        // Внутри стен деревья расчищают под двор и постройки; саженцы возвращаются только за пределами форта.
+        if (oInsideWalls(base) || treeLog == null || !level.getBlockState(base).isAir()
+                || !level.getBlockState(base.below()).is(BlockTags.DIRT)) return;
         ResourceLocation id = BuiltInRegistries.BLOCK.getKey(treeLog);
         String path = id.getPath().replace("stripped_", "").replace("_log", "_sapling").replace("_wood", "_sapling");
         if (path.startsWith("mangrove")) path = "mangrove_propagule";
