@@ -8,6 +8,7 @@ import com.vladosiwe.lordsoutpost.compat.MagicLoot;
 import com.vladosiwe.lordsoutpost.config.OutpostConfig;
 import com.vladosiwe.lordsoutpost.entity.FighterEntity;
 import com.vladosiwe.lordsoutpost.entity.OutpostNpc;
+import com.vladosiwe.lordsoutpost.entity.WorkerEntity;
 import com.vladosiwe.lordsoutpost.outpost.Caravan;
 import com.vladosiwe.lordsoutpost.outpost.Outpost;
 import com.vladosiwe.lordsoutpost.outpost.OutpostState;
@@ -30,6 +31,7 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.Entity;
@@ -216,11 +218,18 @@ public final class ChunkReconciliation {
                         expired.add(e.getKey());
                     }
                 }
-                if (expired != null) for (int idx : expired) place(level, o, idx, true);
+                if (expired != null) {
+                    boolean hasBuilder = o.activeCount(Role.BUILDER) > 0;
+                    for (int idx : expired) {
+                        if (hasBuilder) releaseClaim(o, idx);
+                        else place(level, o, idx, true);
+                    }
+                }
             }
-            // Строители не успевают (или их нет в мире) — отставание не должно копиться.
+            // Пока есть активные строители, блоки ставят только они. Автодостройка — страховка для форта без строителей.
             int limit = Math.min(o.steps, plan.size());
-            if (o.groundTier >= o.placedTier && limit - o.placed - o.claims.size() > BACKLOG) {
+            if (o.activeCount(Role.BUILDER) == 0 && o.groundTier >= o.placedTier
+                    && limit - o.placed - o.claims.size() > BACKLOG) {
                 int idx = nextFree(o, limit);
                 if (idx >= 0) place(level, o, idx, false);
             }
@@ -254,6 +263,52 @@ public final class ChunkReconciliation {
         int idx = nextFree(o, Math.min(o.steps, o.nextPlan().size()));
         if (idx >= 0) o.claims.put(idx, now + CLAIM_TIME);
         return idx;
+    }
+
+    /** Освобождает шаг, если строитель не смог до него добраться или был прерван. */
+    public static void releaseClaim(Outpost o, int index) {
+        if (index >= 0) o.claims.remove(index);
+    }
+
+    /** Признаки естественной растительности/мусора, который строитель может расчистить без разрушения построек. */
+    public static boolean isNaturalObstruction(BlockState state) {
+        return state.is(BlockTags.LOGS) || state.is(BlockTags.LEAVES) || state.is(BlockTags.FLOWERS)
+                || state.is(BlockTags.SAPLINGS) || state.is(BlockTags.CROPS) || state.is(BlockTags.REPLACEABLE_BY_TREES)
+                || (state.canBeReplaced() && state.getFluidState().isEmpty());
+    }
+
+    /** Не даём строителю перезаписывать блоки игрока, которые не принадлежат предыдущему чертежу форта. */
+    public static boolean blockedByForeignBlock(ServerLevel level, Outpost o, int index) {
+        List<Step> plan = o.nextPlan();
+        if (index < 0 || index >= plan.size()) return true;
+        Step step = plan.get(index);
+        if (step.state().isAir()) return false;
+        BlockPos pos = o.world(step.pos());
+        BlockState old = level.getBlockState(pos);
+        if (old.isAir() || old == step.state() || isNaturalObstruction(old)) return false;
+        var previous = o.design().cells.get(step.pos());
+        return previous == null || previous.state() != old;
+    }
+
+    /** Строитель вручную убирает естественную растительность, попавшую в ячейку нового здания. */
+    public static boolean clearNaturalObstruction(ServerLevel level, Outpost o, int index, WorkerEntity builder) {
+        List<Step> plan = o.nextPlan();
+        if (index < 0 || index >= plan.size()) return false;
+        Step step = plan.get(index);
+        if (step.state().isAir()) return false;
+        BlockPos pos = o.world(step.pos());
+        BlockState old = level.getBlockState(pos);
+        if (old.isAir() || old == step.state() || level.getBlockEntity(pos) != null || !isNaturalObstruction(old)) return false;
+        var previous = o.design().cells.get(step.pos());
+        if (previous != null && previous.state() == old) return false;
+        builder.swing(InteractionHand.MAIN_HAND);
+        for (ItemStack drop : Block.getDrops(old, level, pos, null, builder, builder.getMainHandItem())) {
+            ItemStack left = builder.collect(drop);
+            if (!left.isEmpty()) builder.spawnAtLocation(left);
+        }
+        level.levelEvent(2001, pos, Block.getId(old));
+        level.destroyBlock(pos, false, builder);
+        return true;
     }
 
     /** Ставит шаг текущего плана вместе с привязанными к нему (вторая половина кровати). */
