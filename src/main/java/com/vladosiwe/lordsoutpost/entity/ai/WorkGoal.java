@@ -66,8 +66,6 @@ import java.util.Set;
 public class WorkGoal extends Goal {
     private enum Phase { DECIDE, PICKUP, JOB, DEPOSIT, CHORE, PAUSE }
 
-    /** Лимит по предметам нужен только для длинных работ в шахте/на охоте; обычный порог — 75% слотов. */
-    private static final int MAX_CARRIED_BEFORE_RETURN = 48;
     private static final ItemStack AXE = new ItemStack(Items.IRON_AXE);
     private static final int MAIN_TUNNEL = 32, BRANCH_EVERY = 4, BRANCH_LENGTH = 6, GENERATIONS = 8;
 
@@ -84,7 +82,6 @@ public class WorkGoal extends Goal {
     @Nullable private Block treeLog;
     // Шахтёр.
     private int column = -1;
-    private int dugInRun;
     // Скотовод.
     private int herdAction;
     @Nullable private Animal animal;
@@ -533,7 +530,6 @@ public class WorkGoal extends Goal {
                 continue;
             }
             column = target;
-            dugInRun = 0;
             timer = -1;
             return true;
         }
@@ -605,13 +601,9 @@ public class WorkGoal extends Goal {
         if (c.torch && level.getBlockState(lower).isAir() && level.getBlockState(lower.below()).isFaceSturdy(level, lower.below(), Direction.UP)) {
             level.setBlockAndUpdate(lower, Blocks.TORCH.defaultBlockState());
         }
-        dugInRun++;
-        if (dugInRun >= 8 || mob.carried() >= MAX_CARRIED_BEFORE_RETURN || mob.cargoReadyToDeposit()) return true;
-        // Следующий столбец — сразу, не поднимаясь наверх.
-        int before = dugInRun;
-        if (!claimColumn(level, o)) return true;
-        dugInRun = before;
-        return false;
+        if (mob.cargoReadyToDeposit()) return true;
+        // Следующий столбец — сразу, не поднимаясь наверх; шахтёр работает до 75% ноши или конца штрека.
+        return !claimColumn(level, o);
     }
 
     // ============================== Скотовод ==============================
