@@ -556,9 +556,7 @@ public final class OutpostGameTests {
         int x = origin.getX() + 640, z = origin.getZ() + 640;
         for (int cx = -4; cx <= 4; cx++)
             for (int cz = -4; cz <= 4; cz++) level.setChunkForced((x >> 4) + cx, (z >> 4) + cz, true);
-        // Поднимаем тестовый форт выше нижней границы мира, чтобы шахтный ствол действительно помещался.
-        int y = Math.max(level.getChunk(x >> 4, z >> 4).getHeight(Heightmap.Types.WORLD_SURFACE, x & 15, z & 15),
-                level.getMinBuildHeight() + 8);
+        int y = level.getChunk(x >> 4, z >> 4).getHeight(Heightmap.Types.WORLD_SURFACE, x & 15, z & 15);
         Outpost o = OutpostManager.createManual(data, new BlockPos(x, y, z), Layout.SQUARE, Palette.TIMBER, Rotation.NONE, Difficulty.FRONTIER_POST, level.getGameTime(), level.random);
         UUID lord = UUID.randomUUID();
         AABB area = new AABB(o.center).inflate(60, 40, 60);
@@ -817,7 +815,9 @@ public final class OutpostGameTests {
         int x = origin.getX() + 1400, z = origin.getZ() + 640;
         for (int cx = -5; cx <= 5; cx++)
             for (int cz = -5; cz <= 5; cz++) level.setChunkForced((x >> 4) + cx, (z >> 4) + cz, true);
-        int y = level.getChunk(x >> 4, z >> 4).getHeight(Heightmap.Types.WORLD_SURFACE, x & 15, z & 15);
+        // Поднимаем тестовый форт выше нижней границы мира: шахтный ствол должен помещаться в высоту.
+        int y = Math.max(level.getChunk(x >> 4, z >> 4).getHeight(Heightmap.Types.WORLD_SURFACE, x & 15, z & 15),
+                level.getMinBuildHeight() + 8);
         Outpost o = OutpostManager.createManual(data, new BlockPos(x, y, z), Layout.SQUARE, Palette.TIMBER, Rotation.NONE, Difficulty.FRONTIER_POST, level.getGameTime(), level.random);
         UUID lord = UUID.randomUUID();
         AABB area = new AABB(o.center).inflate(70, 40, 70);
