@@ -186,10 +186,20 @@ public final class Storehouse {
             ItemStack st = inventory.getItem(s);
             if (st.isEmpty()) continue;
             ResourceItems.Value v = ResourceItems.of(st);
-            if (v != null && physical(v.resource())) o.add(v.resource(), v.perItem() * st.getCount());
-            else Simulation.addTribute(o, st.copy());
+            if (v != null && physical(v.resource())) {
+                // При выгрузке чанка ноша проходит те же ограничения ёмкости, что и обычная разгрузка.
+                // Излишек сохраняется в дани, а не исчезает из-за ограничения Outpost.add().
+                double room = Math.max(0, o.capacity(v.resource()) - o.stock(v.resource()));
+                int accepted = Math.min(st.getCount(), (int) Math.floor((room + 1e-9) / v.perItem()));
+                if (accepted > 0) o.add(v.resource(), accepted * v.perItem());
+                ItemStack excess = st.copyWithCount(st.getCount() - accepted);
+                if (!excess.isEmpty()) Simulation.addTribute(o, excess);
+            } else {
+                Simulation.addTribute(o, st.copy());
+            }
             inventory.setItem(s, ItemStack.EMPTY);
         }
+        o.dirtyForClients = true;
     }
 
     /** Стройка сносит бочку склада: её содержимое уже учтено в запасе, поэтому просто забыть его. */
