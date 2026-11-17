@@ -29,7 +29,7 @@ public class BuildGoal extends Goal {
 
     @Override
     public boolean canUse() {
-        if (mob.level().isClientSide || mob.role() != Role.BUILDER || mob.caravanId != null) return false;
+        if (mob.level().isClientSide || mob.role() != Role.BUILDER || mob.caravanId != null || mob.cargoReadyToDeposit()) return false;
         Outpost o = mob.outpost();
         return o != null && (claim >= 0 || ChunkReconciliation.hasWork(o));
     }
