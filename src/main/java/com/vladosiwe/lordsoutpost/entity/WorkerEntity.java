@@ -126,7 +126,7 @@ public class WorkerEntity extends OutpostNpc {
     @Override
     protected void equip(@Nullable Outpost o, Resident r) {
         ItemStack tool = switch (r.role) {
-            case BUILDER -> new ItemStack(Items.IRON_SHOVEL);
+            case BUILDER -> new ItemStack(Items.IRON_AXE);
             case SKOTOVOD -> new ItemStack(Items.BOW);
             case MINER -> new ItemStack(switch (o == null ? 2 : minerToolTier(o, r)) {
                 case 3 -> Items.DIAMOND_PICKAXE;
