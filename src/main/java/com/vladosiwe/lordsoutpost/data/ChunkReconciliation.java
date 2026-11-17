@@ -68,7 +68,7 @@ import java.util.UUID;
  * поэтому сбой, перезапуск сервера или выгрузка посреди работы не оставляют дублей и дыр.
  */
 public final class ChunkReconciliation {
-    private static final long CLAIM_TIME = 160;
+    private static final long CLAIM_TIME = 240;
     private static final int BACKLOG = 40;
 
     private ChunkReconciliation() {}
