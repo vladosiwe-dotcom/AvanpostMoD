@@ -36,6 +36,7 @@ import com.vladosiwe.lordsoutpost.protection.Access;
 import com.vladosiwe.lordsoutpost.protection.GateAccess;
 import com.vladosiwe.lordsoutpost.protection.ProtectionEvents;
 import com.vladosiwe.lordsoutpost.registry.ModBlocks;
+import com.vladosiwe.lordsoutpost.registry.ModEntities;
 import com.vladosiwe.lordsoutpost.registry.ModItems;
 import com.vladosiwe.lordsoutpost.server.OutpostManager;
 import net.minecraft.core.BlockPos;
@@ -86,6 +87,56 @@ public final class OutpostGameTests {
         int count = 0;
         for (Role r : Role.VALUES) if (r == Role.SKOTOVOD) count++;
         h.assertTrue(count == 1, "в списке профессий должно быть ровно одно вхождение Скотовода");
+        h.succeed();
+    }
+
+    /** Строитель убирает природную растительность на клетке чертежа, но не сносит чужой сундук. */
+    @GameTest(template = "empty")
+    public static void builderClearsNaturalObstructionsSafely(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        BlockPos center = h.absolutePos(BlockPos.ZERO).offset(32, 0, 32);
+        for (int cx = -2; cx <= 2; cx++)
+            for (int cz = -2; cz <= 2; cz++) level.setChunkForced((center.getX() >> 4) + cx, (center.getZ() >> 4) + cz, true);
+
+        Outpost o = new Outpost(987654321L, center, Layout.SQUARE, Palette.TIMBER, Rotation.NONE,
+                Difficulty.FRONTIER_POST, true);
+        o.tier = 1;
+        o.placedTier = 2;
+        o.groundTier = 2;
+        o.steps = o.nextPlan().size();
+
+        int index = -1;
+        for (int i = 0; i < o.nextPlan().size(); i++) {
+            Step step = o.nextPlan().get(i);
+            if (!step.state().isAir() && !o.design().cells.containsKey(step.pos())) {
+                index = i;
+                break;
+            }
+        }
+        h.assertTrue(index >= 0, "в плане второго тира нет новой строительной клетки");
+        Step step = o.nextPlan().get(index);
+        BlockPos target = o.world(step.pos());
+        level.setBlockAndUpdate(target, net.minecraft.world.level.block.Blocks.OAK_LOG.defaultBlockState());
+
+        WorkerEntity builder = ModEntities.WORKER.get().create(level);
+        h.assertTrue(builder != null, "не удалось создать строителя для GameTest");
+        builder.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND,
+                new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.IRON_AXE));
+        builder.moveTo(target.getX() + 1.5, target.getY(), target.getZ() + 0.5, 0, 0);
+        level.addFreshEntity(builder);
+
+        h.assertTrue(com.vladosiwe.lordsoutpost.data.ChunkReconciliation.clearNaturalObstruction(level, o, index, builder),
+                "строитель не расчистил естественное бревно");
+        h.assertTrue(level.getBlockState(target).isAir(), "естественное препятствие осталось на строительной клетке");
+        h.assertTrue(!com.vladosiwe.lordsoutpost.data.ChunkReconciliation.blockedByForeignBlock(level, o, index),
+                "после расчистки клетка всё ещё считается занятой");
+
+        level.setBlockAndUpdate(target, net.minecraft.world.level.block.Blocks.CHEST.defaultBlockState());
+        h.assertTrue(com.vladosiwe.lordsoutpost.data.ChunkReconciliation.blockedByForeignBlock(level, o, index),
+                "строитель должен распознавать чужую постройку как препятствие");
+        h.assertTrue(level.getBlockState(target).is(net.minecraft.world.level.block.Blocks.CHEST),
+                "проверка не должна разрушать сундук игрока");
+        builder.discard();
         h.succeed();
     }
 
