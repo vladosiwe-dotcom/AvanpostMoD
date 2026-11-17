@@ -930,6 +930,7 @@ public final class OutpostGameTests {
         List<BlockPos> treeLogs = new java.util.ArrayList<>();
         List<BlockPos> courtyardTreeLogs = new java.util.ArrayList<>();
         BlockPos[] courtyardTreeBase = {null};
+        BlockPos[] courtyardPlant = {null};
         List<net.minecraft.world.entity.item.ItemEntity> litter = new java.util.ArrayList<>();
         h.onEachTick(() -> {
             switch (stage[0]) {
@@ -973,6 +974,11 @@ public final class OutpostGameTests {
                     for (BlockPos p : BlockPos.betweenClosed(innerBase.offset(-2, 6, -2), innerBase.offset(2, 9, 2))) {
                         if (level.getBlockState(p).isAir()) level.setBlockAndUpdate(p, net.minecraft.world.level.block.Blocks.OAK_LEAVES.defaultBlockState());
                     }
+                    // Растительность во дворе: лесоруб должен убрать траву и молодую поросль, не трогая посевы.
+                    BlockPos plant = new BlockPos(o.center.getX() + 5, o.center.getY() + 1, o.center.getZ() + 5);
+                    courtyardPlant[0] = plant;
+                    level.setBlockAndUpdate(plant.below(), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState());
+                    level.setBlockAndUpdate(plant, net.minecraft.world.level.block.Blocks.TALL_GRASS.defaultBlockState());
                     // Коровы рядом с внешней стороной калитки: проверяем, что скотовод физически заводит их через проход.
                     BlockPos pen = o.marker(Marker.PEN);
                     // Пустой шаблон GameTest не имеет естественного грунта: создаём площадку перед калиткой.
@@ -1021,6 +1027,7 @@ public final class OutpostGameTests {
                     for (BlockPos p : courtyardTreeLogs) if (level.getBlockState(p).is(net.minecraft.tags.BlockTags.LOGS)) courtyardLogsLeft++;
                     boolean courtyardReplanted = courtyardTreeBase[0] != null
                             && level.getBlockState(courtyardTreeBase[0]).getBlock() == net.minecraft.world.level.block.Blocks.OAK_SAPLING;
+                    boolean courtyardPlantCleared = courtyardPlant[0] != null && level.getBlockState(courtyardPlant[0]).isAir();
                     boolean litterGone = litter.stream().noneMatch(net.minecraft.world.entity.Entity::isAlive);
                     boolean replanted = !treeLogs.isEmpty() && treeLogs.stream()
                             .filter(p -> p.getY() == treeLogs.get(0).getY())
@@ -1038,8 +1045,8 @@ public final class OutpostGameTests {
                     boolean minerWorked = level.getEntitiesOfClass(WorkerEntity.class, area,
                             w -> w.outpostId() == o.id && w.role() == Role.MINER && w.resident() != null && w.resident().miningXp > 0).size() > 0;
                     if ((h.getTick() - mark[0]) % 200 == 0) LordsOutpost.LOGGER.info("Работа жителей: в загоне {}, шахтёр добыл блоки {}", penned, minerWorked);
-                    if (logsLeft > 0 || courtyardLogsLeft > 0 || courtyardReplanted || !replanted || !litterGone
-                            || o.depositedItems < 24 + 5 || maxPenned[0] < 3 || !minerWorked) return;
+                    if (logsLeft > 0 || courtyardLogsLeft > 0 || courtyardReplanted || !courtyardPlantCleared
+                            || !replanted || !litterGone || o.depositedItems < 24 + 5 || maxPenned[0] < 3 || !minerWorked) return;
                     // Склад: бочки отражают запас.
                     var barrels = com.vladosiwe.lordsoutpost.data.Storehouse.barrels(level, o);
                     h.assertTrue(!barrels.isEmpty(), "у склада нет бочек");
@@ -1048,7 +1055,7 @@ public final class OutpostGameTests {
                         double diff = Math.abs(have.get(r) - o.stock(r));
                         h.assertTrue(diff < 10 || have.get(r) > 0, "бочки склада не совпадают с запасом: " + r + " " + have.get(r) + " / " + o.stock(r));
                     }
-                    LordsOutpost.LOGGER.info("Работа жителей: внешнее дерево свалено и пересажено, дерево во дворе убрано без повторной посадки, мусор подобран, шахтёр получил опыт, донесено {}, максимум в загоне {}, склад {}",
+                    LordsOutpost.LOGGER.info("Работа жителей: внешнее дерево свалено и пересажено, дерево и трава во дворе убраны без повторной посадки, мусор подобран, шахтёр получил опыт, донесено {}, максимум в загоне {}, склад {}",
                             o.depositedItems, maxPenned[0], have);
                     OutpostManager.abandon(data, o, level.getGameTime());
                     data.remove(o);
