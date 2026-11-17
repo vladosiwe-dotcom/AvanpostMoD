@@ -8,6 +8,7 @@ import com.vladosiwe.lordsoutpost.outpost.Outpost;
 import com.vladosiwe.lordsoutpost.outpost.Resident;
 import com.vladosiwe.lordsoutpost.outpost.Role;
 import com.vladosiwe.lordsoutpost.server.Interactions;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
