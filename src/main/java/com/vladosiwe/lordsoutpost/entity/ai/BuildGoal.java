@@ -60,10 +60,6 @@ public class BuildGoal extends Goal {
             timeout = 120;
         }
 
-        if (ChunkReconciliation.clearNaturalObstruction(level, o, claim, mob)) {
-            timeout = 120;
-            return;
-        }
         if (ChunkReconciliation.blockedByForeignBlock(level, o, claim)) {
             // Не сносим сундуки, декор и постройки игрока ради автоматического чертежа.
             ChunkReconciliation.releaseClaim(o, claim);
@@ -90,6 +86,11 @@ public class BuildGoal extends Goal {
         }
 
         mob.getNavigation().stop();
+        // Расчистка выполняется только после подхода строителя к рабочей клетке.
+        if (ChunkReconciliation.clearNaturalObstruction(level, o, claim, mob)) {
+            timeout = 120;
+            return;
+        }
         mob.swing(InteractionHand.MAIN_HAND);
         ChunkReconciliation.place(level, o, claim, true);
         claim = -1;
