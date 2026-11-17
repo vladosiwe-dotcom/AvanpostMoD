@@ -849,6 +849,15 @@ public final class OutpostGameTests {
                     }
                     // Коровы за стенами: скотовод должен пригнать их в загон.
                     BlockPos pen = o.marker(Marker.PEN);
+                    // Пустой шаблон GameTest не имеет естественного грунта: прокладываем физический путь к калитке.
+                    int penFloor = pen.getY() - 1;
+                    int firstCowX = o.center.getX() - o.reach() - Layout.MARGIN - 8;
+                    for (int wx = firstCowX; wx <= pen.getX(); wx++) {
+                        level.setBlock(new BlockPos(wx, penFloor, pen.getZ()), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState(), 2);
+                    }
+                    for (int wz = pen.getZ(); wz <= pen.getZ() + 3; wz++) {
+                        level.setBlock(new BlockPos(pen.getX(), penFloor, wz), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState(), 2);
+                    }
                     for (int i = 0; i < 3; i++) {
                         var cow = net.minecraft.world.entity.EntityType.COW.create(level);
                         int cx = o.center.getX() - o.reach() - Layout.MARGIN - 4 - i * 2, cz = pen.getZ();
