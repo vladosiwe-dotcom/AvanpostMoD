@@ -69,7 +69,6 @@ public class WorkGoal extends Goal {
     /** Лимит по предметам нужен только для длинных работ в шахте/на охоте; обычный порог — 75% слотов. */
     private static final int MAX_CARRIED_BEFORE_RETURN = 48;
     private static final ItemStack AXE = new ItemStack(Items.IRON_AXE);
-    private static final ItemStack PICKAXE = new ItemStack(Items.IRON_PICKAXE);
     private static final int MAIN_TUNNEL = 32, BRANCH_EVERY = 4, BRANCH_LENGTH = 6, GENERATIONS = 8;
 
     private final WorkerEntity mob;
@@ -551,6 +550,7 @@ public class WorkGoal extends Goal {
     }
 
     private boolean mine(ServerLevel level, Outpost o, Resident r, long now) {
+        mob.refreshMinerTool(o, r);
         List<Column> cols = tunnel(o, level.getMinBuildHeight());
         if (column < 0 || column >= cols.size()) return true;
         Column c = cols.get(column);
@@ -583,11 +583,13 @@ public class WorkGoal extends Goal {
                 continue;
             }
             if (s.isAir() || s.getDestroySpeed(level, p) < 0 || o.design().cells.containsKey(p.subtract(o.center))) continue;
-            for (ItemStack drop : Block.getDrops(s, level, p, level.getBlockEntity(p), mob, PICKAXE)) {
+            ItemStack pickaxe = mob.getMainHandItem();
+            for (ItemStack drop : Block.getDrops(s, level, p, level.getBlockEntity(p), mob, pickaxe)) {
                 ItemStack left = mob.collect(drop);
                 if (!left.isEmpty()) mob.spawnAtLocation(left);
             }
             level.destroyBlock(p, false, mob);
+            r.miningXp++;
             r.lastRealWork = now;
         }
         if (c.torch && level.getBlockState(lower).isAir() && level.getBlockState(lower.below()).isFaceSturdy(level, lower.below(), Direction.UP)) {
