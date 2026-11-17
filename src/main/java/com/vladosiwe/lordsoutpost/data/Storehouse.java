@@ -30,7 +30,7 @@ import java.util.List;
  */
 public final class Storehouse {
     /** Ресурсы, которые лежат в бочках. Казна и эссенция хранятся в цитадели и в бочки не выкладываются. */
-    public static final Resource[] PHYSICAL = {Resource.WOOD, Resource.STONE, Resource.IRON, Resource.FOOD, Resource.HIDES};
+    public static final Resource[] PHYSICAL = {Resource.WOOD, Resource.STONE, Resource.IRON, Resource.FOOD, Resource.WHEAT, Resource.SEEDS, Resource.HIDES};
 
     private Storehouse() {}
 
@@ -46,6 +46,8 @@ public final class Storehouse {
             case STONE -> new ItemStack(Items.COBBLESTONE);
             case IRON -> new ItemStack(Items.IRON_INGOT);
             case FOOD -> new ItemStack(Items.BREAD);
+            case WHEAT -> new ItemStack(Items.WHEAT);
+            case SEEDS -> new ItemStack(Items.WHEAT_SEEDS);
             case HIDES -> new ItemStack(Items.LEATHER);
             default -> ItemStack.EMPTY;
         };
@@ -146,6 +148,52 @@ public final class Storehouse {
         return count - left;
     }
 
+    /** Считает конкретный предмет в бочках, не смешивая его с другими видами того же ресурса. */
+    public static int countItem(ServerLevel level, Outpost o, net.minecraft.world.item.Item item) {
+        int count = 0;
+        for (Container c : barrels(level, o)) for (int s = 0; s < c.getContainerSize(); s++) {
+            ItemStack st = c.getItem(s);
+            if (st.is(item)) count += st.getCount();
+        }
+        return count;
+    }
+
+    /**
+     * Забирает реальные предметы из бочек для производственного процесса NPC.
+     * Сначала проверяет весь объём, затем меняет и инвентарь, и числовой запас.
+     */
+    public static boolean takeItem(ServerLevel level, Outpost o, net.minecraft.world.item.Item item, int count) {
+        if (count <= 0) return true;
+        ResourceItems.Value value = ResourceItems.of(new ItemStack(item));
+        if (value == null || !physical(value.resource())) return false;
+        double amount = count * value.perItem();
+        if (o.stock(value.resource()) + 1e-6 < amount) return false;
+        List<Container> barrels = barrels(level, o);
+        int available = 0;
+        for (Container c : barrels) for (int s = 0; s < c.getContainerSize(); s++) {
+            ItemStack st = c.getItem(s);
+            if (st.is(item)) available += st.getCount();
+        }
+        if (available < count) return false;
+        int left = count;
+        for (Container c : barrels) {
+            for (int s = 0; s < c.getContainerSize() && left > 0; s++) {
+                ItemStack st = c.getItem(s);
+                if (!st.is(item)) continue;
+                int n = Math.min(left, st.getCount());
+                st.shrink(n);
+                left -= n;
+                c.setChanged();
+            }
+            if (left == 0) break;
+        }
+        if (left != 0) return false;
+        o.take(value.resource(), amount);
+        o.storeLast.merge(value.resource(), -amount, Double::sum);
+        o.dirtyForClients = true;
+        return true;
+    }
+
     /**
      * Житель разгружает свою ношу. Ресурсы идут в бочки и в запас (не как вклад игрока, поэтому не в задания),
      * остальное — тоже в бочки (уголь, перья, кости — пригодятся Лорду). Не поместилось — в дань.
@@ -186,10 +234,20 @@ public final class Storehouse {
             ItemStack st = inventory.getItem(s);
             if (st.isEmpty()) continue;
             ResourceItems.Value v = ResourceItems.of(st);
-            if (v != null && physical(v.resource())) o.add(v.resource(), v.perItem() * st.getCount());
-            else Simulation.addTribute(o, st.copy());
+            if (v != null && physical(v.resource())) {
+                // При выгрузке чанка ноша проходит те же ограничения ёмкости, что и обычная разгрузка.
+                // Излишек сохраняется в дани, а не исчезает из-за ограничения Outpost.add().
+                double room = Math.max(0, o.capacity(v.resource()) - o.stock(v.resource()));
+                int accepted = Math.min(st.getCount(), (int) Math.floor((room + 1e-9) / v.perItem()));
+                if (accepted > 0) o.add(v.resource(), accepted * v.perItem());
+                ItemStack excess = st.copyWithCount(st.getCount() - accepted);
+                if (!excess.isEmpty()) Simulation.addTribute(o, excess);
+            } else {
+                Simulation.addTribute(o, st.copy());
+            }
             inventory.setItem(s, ItemStack.EMPTY);
         }
+        o.dirtyForClients = true;
     }
 
     /** Стройка сносит бочку склада: её содержимое уже учтено в запасе, поэтому просто забыть его. */

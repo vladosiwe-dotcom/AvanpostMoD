@@ -54,11 +54,8 @@ public class FighterEntity extends OutpostNpc implements RangedAttackMob {
         super(type, level);
     }
 
-    /**
-     * Epic Fight, накладывая свой патч, убирает у моба все цели атаки и ставит свои только для оружия ближнего боя.
-     * Стрелкам их стрелковая цель возвращается.
-     */
-    private void restoreRangedGoals() {
+    /** Epic Fight заменяет ванильные цели ближнего боя своими; стрелкам возвращаем их штатную стрельбу. */
+    public void ensureRangedCombatGoals() {
         if (!ranged()) return;
         createRangedGoals();
         boolean ranged = false, bow = false;
@@ -68,12 +65,6 @@ public class FighterEntity extends OutpostNpc implements RangedAttackMob {
         }
         if (!ranged) goalSelector.addGoal(2, rangedGoal);
         if (!bow) goalSelector.addGoal(2, bowGoal);
-    }
-
-    @Override
-    public void aiStep() {
-        super.aiStep();
-        if (!level().isClientSide && tickCount % 20 == 7) restoreRangedGoals();
     }
 
     private void createRangedGoals() {
@@ -126,8 +117,8 @@ public class FighterEntity extends OutpostNpc implements RangedAttackMob {
     /** Классы текущих целей ИИ (для проверки, что Epic Fight подменил ближний бой своими анимированными атаками). */
     public java.util.List<String> goalClassNames() {
         java.util.List<String> out = new java.util.ArrayList<>();
-        goalSelector.getAvailableGoals().forEach(w -> out.add(describe(w.getGoal())));
-        targetSelector.getAvailableGoals().forEach(w -> out.add(describe(w.getGoal())));
+        goalSelector.getAvailableGoals().forEach(w -> out.add((w.isRunning() ? "*" : "") + describe(w.getGoal())));
+        targetSelector.getAvailableGoals().forEach(w -> out.add((w.isRunning() ? "*" : "") + describe(w.getGoal())));
         return out;
     }
 
@@ -160,10 +151,10 @@ public class FighterEntity extends OutpostNpc implements RangedAttackMob {
     protected void equip(@Nullable Outpost o, Resident r) {
         int gear = Math.max(0, Math.min(Resident.MAX_GEAR, r.gear));
         Item[] armor = ARMOR[gear];
-        setItemSlot(EquipmentSlot.HEAD, new ItemStack(armor[0]));
-        setItemSlot(EquipmentSlot.CHEST, new ItemStack(armor[1]));
-        setItemSlot(EquipmentSlot.LEGS, new ItemStack(armor[2]));
-        setItemSlot(EquipmentSlot.FEET, new ItemStack(armor[3]));
+        setItemSlot(EquipmentSlot.HEAD, armorStack(armor[0], r.armor));
+        setItemSlot(EquipmentSlot.CHEST, armorStack(armor[1], r.armor));
+        setItemSlot(EquipmentSlot.LEGS, armorStack(armor[2], r.armor));
+        setItemSlot(EquipmentSlot.FEET, armorStack(armor[3], r.armor));
         setItemSlot(EquipmentSlot.OFFHAND, ItemStack.EMPTY);
         switch (r.role) {
             case BERSERKER -> setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(AXES[gear]));
@@ -182,6 +173,23 @@ public class FighterEntity extends OutpostNpc implements RangedAttackMob {
         getAttribute(Attributes.ATTACK_DAMAGE).setBaseValue(r.role.ranged() ? 2 : 3 + Math.min(10, r.kills) * 0.1);
         boolean martial = o != null && o.state == OutpostState.OWNED && o.law == com.vladosiwe.lordsoutpost.outpost.Law.MARTIAL_LAW;
         if (martial) getAttribute(Attributes.ATTACK_DAMAGE).setBaseValue(getAttribute(Attributes.ATTACK_DAMAGE).getBaseValue() * 1.25);
+    }
+
+    private static ItemStack armorStack(Item item, float condition) {
+        ItemStack stack = new ItemStack(item);
+        if (stack.isDamageableItem()) {
+            float safe = Math.max(0f, Math.min(1f, condition));
+            stack.setDamageValue(Math.min(stack.getMaxDamage() - 1, Math.round(stack.getMaxDamage() * (1f - safe))));
+        }
+        return stack;
+    }
+
+    /** Обновляет экипировку уже загруженного бойца после ремонта или перековки кузнецом. */
+    public void refreshResidentEquipment() {
+        Resident r = resident();
+        if (r == null) return;
+        equip(outpost(), r);
+        setHealth(Math.min(getHealth(), getMaxHealth()));
     }
 
     /** Щитовик принимает на щит половину урона спереди. */

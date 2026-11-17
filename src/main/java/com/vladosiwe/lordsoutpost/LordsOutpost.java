@@ -9,6 +9,9 @@ import com.vladosiwe.lordsoutpost.registry.ModWorldgen;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
+import net.neoforged.fml.ModList;
+import net.neoforged.fml.loading.FMLEnvironment;
+import net.neoforged.api.distmarker.Dist;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
 import org.slf4j.Logger;
@@ -32,6 +35,20 @@ public final class LordsOutpost {
         ModWorldgen.PIECE_TYPES.register(modBus);
         modBus.addListener(ModEntities::attributes);
         container.registerConfig(ModConfig.Type.SERVER, OutpostConfig.SPEC);
+
+        // Epic Fight is optional. Keep its API classes out of the server's load path when absent.
+        if (ModList.get().isLoaded("epicfight")) {
+            try {
+                Class.forName("com.vladosiwe.lordsoutpost.compat.EpicFightCompat")
+                        .getMethod("register", IEventBus.class).invoke(null, modBus);
+                if (FMLEnvironment.dist == Dist.CLIENT) {
+                    Class.forName("com.vladosiwe.lordsoutpost.compat.EpicFightClientCompat")
+                            .getMethod("register").invoke(null);
+                }
+            } catch (ReflectiveOperationException e) {
+                LOGGER.error("Epic Fight найден, но интеграция Lord's Outpost не зарегистрировалась", e);
+            }
+        }
     }
 
     public static ResourceLocation id(String path) {

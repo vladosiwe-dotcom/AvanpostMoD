@@ -37,13 +37,23 @@ public final class Resident {
     /** Отряд бойца (индекс в Outpost.squads) или -1. */
     public int squad = -1;
     public int kills;
+    /** Опыт шахтёра за реально добытые блоки; сохраняется вместе с жителем. */
+    public int miningXp;
+
+    /** Уровень шахтёра 1–5. Пороги намеренно умеренные: 50 / 150 / 300 / 500 блоков. */
+    public int miningLevel() {
+        if (miningXp >= 500) return 5;
+        if (miningXp >= 300) return 4;
+        if (miningXp >= 150) return 3;
+        if (miningXp >= 50) return 2;
+        return 1;
+    }
 
     /** Сущность, которая сейчас представляет жителя в мире (не сохраняется). */
     @Nullable public transient UUID entity;
     /** Тик, до которого запись считается «занятой» материализацией (защита от дублей). */
     public transient long spawnGrace;
-    /** Когда житель последний раз сделал настоящую работу в мире (срубил, выкопал, добыл). Пока он работает руками,
-     *  симуляция не начисляет ему выработку числами — иначе ресурс засчитался бы дважды. */
+    /** Когда житель последний раз сделал настоящую работу в мире (срубил, выкопал, добыл); используется для диагностики и хроники. */
     public transient long lastRealWork = Long.MIN_VALUE / 2;
 
     public Resident(UUID id, Role role, String name) {
@@ -75,6 +85,7 @@ public final class Resident {
         t.putLong("until", statusUntil);
         t.putByte("squad", (byte) squad);
         t.putInt("kills", kills);
+        t.putInt("miningXp", miningXp);
         return t;
     }
 
@@ -87,6 +98,7 @@ public final class Resident {
         r.statusUntil = t.getLong("until");
         r.squad = t.getByte("squad");
         r.kills = t.getInt("kills");
+        r.miningXp = Math.max(0, t.getInt("miningXp"));
         return r;
     }
 }

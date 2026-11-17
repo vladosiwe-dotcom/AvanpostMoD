@@ -10,6 +10,8 @@ public enum Resource {
     STONE("stone", Items.COBBLESTONE, 0x9A9A9A),
     IRON("iron", Items.IRON_INGOT, 0xD8D8D8),
     FOOD("food", Items.COOKED_BEEF, 0xC96A3A),
+    WHEAT("wheat", Items.WHEAT, 0xD8B84F),
+    SEEDS("seeds", Items.WHEAT_SEEDS, 0xB9A56A),
     HIDES("hides", Items.LEATHER, 0xA5662E),
     GOLD("gold", Items.EMERALD, 0x3FD46B),
     ARCANE("arcane", Items.AMETHYST_SHARD, 0xB37BFF);

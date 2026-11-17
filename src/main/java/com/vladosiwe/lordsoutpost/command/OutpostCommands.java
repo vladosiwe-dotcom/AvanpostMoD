@@ -12,6 +12,7 @@ import com.vladosiwe.lordsoutpost.data.ALifeSimulationManager;
 import com.vladosiwe.lordsoutpost.data.Discovery;
 import com.vladosiwe.lordsoutpost.data.OutpostSavedData;
 import com.vladosiwe.lordsoutpost.data.Simulation;
+import com.vladosiwe.lordsoutpost.entity.FighterEntity;
 import com.vladosiwe.lordsoutpost.outpost.Difficulty;
 import com.vladosiwe.lordsoutpost.outpost.Outpost;
 import com.vladosiwe.lordsoutpost.outpost.OutpostState;
@@ -34,6 +35,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Rotation;
+import net.neoforged.fml.ModList;
 
 import java.util.Arrays;
 import java.util.Comparator;
@@ -86,6 +88,7 @@ public final class OutpostCommands {
                     }
                     return n;
                 }))
+                .then(Commands.literal("combat").executes(OutpostCommands::combat))
                 .then(Commands.literal("mine").then(Commands.argument("column", IntegerArgumentType.integer(0, 1000)).executes(c -> {
                     Outpost o = here(c);
                     if (o == null) return 0;
@@ -171,6 +174,37 @@ public final class OutpostCommands {
             if (n > 0) sb.append(r.id).append(':').append(n).append(',');
         }
         return sb.toString();
+    }
+
+    /** Диагностика боевого AI и Epic Fight: цель, активные цели и наличие entity patch. */
+    private static int combat(CommandContext<CommandSourceStack> c) {
+        Outpost o = here(c);
+        if (o == null) return 0;
+        ServerLevel level = overworld(c);
+        boolean epicFight = ModList.get().isLoaded("epicfight");
+        c.getSource().sendSuccess(() -> Component.literal("Epic Fight=" + (epicFight ? "loaded" : "not loaded")), false);
+        List<FighterEntity> fighters = level.getEntitiesOfClass(FighterEntity.class,
+                new net.minecraft.world.phys.AABB(o.center).inflate(96, 64, 96), f -> f.outpostId() == o.id)
+                .stream().sorted(Comparator.comparingDouble(f -> f.distanceToSqr(o.center.getX(), o.center.getY(), o.center.getZ()))).toList();
+        for (FighterEntity f : fighters) {
+            String target = f.getTarget() == null ? "-" : f.getTarget().getName().getString();
+            String patch = epicFight ? epicFightPatchStatus(f) : "vanilla";
+            String line = f.role().id + " @" + f.blockPosition().toShortString()
+                    + " hp=" + Math.round(f.getHealth()) + "/" + Math.round(f.getMaxHealth())
+                    + " target=" + target + " " + patch + " goals=" + f.goalClassNames();
+            c.getSource().sendSuccess(() -> Component.literal(line), false);
+        }
+        if (fighters.isEmpty()) c.getSource().sendFailure(Component.literal("В радиусе аванпоста бойцы не найдены"));
+        return fighters.size();
+    }
+
+    private static String epicFightPatchStatus(FighterEntity fighter) {
+        try {
+            Class<?> compat = Class.forName("com.vladosiwe.lordsoutpost.compat.EpicFightCompat");
+            return String.valueOf(compat.getMethod("patchStatus", FighterEntity.class).invoke(null, fighter));
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return "EF patch check failed";
+        }
     }
 
     private static int reveal(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {

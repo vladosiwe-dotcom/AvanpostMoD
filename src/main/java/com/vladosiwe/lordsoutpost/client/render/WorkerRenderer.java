@@ -35,10 +35,10 @@ public class WorkerRenderer extends MobRenderer<WorkerEntity, VillagerModel<Work
         return switch (role) {
             case STEWARD -> "cartographer";
             case BUILDER -> "mason";
-            case HUNTER -> "fletcher";
-            case HERDER -> "shepherd";
+            case SKOTOVOD -> "shepherd";
+            case FARMER -> "farmer";
             case MINER -> "toolsmith";
-            case LUMBERJACK -> "farmer";
+            case LUMBERJACK -> "fletcher";
             case SMITH -> "armorer";
             case MAGE -> "cleric";
             case CARAVANEER -> "leatherworker";

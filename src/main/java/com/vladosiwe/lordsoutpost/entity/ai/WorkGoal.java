@@ -5,6 +5,7 @@ import com.vladosiwe.lordsoutpost.data.ChunkReconciliation;
 import com.vladosiwe.lordsoutpost.data.OutpostSavedData;
 import com.vladosiwe.lordsoutpost.data.Storehouse;
 import com.vladosiwe.lordsoutpost.entity.WorkerEntity;
+import com.vladosiwe.lordsoutpost.entity.FighterEntity;
 import com.vladosiwe.lordsoutpost.outpost.Outpost;
 import com.vladosiwe.lordsoutpost.outpost.OutpostState;
 import com.vladosiwe.lordsoutpost.outpost.Resident;
@@ -32,10 +33,12 @@ import net.minecraft.world.entity.animal.horse.AbstractHorse;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.projectile.AbstractArrow;
 import net.minecraft.world.entity.projectile.Arrow;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.CropBlock;
 import net.minecraft.world.level.block.FenceGateBlock;
 import net.minecraft.world.level.block.LeavesBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -51,24 +54,25 @@ import java.util.Deque;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
+import java.util.UUID;
 import java.util.Set;
 
 /**
  * Рабочий день жителя. Пока игрок рядом, жители не изображают работу, а делают её в мире:
- *  - лесоруб находит дерево за стенами, валит его бревно за бревном и сажает саженец;
+ *  - лесоруб расчищает деревья и подлесок во дворе, а за стенами рубит деревья с повторной посадкой;
  *  - шахтёр спускается по стволу и ведёт штрек с отвилками, вынося камень и руду;
- *  - скотовод пригоняет скот в загон на поводке, разводит его на зерне из запасов, стрижёт овец и забивает лишних;
- *  - охотник выслеживает дичь за стенами и бьёт её из лука;
+ *  - скотовод обслуживает стадо, разводит и стрижёт животных, забивает излишки, а также охотится за стенами из лука;
  *  - любой житель подбирает предметы, лежащие на территории форта.
  * Добыча несётся на склад, в бочки за дверью. Простоя нет: когда настоящей работы нет (вокруг нет деревьев,
  * штрек выработан, дичь кончилась), житель работает у своего места, и тогда его выработку считает симуляция.
  */
 public class WorkGoal extends Goal {
-    private enum Phase { DECIDE, PICKUP, JOB, DEPOSIT, CHORE, PAUSE }
+    private enum Phase { DECIDE, PICKUP, JOB, DEPOSIT, CRAFT, CHORE, PAUSE }
 
-    private static final int DEPOSIT_AT = 24;
+    private static final int FARM_SEED_RESERVE = 4;
+    private static final int FARM_WHEAT_RESERVE = 6;
+
     private static final ItemStack AXE = new ItemStack(Items.IRON_AXE);
-    private static final ItemStack PICKAXE = new ItemStack(Items.IRON_PICKAXE);
     private static final int MAIN_TUNNEL = 32, BRANCH_EVERY = 4, BRANCH_LENGTH = 6, GENERATIONS = 8;
 
     private final WorkerEntity mob;
@@ -80,17 +84,27 @@ public class WorkGoal extends Goal {
     @Nullable private ItemEntity item;
     // Лесоруб.
     @Nullable private BlockPos tree;
+    @Nullable private BlockPos vegetation;
     private final Deque<BlockPos> logs = new ArrayDeque<>();
     @Nullable private Block treeLog;
     // Шахтёр.
     private int column = -1;
-    private int dugInRun;
     // Скотовод.
     private int herdAction;
     @Nullable private Animal animal;
-    // Охотник.
+    @Nullable private Animal breedingPartner;
+    // Охота (вторая обязанность скотовода).
     @Nullable private Animal prey;
+    @Nullable private BlockPos farmTarget;
+    private boolean farmHarvest;
+    @Nullable private UUID smithTarget;
+    private boolean smithRepair;
+    private boolean farmTill;
     private int kills;
+    /** Скотовод чередует животноводство и охоту, чтобы одно направление не вытесняло другое. */
+    private boolean skotovodHuntNext;
+    private boolean skotovodHunting;
+    private boolean skotovodScheduleInitialized;
     private int huntPoint = -1;
     private int emptyPoints;
 
@@ -101,8 +115,17 @@ public class WorkGoal extends Goal {
 
     /** Коротко: чем житель занят (для журнала и отладки). */
     public String status() {
+        Resident resident = mob.resident();
+        String mining = resident != null && resident.role == Role.MINER
+                ? " mining=" + resident.miningLevel() + "/5 xp=" + resident.miningXp + " tool=" + mob.getMainHandItem().getItem()
+                : "";
         return phase + (tree != null ? " tree@" + tree.toShortString() : "") + (column >= 0 ? " col" + column : "")
-                + (animal != null ? " animal" : "") + (prey != null ? " prey" : "") + " noJob=" + noJobUntil + " carried=" + mob.carried();
+                + (animal != null ? " animal@" + animal.blockPosition().toShortString()
+                        + " leash=" + animal.isLeashed() + " herdTimer=" + timer : "")
+                + (prey != null ? " prey@" + prey.blockPosition().toShortString() : "")
+                + (vegetation != null ? " clearing@" + vegetation.toShortString() : "")
+                + " noJob=" + noJobUntil + " carried=" + mob.carried()
+                + " slots=" + mob.occupiedSlots() + "/" + mob.inventory.getContainerSize() + mining;
     }
 
     @Override
@@ -139,10 +162,17 @@ public class WorkGoal extends Goal {
         Outpost o = mob.outpost();
         if (o != null && tree != null) o.claimedTrees.remove(tree);
         tree = null;
+        vegetation = null;
         logs.clear();
         if (animal != null && animal.isLeashed() && animal.getLeashHolder() == mob) animal.dropLeash(true, false);
         animal = null;
+        breedingPartner = null;
         prey = null;
+        farmTarget = null;
+        farmHarvest = false;
+        farmTill = false;
+        smithTarget = null;
+        smithRepair = false;
         item = null;
     }
 
@@ -178,21 +208,25 @@ public class WorkGoal extends Goal {
             case PICKUP -> pickup(o);
             case JOB -> {
                 boolean done = switch (role) {
-                    case LUMBERJACK -> chop(level, o, r, now);
+                    case LUMBERJACK -> vegetation != null ? clearVegetation(level, o, r, now) : chop(level, o, r, now);
                     case MINER -> mine(level, o, r, now);
-                    case HERDER -> herd(level, o, r, now);
-                    case HUNTER -> hunt(level, o, r, now);
+                    case SKOTOVOD -> skotovodHunting ? hunt(level, o, r, now) : herd(level, o, r, now);
+                    case FARMER -> farm(level, o, r, now);
+                    case SMITH -> smith(level, o, r, now);
                     default -> true;
                 };
                 if (done) {
+                    if (role == Role.SKOTOVOD) skotovodHuntNext = !skotovodHunting;
                     release();
                     phase = mob.carried() > 0 ? Phase.DEPOSIT : Phase.DECIDE;
                 }
             }
+            case CRAFT -> craftBread(level, o, r, now);
             case DEPOSIT -> {
                 if (go(o, o.marker(Marker.STORE_INSIDE), 1.8, 500)) {
                     mob.swing(InteractionHand.MAIN_HAND);
                     Storehouse.deposit(level, o, mob.inventory);
+                    OutpostSavedData.get(level).setDirty();
                     level.playSound(null, mob.blockPosition(), SoundEvents.BARREL_CLOSE, SoundSource.NEUTRAL, 0.6f, 1.0f);
                     phase = Phase.PAUSE;
                     timer = 20;
@@ -208,8 +242,12 @@ public class WorkGoal extends Goal {
     // ============================== Что делать дальше ==============================
 
     private void decide(ServerLevel level, Outpost o, Resident r, long now) {
-        if (mob.carried() > 0 && (mob.carried() >= DEPOSIT_AT || mob.inventoryFull())) {
+        if (mob.carried() > 0 && mob.cargoReadyToDeposit()) {
             phase = Phase.DEPOSIT;
+            return;
+        }
+        if (r.role == Role.FARMER && Storehouse.countItem(level, o, Items.WHEAT) >= FARM_WHEAT_RESERVE + 3 && canCarryItem(Items.BREAD)) {
+            phase = Phase.CRAFT;
             return;
         }
         item = findItem(o);
@@ -218,13 +256,31 @@ public class WorkGoal extends Goal {
             return;
         }
         Role role = r.role;
-        boolean physical = role == Role.LUMBERJACK || role == Role.MINER || role == Role.HERDER || role == Role.HUNTER;
+        if (role == Role.SKOTOVOD && !skotovodScheduleInitialized) {
+            // Разводим работников по разным направлениям и сохраняем одинаковый порядок после пересоздания сущности.
+            skotovodHuntNext = (r.id.getLeastSignificantBits() & 1L) != 0L;
+            skotovodScheduleInitialized = true;
+        }
+        boolean physical = role == Role.LUMBERJACK || role == Role.MINER || role == Role.SKOTOVOD || role == Role.FARMER || role == Role.SMITH;
         if (physical && now >= noJobUntil) {
             boolean found = switch (role) {
-                case LUMBERJACK -> findTree(level, o);
+                case LUMBERJACK -> findVegetation(level, o) || findTree(level, o);
                 case MINER -> claimColumn(level, o);
-                case HERDER -> planHerd(level, o, now);
-                default -> startHunt();
+                case FARMER -> findFarmTask(level, o);
+                case SMITH -> findSmithTask(level, o, now);
+                case SKOTOVOD -> {
+                    boolean huntFirst = skotovodHuntNext;
+                    boolean selected = huntFirst ? startHunt() : planHerd(level, o, now);
+                    if (selected) {
+                        skotovodHunting = huntFirst;
+                        yield true;
+                    }
+                    boolean fallbackHunt = !huntFirst;
+                    selected = fallbackHunt ? startHunt() : planHerd(level, o, now);
+                    skotovodHunting = fallbackHunt;
+                    yield selected;
+                }
+                default -> false;
             };
             if (found) {
                 phase = Phase.JOB;
@@ -268,8 +324,17 @@ public class WorkGoal extends Goal {
         if (mob.distanceToSqr(item) <= 2.6 || go(o, item.blockPosition(), 1.2, 200)) {
             ItemStack left = mob.collect(item.getItem());
             mob.level().playSound(null, mob.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.NEUTRAL, 0.3f, 1.2f);
-            if (left.isEmpty()) item.discard();
-            else item.setItem(left);
+            if (left.isEmpty()) {
+                item.discard();
+            } else {
+                // Ноша заполнена: не уничтожаем остаток выпавшего стака, который не поместился.
+                item.setItem(left);
+                if (mob.cargoReadyToDeposit()) {
+                    item = null;
+                    phase = Phase.DEPOSIT;
+                    return;
+                }
+            }
             item = null;
             phase = Phase.DECIDE;
         }
@@ -346,8 +411,11 @@ public class WorkGoal extends Goal {
                 BlockPos base = top;
                 while (level.getBlockState(base.below()).is(BlockTags.LOGS) && top.getY() - base.getY() < 24) base = base.below();
                 if (!level.getBlockState(base.below()).is(BlockTags.DIRT)) continue;
-                if (data.findAt(base) != null || o.claimedTrees.contains(base) || !naturalLeaves(level, top)) continue;
-                double d = mob.distanceToSqr(base.getX(), base.getY(), base.getZ());
+                Outpost occupied = data.findAt(base);
+                if ((occupied != null && occupied != o) || (occupied == o && !o.insideWalls(base))
+                        || o.claimedTrees.contains(base) || !naturalLeaves(level, top)) continue;
+                // Сначала освобождаем двор собственного форта, затем идём за деревьями за стенами.
+                double d = mob.distanceToSqr(base.getX(), base.getY(), base.getZ()) - (occupied == o ? 1_000_000.0 : 0.0);
                 if (d < bestD) {
                     bestD = d;
                     best = base;
@@ -358,6 +426,64 @@ public class WorkGoal extends Goal {
         o.claimedTrees.add(best);
         logs.clear();
         treeLog = level.getBlockState(best).getBlock();
+        return true;
+    }
+
+    /** Ищет естественную растительность внутри стен, которая мешает проходам и рабочим площадкам. */
+    private boolean findVegetation(ServerLevel level, Outpost o) {
+        BlockPos best = null;
+        double bestD = Double.MAX_VALUE;
+        int radius = o.radius();
+        int yMin = Math.max(level.getMinBuildHeight(), o.center.getY() - 2);
+        int yMax = Math.min(level.getMaxBuildHeight() - 2, o.center.getY() + 8);
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                int x = o.center.getX() + dx, z = o.center.getZ() + dz;
+                if (!o.insideWalls(new BlockPos(x, o.center.getY() + 1, z)) || !level.hasChunk(x >> 4, z >> 4)) continue;
+                int ground = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+                for (int y = Math.max(yMin, ground - 1); y <= Math.min(yMax, ground + 2); y++) {
+                    BlockPos pos = new BlockPos(x, y, z);
+                    BlockState state = level.getBlockState(pos);
+                    if (state.isAir() || !state.getFluidState().isEmpty() || level.getBlockEntity(pos) != null
+                            || state.is(BlockTags.CROPS) || state.is(BlockTags.LOGS) || state.is(BlockTags.LEAVES)) continue;
+                    if (!(state.canBeReplaced() || state.is(BlockTags.FLOWERS) || state.is(BlockTags.SAPLINGS)
+                            || state.is(BlockTags.REPLACEABLE_BY_TREES))) continue;
+                    double d = mob.distanceToSqr(pos.getX(), pos.getY(), pos.getZ());
+                    if (d < bestD) {
+                        bestD = d;
+                        best = pos.immutable();
+                    }
+                }
+            }
+        }
+        vegetation = best;
+        timer = 0;
+        return best != null;
+    }
+
+    /** Убирает траву, кусты, цветы и молодую поросль внутри стен; посевы и блоки с хранилищами не трогает. */
+    private boolean clearVegetation(ServerLevel level, Outpost o, Resident r, long now) {
+        if (vegetation == null) return true;
+        if (!go(o, vegetation, 2.0, 400)) return false;
+        BlockState state = level.getBlockState(vegetation);
+        if (state.isAir() || level.getBlockEntity(vegetation) != null || !state.getFluidState().isEmpty()) {
+            vegetation = null;
+            return true;
+        }
+        if (timer <= 0) timer = 8;
+        mob.getLookControl().setLookAt(vegetation.getX() + 0.5, vegetation.getY() + 0.5, vegetation.getZ() + 0.5);
+        if (--timer > 0) {
+            if (timer % 4 == 0) mob.swing(InteractionHand.MAIN_HAND);
+            return false;
+        }
+        for (ItemStack drop : Block.getDrops(state, level, vegetation, null, mob, AXE)) {
+            ItemStack left = mob.collect(drop);
+            if (!left.isEmpty()) mob.spawnAtLocation(left);
+        }
+        level.levelEvent(2001, vegetation, Block.getId(state));
+        level.destroyBlock(vegetation, false, mob);
+        r.lastRealWork = now;
+        vegetation = null;
         return true;
     }
 
@@ -391,7 +517,10 @@ public class WorkGoal extends Goal {
         BlockPos log = logs.pollFirst();
         BlockState state = level.getBlockState(log);
         if (state.is(BlockTags.LOGS)) {
-            for (ItemStack drop : Block.getDrops(state, level, log, null, mob, AXE)) mob.collect(drop);
+            for (ItemStack drop : Block.getDrops(state, level, log, null, mob, AXE)) {
+                ItemStack left = mob.collect(drop);
+                if (!left.isEmpty()) mob.spawnAtLocation(left);
+            }
             level.destroyBlock(log, false, mob);
             r.lastRealWork = now;
         }
@@ -409,7 +538,8 @@ public class WorkGoal extends Goal {
         List<BlockPos> found = new ArrayList<>();
         queue.add(base);
         seen.add(base);
-        while (!queue.isEmpty() && found.size() < 64) {
+        // Крупные 2×2 и джунглевые деревья могут содержать заметно больше 64 брёвен.
+        while (!queue.isEmpty() && found.size() < 256) {
             BlockPos p = queue.poll();
             if (!level.getBlockState(p).is(BlockTags.LOGS)) continue;
             found.add(p);
@@ -424,7 +554,10 @@ public class WorkGoal extends Goal {
     }
 
     private void replant(ServerLevel level, BlockPos base) {
-        if (treeLog == null || !level.getBlockState(base).isAir() || !level.getBlockState(base.below()).is(BlockTags.DIRT)) return;
+        // Внутри стен деревья расчищают под двор и постройки; саженцы возвращаются только за пределами форта.
+        Outpost o = mob.outpost();
+        if ((o != null && o.insideWalls(base)) || treeLog == null || !level.getBlockState(base).isAir()
+                || !level.getBlockState(base.below()).is(BlockTags.DIRT)) return;
         ResourceLocation id = BuiltInRegistries.BLOCK.getKey(treeLog);
         String path = id.getPath().replace("stripped_", "").replace("_log", "_sapling").replace("_wood", "_sapling");
         if (path.startsWith("mangrove")) path = "mangrove_propagule";
@@ -485,33 +618,49 @@ public class WorkGoal extends Goal {
     }
 
     private int redigColumn = -1, redigTries;
+    private List<Column> cachedMinePlan = List.of();
+    @Nullable private Outpost cachedMineOutpost;
+    private int cachedMineMinY = Integer.MIN_VALUE;
+
+    /** План штрека неизменен для одного дизайна форта; не пересоздаём сотни колонн каждый тик. */
+    private List<Column> minePlan(ServerLevel level, Outpost o) {
+        int minY = level.getMinBuildHeight();
+        if (cachedMineOutpost != o || cachedMineMinY != minY) {
+            cachedMinePlan = tunnel(o, minY);
+            cachedMineOutpost = o;
+            cachedMineMinY = minY;
+        }
+        return cachedMinePlan;
+    }
 
     /**
      * Следующий столбец штрека. Если клетка, с которой его надо копать, завалена (осыпался гравий, клетку обошли),
      * сначала заново расчищается она: штрек не обрывается из-за одного завала.
      */
     private boolean claimColumn(ServerLevel level, Outpost o) {
-        List<Column> cols = tunnel(o, level.getMinBuildHeight());
+        List<Column> cols = minePlan(level, o);
         while (o.mineCursor < cols.size()) {
             int idx = o.mineCursor;
             int target = reachable(level, cols, idx, 12);
             if (target == idx) {
-                o.mineCursor++;
+                // Курсор сдвигается только после завершения столбца: сон/выгрузка не должны пропускать недокопанный блок.
                 redigTries = 0;
             } else if (target >= 0) {
+                if (target != redigColumn) redigTries = 0;
                 if (target == redigColumn && ++redigTries > 3) {
                     // Эту клетку не расчистить (бедрок и т. п.) — столбец пропускается.
                     o.mineCursor++;
+                    OutpostSavedData.get(level).setDirty();
                     redigTries = 0;
                     continue;
                 }
                 redigColumn = target;
             } else {
                 o.mineCursor++;
+                OutpostSavedData.get(level).setDirty();
                 continue;
             }
             column = target;
-            dugInRun = 0;
             timer = -1;
             return true;
         }
@@ -536,7 +685,8 @@ public class WorkGoal extends Goal {
     }
 
     private boolean mine(ServerLevel level, Outpost o, Resident r, long now) {
-        List<Column> cols = tunnel(o, level.getMinBuildHeight());
+        mob.refreshMinerTool(o, r);
+        List<Column> cols = minePlan(level, o);
         if (column < 0 || column >= cols.size()) return true;
         Column c = cols.get(column);
         if (timer < 0) {
@@ -568,20 +718,27 @@ public class WorkGoal extends Goal {
                 continue;
             }
             if (s.isAir() || s.getDestroySpeed(level, p) < 0 || o.design().cells.containsKey(p.subtract(o.center))) continue;
-            for (ItemStack drop : Block.getDrops(s, level, p, level.getBlockEntity(p), mob, PICKAXE)) mob.collect(drop);
+            ItemStack pickaxe = mob.getMainHandItem();
+            for (ItemStack drop : Block.getDrops(s, level, p, level.getBlockEntity(p), mob, pickaxe)) {
+                ItemStack left = mob.collect(drop);
+                if (!left.isEmpty()) mob.spawnAtLocation(left);
+            }
             level.destroyBlock(p, false, mob);
+            r.miningXp = Math.min(500, r.miningXp + 1);
             r.lastRealWork = now;
+            // Записываем прогресс шахтёра и курс штрека в SavedData, а не ждём следующего макроцикла.
+            OutpostSavedData.get(level).setDirty();
         }
         if (c.torch && level.getBlockState(lower).isAir() && level.getBlockState(lower.below()).isFaceSturdy(level, lower.below(), Direction.UP)) {
             level.setBlockAndUpdate(lower, Blocks.TORCH.defaultBlockState());
         }
-        dugInRun++;
-        if (dugInRun >= 8 || mob.carried() >= 48 || mob.inventoryFull()) return true;
-        // Следующий столбец — сразу, не поднимаясь наверх.
-        int before = dugInRun;
-        if (!claimColumn(level, o)) return true;
-        dugInRun = before;
-        return false;
+        if (column == o.mineCursor) {
+            o.mineCursor++;
+            OutpostSavedData.get(level).setDirty();
+        }
+        if (mob.cargoReadyToDeposit()) return true;
+        // Следующий столбец — сразу, не поднимаясь наверх; шахтёр работает до 75% ноши или конца штрека.
+        return !claimColumn(level, o);
     }
 
     // ============================== Скотовод ==============================
@@ -611,6 +768,7 @@ public class WorkGoal extends Goal {
         List<Animal> inside = ChunkReconciliation.penAnimals(level, o);
         int cap = o.penCapacity();
         animal = null;
+        breedingPartner = null;
         if (inside.size() > cap || (inside.size() == cap && o.stock(Resource.FOOD) < o.residents.size() * 4)) {
             // Забить взрослое животное того вида, которого больше всего.
             animal = inside.stream().filter(a -> !a.isBaby())
@@ -626,6 +784,7 @@ public class WorkGoal extends Goal {
                 for (Animal b : inside) {
                     if (b != a && b.getType() == a.getType() && !b.isBaby() && !b.isInLove() && b.canFallInLove() && b.getAge() == 0) {
                         animal = a;
+                        breedingPartner = b;
                         herdAction = BREED;
                         break;
                     }
@@ -674,11 +833,15 @@ public class WorkGoal extends Goal {
                         else wool.setItem(left);
                     }
                 } else if (herdAction == BREED) {
-                    // Зерно на кормёжку берётся из запасов.
+                    // Одна порция корма обслуживает только выбранную пару, а не всё стадо.
+                    if (breedingPartner == null || !breedingPartner.isAlive()
+                            || !animal.canFallInLove() || !breedingPartner.canFallInLove()
+                            || animal.getAge() != 0 || breedingPartner.getAge() != 0
+                            || !ChunkReconciliation.penAnimals(level, o).contains(animal)
+                            || !ChunkReconciliation.penAnimals(level, o).contains(breedingPartner)) return true;
                     if (!o.take(Resource.FOOD, 2)) return true;
-                    for (Animal a : ChunkReconciliation.penAnimals(level, o)) {
-                        if (a.getType() == animal.getType() && !a.isBaby() && a.canFallInLove() && a.getAge() == 0) a.setInLove(null);
-                    }
+                    animal.setInLove(null);
+                    breedingPartner.setInLove(null);
                     level.playSound(null, animal.blockPosition(), SoundEvents.GENERIC_EAT, SoundSource.NEUTRAL, 0.6f, 1f);
                     o.penActionAt = now + 1200;
                 }
@@ -686,25 +849,66 @@ public class WorkGoal extends Goal {
                 return true;
             }
             default -> {
-                // Пригнать: подойти, взять на поводок, отвести к калитке, впустить.
-                if (!animal.isLeashed()) {
+                // Пригнать: взять животное на поводок, открыть калитку и физически провести его в загон.
+                if (!animal.isLeashed() && timer < 0) {
                     if (!go(o, animal.blockPosition(), 2.0, 400)) return false;
                     animal.setLeashedTo(mob, true);
-                    timer = -1;
+                    // Не сбрасываем этот маркер, если конкретный тип сущности/мод не поддерживает поводок на NPC.
+                    // В таком случае дальше работает прямое наведение навигации животного.
+                    timer = 0;
                     return false;
                 }
-                if (!go(o, outside, 1.3, 600)) return false;
-                BlockState gs = level.getBlockState(gate);
-                if (gs.getBlock() instanceof FenceGateBlock) {
-                    level.setBlockAndUpdate(gate, gs.setValue(FenceGateBlock.OPEN, true));
-                    level.playSound(null, gate, SoundEvents.FENCE_GATE_OPEN, SoundSource.BLOCKS, 0.8f, 1f);
+                if (!ChunkReconciliation.penAnimals(level, o).contains(animal)) {
+                    BlockPos pen = o.marker(Marker.PEN);
+                    // После 20 секунд без успешного входа используем страховочное перемещение в центр загона.
+                    // Это крайний fallback; основной маршрут всегда проходит через открытую калитку.
+                    if (++timer > 400) {
+                        animal.teleportTo(pen.getX() + 0.5, pen.getY(), pen.getZ() + 0.5);
+                        animal.getNavigation().stop();
+                        animal.setPersistenceRequired();
+                        if (animal.isLeashed()) animal.dropLeash(true, false);
+                        BlockState stuckGate = level.getBlockState(gate);
+                        if (stuckGate.getBlock() instanceof FenceGateBlock && stuckGate.getValue(FenceGateBlock.OPEN)) {
+                            level.setBlockAndUpdate(gate, stuckGate.setValue(FenceGateBlock.OPEN, false));
+                        }
+                        r.lastRealWork = now;
+                        timer = 0;
+                        return true;
+                    }
+                    int inner = ChunkReconciliation.penSize(o) - 1;
+                    int gateDx = Integer.signum(gate.getX() - pen.getX());
+                    int gateDz = Integer.signum(gate.getZ() - pen.getZ());
+                    // Ведём животное к дальней стороне загона, чтобы поводок действительно натянулся за калиткой.
+                    BlockPos herdDestination = pen.offset(-gateDx * inner, 0, -gateDz * inner);
+                    boolean workerInside = Math.abs(mob.getX() - (pen.getX() + 0.5)) <= inner + 0.5
+                            && Math.abs(mob.getZ() - (pen.getZ() + 0.5)) <= inner + 0.5
+                            && Math.abs(mob.getY() - pen.getY()) <= 2.0;
+                    if (!workerInside) {
+                        if (!go(o, outside, 1.3, 600)) return false;
+                        BlockState gs = level.getBlockState(gate);
+                        if (gs.getBlock() instanceof FenceGateBlock && !gs.getValue(FenceGateBlock.OPEN)) {
+                            level.setBlockAndUpdate(gate, gs.setValue(FenceGateBlock.OPEN, true));
+                            level.playSound(null, gate, SoundEvents.FENCE_GATE_OPEN, SoundSource.BLOCKS, 0.8f, 1f);
+                        }
+                        // Не телепортируем скот: житель проходит через открытую калитку.
+                        go(o, herdDestination, 0.8, 800);
+                    } else {
+                        // Поводок не всегда заставляет моба пройти узкий проход: задаём животному физический маршрут внутрь.
+                        BlockState gs = level.getBlockState(gate);
+                        if (gs.getBlock() instanceof FenceGateBlock && !gs.getValue(FenceGateBlock.OPEN)) {
+                            level.setBlockAndUpdate(gate, gs.setValue(FenceGateBlock.OPEN, true));
+                        }
+                        if (animal.getNavigation().isDone() || level.getGameTime() % 20 == 0) {
+                            animal.getNavigation().moveTo(herdDestination.getX() + 0.5, herdDestination.getY(), herdDestination.getZ() + 0.5, 1.0);
+                        }
+                    }
+                    // Животное должно реально войти в AABB загона; только после этого отпускаем поводок.
+                    return false;
                 }
-                BlockPos pen = o.marker(Marker.PEN);
-                animal.dropLeash(true, false);
-                animal.teleportTo(pen.getX() + 0.5, pen.getY(), pen.getZ() + 0.5);
+                if (animal.isLeashed()) animal.dropLeash(true, false);
                 animal.setPersistenceRequired();
                 BlockState after = level.getBlockState(gate);
-                if (after.getBlock() instanceof FenceGateBlock) {
+                if (after.getBlock() instanceof FenceGateBlock && after.getValue(FenceGateBlock.OPEN)) {
                     level.setBlockAndUpdate(gate, after.setValue(FenceGateBlock.OPEN, false));
                     level.playSound(null, gate, SoundEvents.FENCE_GATE_CLOSE, SoundSource.BLOCKS, 0.8f, 1f);
                 }
@@ -714,9 +918,10 @@ public class WorkGoal extends Goal {
         }
     }
 
-    // ============================== Охотник ==============================
+    // ============================== Охота (вторая обязанность скотовода) ==============================
 
     private boolean startHunt() {
+        if (mob.outpost() == null || mob.outpost().markers(Marker.OUTER_PATROL).isEmpty()) return false;
         kills = 0;
         emptyPoints = 0;
         prey = null;
@@ -731,7 +936,7 @@ public class WorkGoal extends Goal {
             kills++;
             r.lastRealWork = now;
             prey = null;
-            if (kills >= 2 || mob.carried() >= 16) return true;
+            if (kills >= 2 || mob.cargoReadyToDeposit()) return true;
         }
         if (prey == null) {
             prey = findPrey(o);
@@ -778,8 +983,18 @@ public class WorkGoal extends Goal {
     private Animal findPrey(Outpost o) {
         Animal best = null;
         double bestD = 20 * 20;
+        // Загон — отдельная защищённая зона: скотовод не должен принимать своё стадо за добычу,
+        // даже если загон оказался за пределами основного периметра форта.
+        Set<Animal> penned = new HashSet<>();
+        AABB livestockArea = null;
+        if (!o.design().markers(Marker.PEN).isEmpty()) {
+            penned.addAll(ChunkReconciliation.penAnimals((ServerLevel) mob.level(), o));
+            // Животные в радиусе сбора скота (32 блока от загона) зарезервированы для скотовода.
+            livestockArea = new AABB(o.marker(Marker.PEN)).inflate(32, 8, 32);
+        }
         for (Animal a : mob.level().getEntitiesOfClass(Animal.class, mob.getBoundingBox().inflate(20, 6, 20))) {
-            if (!a.isAlive() || a.isBaby() || o.insideWalls(a.blockPosition()) || a.isLeashed() || a.hasCustomName()
+            if (!a.isAlive() || a.isBaby() || o.insideWalls(a.blockPosition()) || penned.contains(a)
+                    || (livestockArea != null && livestockArea.contains(a.getX(), a.getY(), a.getZ())) || a.isLeashed() || a.hasCustomName()
                     || a.getPersistentData().contains(NpcLifecycle.CARAVAN_TAG)) continue;
             if (a instanceof TamableAnimal t && t.isTame()) continue;
             if (a instanceof AbstractHorse h && h.isTamed()) continue;
@@ -792,12 +1007,197 @@ public class WorkGoal extends Goal {
         return best;
     }
 
+    // ============================== Кузнец ==============================
+
+    /** Ремонт имеет приоритет; когда броня исправна, кузнец повышает уровень снаряжения бойцов. */
+    private boolean findSmithTask(ServerLevel level, Outpost o, long now) {
+        Resident worst = null;
+        for (Resident candidate : o.residents) {
+            if (candidate.active() && candidate.role.combat && candidate.armor < 0.95f
+                    && (worst == null || candidate.armor < worst.armor)) worst = candidate;
+        }
+        if (worst != null) {
+            if (Storehouse.countItem(level, o, Items.IRON_INGOT) < 1
+                    || Storehouse.countItem(level, o, Items.LEATHER) < 1) {
+                noJobUntil = now + 200;
+                return false;
+            }
+            smithTarget = worst.id;
+            smithRepair = true;
+            return true;
+        }
+
+        int maxGear = Math.min(Resident.MAX_GEAR, o.tier);
+        Resident lowest = null;
+        for (Resident candidate : o.residents) {
+            if (candidate.active() && candidate.role.combat && candidate.gear < maxGear
+                    && (lowest == null || candidate.gear < lowest.gear)) lowest = candidate;
+        }
+        if (lowest == null) return false;
+        int count = 3 * (lowest.gear + 1);
+        if (Storehouse.countItem(level, o, Items.IRON_INGOT) < count + 3
+                || Storehouse.countItem(level, o, Items.LEATHER) < count + 5) {
+            noJobUntil = now + 200;
+            return false;
+        }
+        smithTarget = lowest.id;
+        smithRepair = false;
+        return true;
+    }
+
+    /** Работает у кузницы; реальные слитки и кожа списываются со склада при завершении операции. */
+    private boolean smith(ServerLevel level, Outpost o, Resident worker, long now) {
+        if (smithTarget == null) return true;
+        Resident target = o.resident(smithTarget);
+        if (target == null || !target.active() || !target.role.combat) {
+            smithTarget = null;
+            return true;
+        }
+        if (!go(o, o.marker(Marker.SMITHY), 1.6, 500)) return false;
+
+        if (mob.tickCount % 80 == 0) {
+            mob.swing(InteractionHand.MAIN_HAND);
+            mob.playSound(SoundEvents.SMITHING_TABLE_USE, 0.75f, 0.9f + mob.getRandom().nextFloat() * 0.2f);
+        }
+        // Та же шкала smithWork используется офлайн: загрузка чанка не удваивает производство.
+        o.smithWork = Math.min(8, o.smithWork + 30.0 / 24000.0);
+        if (o.smithWork < 1) return false;
+
+        int count = smithRepair ? 1 : 3 * (target.gear + 1);
+        int ironReserve = smithRepair ? 0 : 3;
+        int leatherReserve = smithRepair ? 0 : 5;
+        if (Storehouse.countItem(level, o, Items.IRON_INGOT) < count + ironReserve
+                || Storehouse.countItem(level, o, Items.LEATHER) < count + leatherReserve
+                || !Storehouse.takeItem(level, o, Items.IRON_INGOT, count)
+                || !Storehouse.takeItem(level, o, Items.LEATHER, count)) {
+            noJobUntil = now + 200;
+            smithTarget = null;
+            return true;
+        }
+
+        if (smithRepair) target.armor = Math.min(1f, target.armor + 0.25f);
+        else target.gear = Math.min(Resident.MAX_GEAR, target.gear + 1);
+        o.smithWork -= 1;
+        o.dirtyForClients = true;
+        if (target.entity != null && level.getEntity(target.entity) instanceof FighterEntity fighter) {
+            fighter.refreshResidentEquipment();
+        }
+        worker.lastRealWork = now;
+        smithTarget = null;
+        return true;
+    }
+
+    // ============================== Фермер ==============================
+
+    /** Выбирает созревшую пшеницу раньше пустой грядки, чтобы урожай не пропадал. */
+    private boolean findFarmTask(ServerLevel level, Outpost o) {
+        BlockPos center = o.marker(Marker.FARM);
+        if (!level.hasChunk(center.getX() >> 4, center.getZ() >> 4)) return false;
+        BlockPos harvest = null;
+        BlockPos plant = null;
+        BlockPos till = null;
+        double harvestDistance = Double.MAX_VALUE;
+        double plantDistance = Double.MAX_VALUE;
+        double tillDistance = Double.MAX_VALUE;
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                if (dx == 0 && dz == 0) continue;
+                BlockPos crop = center.offset(dx, 0, dz);
+                BlockPos soil = crop.below();
+                BlockState soilState = level.getBlockState(soil);
+                BlockState state = level.getBlockState(crop);
+                double distance = mob.distanceToSqr(crop.getX() + 0.5, crop.getY(), crop.getZ() + 0.5);
+                if (state.is(Blocks.WHEAT) && state.getValue(CropBlock.AGE) >= 7) {
+                    if (distance < harvestDistance) {
+                        harvestDistance = distance;
+                        harvest = crop.immutable();
+                    }
+                } else if (state.isAir() && soilState.is(Blocks.FARMLAND) && distance < plantDistance) {
+                    plantDistance = distance;
+                    plant = crop.immutable();
+                } else if (state.isAir() && (soilState.is(Blocks.DIRT) || soilState.is(Blocks.GRASS_BLOCK)) && distance < tillDistance) {
+                    tillDistance = distance;
+                    till = crop.immutable();
+                }
+            }
+        }
+        farmHarvest = harvest != null;
+        farmTill = harvest == null && plant == null && till != null;
+        farmTarget = harvest != null ? harvest : plant != null ? plant : till;
+        return farmTarget != null;
+    }
+
+    /** Физически собирает зрелую пшеницу или тратит реальное семя со склада на посадку. */
+    private boolean farm(ServerLevel level, Outpost o, Resident r, long now) {
+        if (farmTarget == null) return true;
+        if (!go(o, farmTarget, 2.2, 300)) return false;
+        BlockState crop = level.getBlockState(farmTarget);
+        if (farmHarvest && crop.is(Blocks.WHEAT) && crop.getValue(CropBlock.AGE) >= 7) {
+            mob.swing(InteractionHand.MAIN_HAND);
+            for (ItemStack drop : Block.getDrops(crop, level, farmTarget, null, mob, mob.getMainHandItem())) {
+                ItemStack left = mob.collect(drop);
+                if (!left.isEmpty()) mob.spawnAtLocation(left);
+            }
+            level.destroyBlock(farmTarget, false, mob);
+            r.lastRealWork = now;
+            return true;
+        }
+        BlockState soil = level.getBlockState(farmTarget.below());
+        if (farmTill && crop.isAir() && (soil.is(Blocks.DIRT) || soil.is(Blocks.GRASS_BLOCK))) {
+            mob.swing(InteractionHand.MAIN_HAND);
+            level.setBlockAndUpdate(farmTarget.below(), Blocks.FARMLAND.defaultBlockState());
+            level.playSound(null, farmTarget.below(), SoundEvents.GRASS_PLACE, SoundSource.BLOCKS, 0.7f, 1.0f);
+            r.lastRealWork = now;
+            return true;
+        }
+        if (crop.isAir() && soil.is(Blocks.FARMLAND)) {
+            if (o.stock(Resource.SEEDS) <= FARM_SEED_RESERVE || !Storehouse.takeItem(level, o, Items.WHEAT_SEEDS, 1)) {
+                noJobUntil = now + 600;
+                return true;
+            }
+            mob.swing(InteractionHand.MAIN_HAND);
+            level.setBlockAndUpdate(farmTarget, Blocks.WHEAT.defaultBlockState());
+            level.playSound(null, farmTarget, SoundEvents.GRASS_PLACE, SoundSource.BLOCKS, 0.7f, 1.0f);
+            r.lastRealWork = now;
+            return true;
+        }
+        return true;
+    }
+
+    /** Есть ли место для предмета в ноше, включая объединение с существующей стопкой. */
+    private boolean canCarryItem(Item item) {
+        for (int slot = 0; slot < mob.inventory.getContainerSize(); slot++) {
+            ItemStack stack = mob.inventory.getItem(slot);
+            if (stack.isEmpty() || (stack.is(item) && stack.getCount() < stack.getMaxStackSize())) return true;
+        }
+        return false;
+    }
+
+    /** Крафтит хлеб у склада из пшеницы сверх неприкосновенного запаса. */
+    private void craftBread(ServerLevel level, Outpost o, Resident r, long now) {
+        if (!go(o, o.marker(Marker.STORE_INSIDE), 1.8, 500)) return;
+        if (Storehouse.countItem(level, o, Items.WHEAT) < FARM_WHEAT_RESERVE + 3 || !canCarryItem(Items.BREAD)) {
+            phase = Phase.DECIDE;
+            return;
+        }
+        if (!Storehouse.takeItem(level, o, Items.WHEAT, 3)) {
+            phase = Phase.DECIDE;
+            return;
+        }
+        mob.swing(InteractionHand.MAIN_HAND);
+        ItemStack left = mob.collect(new ItemStack(Items.BREAD));
+        if (!left.isEmpty()) mob.spawnAtLocation(left);
+        level.playSound(null, mob.blockPosition(), SoundEvents.GRASS_PLACE, SoundSource.BLOCKS, 0.7f, 1.0f);
+        r.lastRealWork = now;
+        phase = Phase.DEPOSIT;
+    }
+
     // ============================== Работа у места (без добычи в мире) ==============================
 
     private void chore(ServerLevel level, Outpost o, Role role) {
         if (spot == null) spot = workplace(level, o, role);
         if (timer <= 0) {
-            if (!go(o, spot, role == Role.HERDER ? 4.5 : 2.5, 400)) return;
+            if (!go(o, spot, role == Role.SKOTOVOD ? 4.5 : 2.5, 400)) return;
             timer = 140 + mob.getRandom().nextInt(120);
         }
         if (--timer % 25 == 0) {
@@ -817,15 +1217,11 @@ public class WorkGoal extends Goal {
     private BlockPos workplace(ServerLevel level, Outpost o, Role role) {
         return switch (role) {
             case LUMBERJACK -> o.marker(Marker.WOODYARD);
+            case FARMER -> o.marker(Marker.FARM).offset(1, 0, 0);
             case MINER -> o.marker(Marker.MINE);
             case SMITH -> o.design().markers(Marker.SMITHY).isEmpty() ? o.marker(Marker.STORAGE) : o.marker(Marker.SMITHY);
             case MAGE -> o.design().markers(Marker.MAGE).isEmpty() ? o.marker(Marker.THRONE) : o.marker(Marker.MAGE);
-            case HERDER -> o.marker(Marker.PEN);
-            case HUNTER -> {
-                List<BlockPos> outer = o.markers(Marker.OUTER_PATROL);
-                BlockPos p = outer.get(mob.getRandom().nextInt(outer.size()));
-                yield NpcLifecycle.groundAt(level, o, p.getX(), p.getZ());
-            }
+            case SKOTOVOD -> o.design().markers(Marker.PEN).isEmpty() ? o.marker(Marker.YARD) : o.marker(Marker.PEN);
             case STEWARD -> switch (cycle % 3) {
                 case 0 -> o.marker(Marker.THRONE);
                 case 1 -> o.marker(Marker.BOARD);
@@ -833,7 +1229,7 @@ public class WorkGoal extends Goal {
             };
             case CARAVANEER -> {
                 List<BlockPos> yard = o.markers(Marker.YARD);
-                yield yard.get(yard.size() - 1);
+                yield yard.isEmpty() ? o.marker(Marker.STORAGE) : yard.get(yard.size() - 1);
             }
             default -> o.marker(Marker.YARD);
         };
@@ -846,7 +1242,7 @@ public class WorkGoal extends Goal {
             case MINER -> SoundEvents.STONE_HIT;
             case SMITH -> SoundEvents.SMITHING_TABLE_USE;
             case MAGE -> SoundEvents.BOOK_PAGE_TURN;
-            case HERDER -> SoundEvents.GRASS_STEP;
+            case SKOTOVOD, FARMER -> SoundEvents.GRASS_STEP;
             case STEWARD -> SoundEvents.BOOK_PAGE_TURN;
             default -> null;
         };

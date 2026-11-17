@@ -35,6 +35,9 @@ public final class Simulation {
     /** Добыча в игровой день на работника. Камня нужно больше всего: каменные стены, башни и донжон. */
     public static final double WOOD_PER_DAY = 450;
     public static final double STONE_PER_DAY = 650;
+    /** Офлайн-выработка одного фермера: пшеница и возврат семян в оборот. */
+    public static final double FARM_WHEAT_PER_DAY = 24;
+    public static final double FARM_SEEDS_PER_DAY = 4;
     private static final double BUILDER_GATHER_PER_DAY = 200;
 
     private Simulation() {}
@@ -83,29 +86,39 @@ public final class Simulation {
             o.add(lacking, o.activeCount(Role.BUILDER) * BUILDER_GATHER_PER_DAY * prod);
         }
         o.add(Resource.WOOD, virtualWorkers(o, Role.LUMBERJACK, now) * WOOD_PER_DAY * prod * (o.boosted(Resource.WOOD, now) ? boost : 1));
+        int farmers = virtualWorkers(o, Role.FARMER, now);
+        o.add(Resource.WHEAT, farmers * FARM_WHEAT_PER_DAY * prod * (o.boosted(Resource.WHEAT, now) ? boost : 1));
+        o.add(Resource.SEEDS, farmers * FARM_SEEDS_PER_DAY * prod);
         int miners = virtualWorkers(o, Role.MINER, now);
         o.add(Resource.STONE, miners * STONE_PER_DAY * prod * (o.boosted(Resource.STONE, now) ? boost : 1));
         // Железной руды в штреке мало, поэтому шахтёр в мире всё равно даёт половину железа «из промывки».
         double ironMiners = miners + 0.5 * (o.activeCount(Role.MINER) - miners);
         o.add(Resource.IRON, ironMiners * 24 * prod * (o.boosted(Resource.IRON, now) ? boost : 1));
         double foodBoost = o.boosted(Resource.FOOD, now) ? boost : 1;
-        int hunters = virtualWorkers(o, Role.HUNTER, now);
-        o.add(Resource.FOOD, hunters * 36 * prod * foodBoost);
-        o.add(Resource.HIDES, hunters * 10 * prod);
-        int herders = virtualWorkers(o, Role.HERDER, now);
-        if (herders > 0) {
+        int skotovods = virtualWorkers(o, Role.SKOTOVOD, now);
+        // Каждый скотовод делит рабочее время между охотой и стадом: половина выработки приходится на каждое направление.
+        double huntingWorkers = skotovods * 0.5;
+        double herdingWorkers = skotovods * 0.5;
+        o.add(Resource.FOOD, huntingWorkers * 36 * prod * foodBoost);
+        o.add(Resource.HIDES, huntingWorkers * 10 * prod);
+        if (herdingWorkers > 0) {
             // Вдали скотоводы пригоняют животных, пока загон не заполнится, и держат стадо.
-            if (o.penAnimals < o.penCapacity() && rnd.nextDouble() < herders * 1.5 * days) o.penAnimals++;
-            double herd = Math.min(o.penAnimals, herders * 8);
+            if (o.penAnimals < o.penCapacity() && rnd.nextDouble() < herdingWorkers * 1.5 * days) o.penAnimals++;
+            double herd = Math.min(o.penAnimals, herdingWorkers * 8);
             o.add(Resource.FOOD, herd * 5 * prod * foodBoost);
             o.add(Resource.HIDES, herd * 1.2 * prod);
         }
 
-        // Еда.
+        // Еда: сначала готовые продукты, затем пшеница. Так запас зерна сохраняется для хлеба,
+        // пока в кладовой есть другая пища.
         double eat = o.residents.size() * FOOD_PER_DAY * days * o.law.foodUse();
         boolean wasStarving = o.starving;
-        if (!o.take(Resource.FOOD, eat)) {
-            o.setStock(Resource.FOOD, 0);
+        double fromFood = Math.min(o.stock(Resource.FOOD), eat);
+        if (fromFood > 0) o.take(Resource.FOOD, fromFood);
+        double remainingFood = Math.max(0, eat - fromFood);
+        double fromWheat = Math.min(o.stock(Resource.WHEAT), remainingFood);
+        if (fromWheat > 0) o.take(Resource.WHEAT, fromWheat);
+        if (fromFood + fromWheat + 1e-6 < eat) {
             o.starving = true;
             if (!wasStarving) {
                 o.log(now, "lordsoutpost.event.starving");
@@ -127,12 +140,14 @@ public final class Simulation {
         o.boosts.values().removeIf(until -> until <= now);
     }
 
-    /** Жители роли, чью выработку считает симуляция: все, кроме тех, кто сейчас добывает руками в мире. */
+    /** Жители роли, чью выработку считает симуляция: только те, чьи сущности сейчас не загружены в мир. */
     public static int virtualWorkers(Outpost o, Role role, long now) {
         int n = 0;
         for (Resident r : o.residents) {
             if (r.role != role || !r.active()) continue;
-            boolean physical = o.online && r.entity != null && now - r.lastRealWork < 2400;
+            // Загруженный NPC работает физически; нельзя включать ему виртуальную добычу только потому,
+            // что он долго шёл к цели или временно не нашёл ресурс.
+            boolean physical = o.online && r.entity != null;
             if (!physical) n++;
         }
         return n;
@@ -187,17 +202,17 @@ public final class Simulation {
     }
 
     private static void smith(Outpost o, long now, double days, double boost) {
-        int smiths = o.activeCount(Role.SMITH);
+        int smiths = virtualWorkers(o, Role.SMITH, now);
         if (smiths == 0) return;
         boolean helped = o.boosted(Resource.HIDES, now) || o.boosted(Resource.IRON, now);
-        o.smithWork = Math.min(8, o.smithWork + smiths * 4 * days * (helped ? boost : 1));
+        o.smithWork = Math.min(8, o.smithWork + smiths * 30 * days * (helped ? boost : 1));
         while (o.smithWork >= 1) {
             Resident worst = null;
             for (Resident r : o.residents) if (r.role.combat && r.armor < 0.95f && (worst == null || r.armor < worst.armor)) worst = r;
             if (worst != null) {
-                if (o.stock(Resource.HIDES) < 1 || o.stock(Resource.IRON) < 1) return;
-                o.take(Resource.HIDES, 1);
-                o.take(Resource.IRON, 1);
+                if (o.stock(Resource.HIDES) < 2 || o.stock(Resource.IRON) < 4) return;
+                o.take(Resource.HIDES, 2);
+                o.take(Resource.IRON, 4);
                 worst.armor = Math.min(1f, worst.armor + 0.25f);
             } else {
                 // Броня цела — кузнец перековывает снаряжение на следующий уровень.
@@ -285,8 +300,8 @@ public final class Simulation {
 
     // ============================== Состав поселения ==============================
 
-    private static final Role[] PRIORITY = {Role.STEWARD, Role.BUILDER, Role.LUMBERJACK, Role.MINER, Role.HUNTER, Role.SHIELDMAN,
-            Role.HERDER, Role.SMITH, Role.CARAVANEER, Role.MAGE};
+    private static final Role[] PRIORITY = {Role.STEWARD, Role.BUILDER, Role.LUMBERJACK, Role.MINER, Role.SKOTOVOD, Role.FARMER, Role.SHIELDMAN,
+            Role.SMITH, Role.CARAVANEER, Role.MAGE};
 
     /** Сколько жителей каждой роли нужно поселению этого тира (для бойцов — общее число, ключ SHIELDMAN). */
     public static int desired(Outpost o, Role role) {
@@ -296,8 +311,9 @@ public final class Simulation {
             case BUILDER -> o.complete() ? 1 : 1 + t;
             case LUMBERJACK -> t == 1 ? 1 : 2;
             case MINER -> t;
-            case HUNTER -> t == 3 ? 2 : 1;
-            case HERDER -> t == 3 ? 2 : 1;
+            // Сохраняем суммарную численность прежних двух ролей: охотник + скотовод.
+            case SKOTOVOD -> t == 3 ? 4 : 2;
+            case FARMER -> 1;
             case SMITH -> t >= 2 ? 1 : 0;
             case CARAVANEER -> t - 1;
             case MAGE -> t >= 3 ? 1 : 0;

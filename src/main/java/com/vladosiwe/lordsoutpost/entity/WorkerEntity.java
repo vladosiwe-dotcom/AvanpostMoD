@@ -8,6 +8,7 @@ import com.vladosiwe.lordsoutpost.outpost.Outpost;
 import com.vladosiwe.lordsoutpost.outpost.Resident;
 import com.vladosiwe.lordsoutpost.outpost.Role;
 import com.vladosiwe.lordsoutpost.server.Interactions;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
@@ -51,14 +52,56 @@ public class WorkerEntity extends OutpostNpc {
         return n;
     }
 
+    /** Количество занятых слотов ноши. Заполнение измеряется слотами, а не числом предметов. */
+    public int occupiedSlots() {
+        int occupied = 0;
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            if (!inventory.getItem(i).isEmpty()) occupied++;
+        }
+        return occupied;
+    }
+
+    /** Пора возвращаться на склад при заполнении не менее 75% слотов ноши. */
+    public boolean cargoReadyToDeposit() {
+        int slots = inventory.getContainerSize();
+        return slots > 0 && occupiedSlots() * 4 >= slots * 3;
+    }
+
     public boolean inventoryFull() {
-        for (int i = 0; i < inventory.getContainerSize(); i++) if (inventory.getItem(i).isEmpty()) return false;
-        return true;
+        return occupiedSlots() == inventory.getContainerSize();
+    }
+
+    /** Уровень инструмента шахтёра ограничен и тиром форта, и личным опытом шахтёра. */
+    public static int minerToolTier(Outpost outpost, Resident resident) {
+        return Math.max(1, Math.min(3, Math.min(outpost.tier, 1 + (resident.miningLevel() - 1) / 2)));
+    }
+
+    /** Подбирает кирку по развитию шахтёра и аванпоста, не сбрасывая её прочность без необходимости. */
+    public void refreshMinerTool(Outpost outpost, Resident resident) {
+        int tier = minerToolTier(outpost, resident);
+        net.minecraft.world.item.Item required = switch (tier) {
+            case 3 -> Items.DIAMOND_PICKAXE;
+            case 2 -> Items.IRON_PICKAXE;
+            default -> Items.STONE_PICKAXE;
+        };
+        if (!getMainHandItem().is(required)) setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(required));
+    }
+
+    /** Строитель сообщает соседним строителям, занят ли уже этот рабочий блок. */
+    public boolean reservesBuildPosition(BlockPos pos) {
+        for (var wrapped : goalSelector.getAvailableGoals()) {
+            if (wrapped.getGoal() instanceof com.vladosiwe.lordsoutpost.entity.ai.BuildGoal build
+                    && build.reservesWorkPosition(pos)) return true;
+        }
+        return false;
     }
 
     public java.util.List<String> goalClassNames() {
         java.util.List<String> out = new java.util.ArrayList<>();
-        goalSelector.getAvailableGoals().stream().filter(w -> w.isRunning()).forEach(w -> out.add(w.getGoal().getClass().getSimpleName()));
+        goalSelector.getAvailableGoals().stream().filter(w -> w.isRunning()).forEach(w -> {
+            var goal = w.getGoal();
+            out.add(goal instanceof com.vladosiwe.lordsoutpost.entity.ai.BuildGoal build ? build.debugStatus() : goal.getClass().getSimpleName());
+        });
         return out;
     }
 
@@ -96,10 +139,14 @@ public class WorkerEntity extends OutpostNpc {
     @Override
     protected void equip(@Nullable Outpost o, Resident r) {
         ItemStack tool = switch (r.role) {
-            case BUILDER -> new ItemStack(Items.IRON_SHOVEL);
-            case HUNTER -> new ItemStack(Items.BOW);
-            case HERDER -> new ItemStack(Items.WHEAT);
-            case MINER -> new ItemStack(Items.IRON_PICKAXE);
+            case BUILDER -> new ItemStack(Items.IRON_AXE);
+            case SKOTOVOD -> new ItemStack(Items.BOW);
+            case FARMER -> new ItemStack(Items.IRON_HOE);
+            case MINER -> new ItemStack(switch (o == null ? 2 : minerToolTier(o, r)) {
+                case 3 -> Items.DIAMOND_PICKAXE;
+                case 2 -> Items.IRON_PICKAXE;
+                default -> Items.STONE_PICKAXE;
+            });
             case LUMBERJACK -> new ItemStack(Items.IRON_AXE);
             case SMITH -> new ItemStack(Items.IRON_INGOT);
             case MAGE -> new ItemStack(Items.BOOK);

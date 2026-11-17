@@ -10,6 +10,7 @@ import com.vladosiwe.lordsoutpost.blueprint.Palette;
 import com.vladosiwe.lordsoutpost.blueprint.Step;
 import com.vladosiwe.lordsoutpost.data.ALifeSimulationManager;
 import com.vladosiwe.lordsoutpost.data.Caravans;
+import com.vladosiwe.lordsoutpost.data.ChunkReconciliation;
 import com.vladosiwe.lordsoutpost.data.Diplomacy;
 import com.vladosiwe.lordsoutpost.data.OutpostSavedData;
 import com.vladosiwe.lordsoutpost.data.QuestBoard;
@@ -36,6 +37,7 @@ import com.vladosiwe.lordsoutpost.protection.Access;
 import com.vladosiwe.lordsoutpost.protection.GateAccess;
 import com.vladosiwe.lordsoutpost.protection.ProtectionEvents;
 import com.vladosiwe.lordsoutpost.registry.ModBlocks;
+import com.vladosiwe.lordsoutpost.registry.ModEntities;
 import com.vladosiwe.lordsoutpost.registry.ModItems;
 import com.vladosiwe.lordsoutpost.server.OutpostManager;
 import net.minecraft.core.BlockPos;
@@ -46,6 +48,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
@@ -68,6 +71,109 @@ public final class OutpostGameTests {
     private static final BlockPos FAR = new BlockPos(4_000_000, 64, 4_000_000);
 
     private OutpostGameTests() {}
+
+    /** Фермер имеет одно поле и отдельный оборот семян; офлайн-выработка не зависит от загрузки чанков. */
+    @GameTest(template = "empty")
+    public static void farmerFieldAndOfflineProduction(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        Outpost o = virtualOutpost(level, data, FAR.offset(17000, 0, 0), 1, UUID.randomUUID());
+        try {
+            h.assertTrue(o.count(Role.FARMER) == 1, "при основании должен появляться один фермер");
+            h.assertTrue(o.design().markers(Marker.FARM).size() == 1, "в чертеже нет единственного поля");
+            h.assertTrue(o.design().cells.values().stream().anyMatch(cell -> cell.state().is(Blocks.WATER)), "у поля нет источника воды");
+            o.setStock(Resource.SEEDS, 0);
+            long end = simulate(level, data, o, level.getGameTime(), 1.0);
+            h.assertTrue(o.stock(Resource.WHEAT) > 0, "виртуальный фермер не произвёл пшеницу");
+            h.assertTrue(o.stock(Resource.SEEDS) > 0, "виртуальный фермер не пополнил запас семян");
+            h.assertTrue(Simulation.virtualWorkers(o, Role.FARMER, end) == 1, "выгруженный фермер не участвует в A-Life");
+        } finally {
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
+    /** Старые hunter/herder записи сохранений загружаются как одна профессия «Скотовод». */
+    @GameTest(template = "empty")
+    public static void legacyHunterAndHerderRolesMigrateToSkotovod(GameTestHelper h) {
+        CompoundTag oldHunter = new CompoundTag();
+        oldHunter.putUUID("id", UUID.randomUUID());
+        oldHunter.putString("role", "hunter");
+        oldHunter.putString("name", "Legacy Hunter");
+        CompoundTag oldHerder = new CompoundTag();
+        oldHerder.putUUID("id", UUID.randomUUID());
+        oldHerder.putString("role", "herder");
+        oldHerder.putString("name", "Legacy Herder");
+
+        h.assertTrue(Resident.load(oldHunter).role == Role.SKOTOVOD, "старый hunter не мигрировал в Скотовода");
+        h.assertTrue(Resident.load(oldHerder).role == Role.SKOTOVOD, "старый herder не мигрировал в Скотовода");
+        int count = 0;
+        for (Role r : Role.VALUES) if (r == Role.SKOTOVOD) count++;
+        h.assertTrue(count == 1, "в списке профессий должно быть ровно одно вхождение Скотовода");
+        h.succeed();
+    }
+
+    /** Строитель убирает природную растительность на клетке чертежа, но не сносит чужой сундук. */
+    @GameTest(template = "empty")
+    public static void builderClearsNaturalObstructionsSafely(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        BlockPos center = h.absolutePos(BlockPos.ZERO).offset(32, 0, 32);
+        for (int cx = -2; cx <= 2; cx++)
+            for (int cz = -2; cz <= 2; cz++) level.setChunkForced((center.getX() >> 4) + cx, (center.getZ() >> 4) + cz, true);
+
+        Outpost o = new Outpost(987654321L, center, Layout.SQUARE, Palette.TIMBER, Rotation.NONE,
+                Difficulty.FRONTIER_POST, true);
+        o.tier = 1;
+        o.placedTier = 2;
+        o.groundTier = 2;
+        o.steps = o.nextPlan().size();
+
+        int index = -1;
+        for (int i = 0; i < o.nextPlan().size(); i++) {
+            Step step = o.nextPlan().get(i);
+            if (!step.state().isAir() && !o.design().cells.containsKey(step.pos())) {
+                index = i;
+                break;
+            }
+        }
+        h.assertTrue(index >= 0, "в плане второго тира нет новой строительной клетки");
+        Step step = o.nextPlan().get(index);
+        BlockPos target = o.world(step.pos());
+        level.setBlockAndUpdate(target, net.minecraft.world.level.block.Blocks.OAK_LOG.defaultBlockState());
+
+        WorkerEntity builder = ModEntities.WORKER.get().create(level);
+        h.assertTrue(builder != null, "не удалось создать строителя для GameTest");
+        builder.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND,
+                new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.IRON_AXE));
+        builder.moveTo(target.getX() + 1.5, target.getY(), target.getZ() + 0.5, 0, 0);
+        level.addFreshEntity(builder);
+
+        h.assertTrue(com.vladosiwe.lordsoutpost.data.ChunkReconciliation.clearNaturalObstruction(level, o, index, builder),
+                "строитель не расчистил естественное бревно");
+        h.assertTrue(level.getBlockState(target).isAir(), "естественное препятствие осталось на строительной клетке");
+        h.assertTrue(!com.vladosiwe.lordsoutpost.data.ChunkReconciliation.blockedByForeignBlock(level, o, index),
+                "после расчистки клетка всё ещё считается занятой");
+
+        level.setBlockAndUpdate(target, net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState());
+        h.assertTrue(com.vladosiwe.lordsoutpost.data.ChunkReconciliation.clearNaturalObstruction(level, o, index, builder),
+                "строитель не заменил естественный дерновый грунт");
+        h.assertTrue(level.getBlockState(target).isAir(), "дерновый грунт не был очищен под строительный блок");
+
+        level.setBlockAndUpdate(target, net.minecraft.world.level.block.Blocks.CHEST.defaultBlockState());
+        h.assertTrue(com.vladosiwe.lordsoutpost.data.ChunkReconciliation.blockedByForeignBlock(level, o, index),
+                "строитель должен распознавать чужую постройку как препятствие");
+        h.assertTrue(level.getBlockState(target).is(net.minecraft.world.level.block.Blocks.CHEST),
+                "проверка не должна разрушать сундук игрока");
+        level.setBlockAndUpdate(target, net.minecraft.world.level.block.Blocks.WHEAT.defaultBlockState());
+        h.assertTrue(com.vladosiwe.lordsoutpost.data.ChunkReconciliation.blockedByForeignBlock(level, o, index),
+                "строитель не должен считать посевы естественным мусором");
+        h.assertTrue(level.getBlockState(target).is(net.minecraft.world.level.block.Blocks.WHEAT),
+                "посевы должны оставаться на месте");
+        builder.discard();
+        for (int cx = -2; cx <= 2; cx++)
+            for (int cz = -2; cz <= 2; cz++) level.setChunkForced((center.getX() >> 4) + cx, (center.getZ() >> 4) + cz, false);
+        h.succeed();
+    }
 
     // ============================== Чертежи ==============================
 
@@ -146,6 +252,64 @@ public final class OutpostGameTests {
 
     // ============================== Экономика ==============================
 
+    /** Ноша жителя: 75% считается по занятым слотам, а не по числу предметов. */
+    @GameTest(template = "empty")
+    public static void workerCargoUsesSlotThreshold(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        WorkerEntity worker = com.vladosiwe.lordsoutpost.registry.ModEntities.WORKER.get().create(level);
+        h.assertTrue(worker != null, "не удалось создать тестового жителя");
+        if (worker == null) {
+            h.succeed();
+            return;
+        }
+
+        worker.inventory.setItem(0, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.COBBLESTONE, 64));
+        h.assertTrue(worker.occupiedSlots() == 1, "одна стопка должна занимать один слот");
+        h.assertTrue(!worker.cargoReadyToDeposit(), "одна стопка не должна считаться заполнением 75%");
+
+        net.minecraft.world.item.Item[] distinctItems = {
+                net.minecraft.world.item.Items.DIRT,
+                net.minecraft.world.item.Items.GRAVEL,
+                net.minecraft.world.item.Items.SAND,
+                net.minecraft.world.item.Items.OAK_LOG,
+                net.minecraft.world.item.Items.COAL,
+                net.minecraft.world.item.Items.IRON_INGOT
+        };
+        for (int i = 1; i < 7; i++) {
+            worker.inventory.setItem(i, new net.minecraft.world.item.ItemStack(distinctItems[i - 1], 1));
+        }
+        h.assertTrue(worker.occupiedSlots() == 7, "ожидалось семь занятых слотов");
+        h.assertTrue(!worker.cargoReadyToDeposit(), "7 из 12 слотов — меньше 75%");
+
+        worker.inventory.setItem(7, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.STICK, 1));
+        h.assertTrue(worker.occupiedSlots() == 8, "ожидалось восемь занятых слотов");
+        h.assertTrue(!worker.cargoReadyToDeposit(), "8 из 12 слотов — меньше 75%");
+        worker.inventory.setItem(8, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.IRON_NUGGET, 1));
+        h.assertTrue(worker.occupiedSlots() == 9, "ожидалось девять занятых слотов");
+        h.assertTrue(worker.cargoReadyToDeposit(), "9 из 12 слотов должны включать возврат на склад");
+        h.assertTrue(!worker.inventoryFull(), "9 из 12 слотов не являются полной ношей");
+        worker.discard();
+        h.succeed();
+    }
+
+    /** Опыт шахтёра сохраняется, а уровни открываются на заданных порогах добычи. */
+    @GameTest(template = "empty")
+    public static void minerProgressionPersists(GameTestHelper h) {
+        Resident miner = new Resident(UUID.randomUUID(), Role.MINER, "Test Miner");
+        h.assertTrue(miner.miningLevel() == 1, "новый шахтёр должен иметь 1-й уровень");
+        miner.miningXp = 50;
+        h.assertTrue(miner.miningLevel() == 2, "50 блоков должны открыть 2-й уровень");
+        miner.miningXp = 150;
+        h.assertTrue(miner.miningLevel() == 3, "150 блоков должны открыть 3-й уровень");
+        miner.miningXp = 300;
+        h.assertTrue(miner.miningLevel() == 4, "300 блоков должны открыть 4-й уровень");
+        miner.miningXp = 500;
+        h.assertTrue(miner.miningLevel() == 5, "500 блоков должны открыть 5-й уровень");
+        Resident loaded = Resident.load(miner.save());
+        h.assertTrue(loaded.miningXp == 500 && loaded.miningLevel() == 5, "опыт шахтёра не сохранился");
+        h.succeed();
+    }
+
     private static Outpost virtualOutpost(ServerLevel level, OutpostSavedData data, BlockPos center, int skulls, UUID lord) {
         Outpost o = OutpostManager.createManual(data, center, Layout.SQUARE, Palette.TIMBER, Rotation.NONE, Difficulty.bySkulls(skulls), level.getGameTime(), level.random);
         if (lord != null) {
@@ -197,6 +361,85 @@ public final class OutpostGameTests {
             h.assertTrue(!o.tribute.isEmpty(), "дань Лорду не накопилась");
             // Блоки ещё не стоят в мире: чанки выгружены, поэтому «поставленный» тир отстаёт от логического.
             h.assertTrue(o.placedTier <= o.tier, "блоки не могли встать в выгруженных чанках");
+        } finally {
+            OutpostManager.abandon(data, o, level.getGameTime());
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
+    /** Загруженный в мир житель не должен одновременно давать виртуальную выработку, даже если долго не работал. */
+    @GameTest(template = "empty")
+    public static void loadedWorkerIsNotCountedAsVirtual(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        Outpost o = virtualOutpost(level, data, FAR.offset(96, 0, 0), 1, UUID.randomUUID());
+        try {
+            o.residents.clear();
+            Resident miner = new Resident(UUID.randomUUID(), Role.MINER, "Loaded Miner");
+            o.residents.add(miner);
+            o.online = true;
+            miner.entity = UUID.randomUUID();
+            int baseline = Simulation.virtualWorkers(o, Role.MINER, level.getGameTime());
+            miner.lastRealWork = level.getGameTime() - 100_000;
+            int loadedCount = Simulation.virtualWorkers(o, Role.MINER, level.getGameTime());
+            h.assertTrue(baseline == 0 && loadedCount == 0,
+                    "загруженный шахтёр не должен получать виртуальную добычу: baseline=" + baseline
+                            + ", actual=" + loadedCount + ", online=" + o.online + ", entity=" + miner.entity);
+            miner.entity = null;
+            h.assertTrue(Simulation.virtualWorkers(o, Role.MINER, level.getGameTime()) == baseline + 1,
+                    "выгруженный шахтёр должен учитываться в A-Life симуляции");
+            miner.entity = UUID.randomUUID();
+            o.online = false;
+            h.assertTrue(Simulation.virtualWorkers(o, Role.MINER, level.getGameTime()) == baseline + 1,
+                    "при выгруженном аванпосте шахтёр должен учитываться виртуально");
+        } finally {
+            OutpostManager.abandon(data, o, level.getGameTime());
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
+    /** При выгрузке чанка переполнение склада не уничтожает добычу жителя. */
+    @GameTest(template = "empty")
+    public static void virtualWorkerDepositPreservesOverflow(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        Outpost o = virtualOutpost(level, data, FAR.offset(128, 0, 0), 1, UUID.randomUUID());
+        try {
+            o.setStock(Resource.WOOD, o.capacity(Resource.WOOD) - 4);
+            net.minecraft.world.SimpleContainer cargo = new net.minecraft.world.SimpleContainer(1);
+            cargo.setItem(0, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.OAK_LOG, 2));
+            com.vladosiwe.lordsoutpost.data.Storehouse.depositVirtually(o, cargo);
+            h.assertTrue(Math.abs(o.stock(Resource.WOOD) - o.capacity(Resource.WOOD)) < 1e-6,
+                    "склад должен принять ровно один брусок до лимита");
+            h.assertTrue(cargo.isEmpty(), "после виртуальной разгрузки ноша должна быть пустой");
+            h.assertTrue(o.tribute.stream().anyMatch(st -> st.is(net.minecraft.world.item.Items.OAK_LOG) && st.getCount() == 1),
+                    "излишек должен сохраниться в дани");
+        } finally {
+            OutpostManager.abandon(data, o, level.getGameTime());
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
+    /** Тир кирки ограничен одновременно развитием форта и личным уровнем шахтёра. */
+    @GameTest(template = "empty")
+    public static void minerToolTierUsesBothProgressions(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        Outpost o = virtualOutpost(level, data, FAR.offset(256, 0, 0), 1, UUID.randomUUID());
+        try {
+            Resident miner = new Resident(UUID.randomUUID(), Role.MINER, "Tool Tester");
+            miner.miningXp = 500;
+            h.assertTrue(WorkerEntity.minerToolTier(o, miner) == 1, "форт первого тира не должен выдавать инструмент выше каменного");
+            o.tier = 2;
+            h.assertTrue(WorkerEntity.minerToolTier(o, miner) == 2, "форт второго тира должен ограничивать кирку железным тиром");
+            miner.miningXp = 149;
+            h.assertTrue(WorkerEntity.minerToolTier(o, miner) == 1, "шахтёр ниже 3-го уровня не должен получать железную кирку");
+            o.tier = 3;
+            miner.miningXp = 500;
+            h.assertTrue(WorkerEntity.minerToolTier(o, miner) == 3, "шахтёр 5-го уровня в форте 3-го тира должен получать алмазную кирку");
         } finally {
             OutpostManager.abandon(data, o, level.getGameTime());
             data.remove(o);
@@ -461,9 +704,10 @@ public final class OutpostGameTests {
         net.minecraft.server.level.ServerPlayer[] viewer = {null};
         h.onEachTick(() -> {
             if (h.getTick() % 150 == 0) {
-                LordsOutpost.LOGGER.info("Форт в мире: тик {}, этап {}, online={}, base={}, состояние {}, жителей {}, сущностей {}, steps={}, placed={}, ground={}",
+                LordsOutpost.LOGGER.info("Форт в мире: тик {}, этап {}, online={}, base={}, состояние {}, жителей {}, сущностей {}, steps={}, placed={}, ground={}, placedTier={}, plan={}, hasWork={}, workers={}",
                         h.getTick(), stage[0], o.online, o.basePlaced, o.state, o.residents.size(), level.getEntitiesOfClass(OutpostNpc.class, area).size(),
-                        o.steps, o.placed, o.groundTier);
+                        o.steps, o.placed, o.groundTier, o.placedTier, o.nextPlan().size(), ChunkReconciliation.hasWork(o),
+                        level.getEntitiesOfClass(WorkerEntity.class, area).stream().map(WorkerEntity::goalClassNames).toList());
             }
             switch (stage[0]) {
                 case 0 -> {
@@ -710,13 +954,19 @@ public final class OutpostGameTests {
         int x = origin.getX() + 1400, z = origin.getZ() + 640;
         for (int cx = -5; cx <= 5; cx++)
             for (int cz = -5; cz <= 5; cz++) level.setChunkForced((x >> 4) + cx, (z >> 4) + cz, true);
-        int y = level.getChunk(x >> 4, z >> 4).getHeight(Heightmap.Types.WORLD_SURFACE, x & 15, z & 15);
+        // Поднимаем тестовый форт выше нижней границы мира: шахтный ствол должен помещаться в высоту.
+        int y = Math.max(level.getChunk(x >> 4, z >> 4).getHeight(Heightmap.Types.WORLD_SURFACE, x & 15, z & 15),
+                level.getMinBuildHeight() + 8);
         Outpost o = OutpostManager.createManual(data, new BlockPos(x, y, z), Layout.SQUARE, Palette.TIMBER, Rotation.NONE, Difficulty.FRONTIER_POST, level.getGameTime(), level.random);
         UUID lord = UUID.randomUUID();
         AABB area = new AABB(o.center).inflate(70, 40, 70);
         int[] stage = {0};
         long[] mark = {0};
+        int[] maxPenned = {0};
         List<BlockPos> treeLogs = new java.util.ArrayList<>();
+        List<BlockPos> courtyardTreeLogs = new java.util.ArrayList<>();
+        BlockPos[] courtyardTreeBase = {null};
+        BlockPos[] courtyardPlant = {null};
         List<net.minecraft.world.entity.item.ItemEntity> litter = new java.util.ArrayList<>();
         h.onEachTick(() -> {
             switch (stage[0]) {
@@ -726,25 +976,61 @@ public final class OutpostGameTests {
                     OutpostManager.found(data, o, lord, "Tester", o.marker(Marker.YARD), level.getGameTime(), level.random);
                     o.nextRaidAt = Long.MAX_VALUE / 4;
                     o.autoCaravans = false;
+                    // Этот тест отдельно проверяет перегон: отключаем плановое размножение, чтобы скотовод выбрал FETCH.
+                    o.penActionAt = Long.MAX_VALUE / 4;
+                    // Фиксируем стартовое стадо, чтобы случайное блуждание при открытой калитке не делало тест нестабильным.
+                    for (net.minecraft.world.entity.animal.Animal penned
+                            : com.vladosiwe.lordsoutpost.data.ChunkReconciliation.penAnimals(level, o)) penned.setNoAi(true);
                     // Дерево за стенами, недалеко от дровяного двора.
                     BlockPos wood = o.marker(Marker.WOODYARD);
                     int tx = o.center.getX() + o.reach() + Layout.MARGIN + 6, tz = wood.getZ();
                     int ty = level.getChunk(tx >> 4, tz >> 4).getHeight(Heightmap.Types.WORLD_SURFACE, tx & 15, tz & 15);
                     BlockPos base = new BlockPos(tx, ty, tz);
-                    level.setBlockAndUpdate(base.below(), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState());
-                    for (int i = 0; i < 5; i++) {
-                        level.setBlockAndUpdate(base.above(i), net.minecraft.world.level.block.Blocks.OAK_LOG.defaultBlockState());
-                        treeLogs.add(base.above(i));
+                    // Крупное 2×2 дерево на 18 блоков (72 бревна): проверяем, что лимит обхода не обрезает верхушку.
+                    for (int dx = 0; dx < 2; dx++) for (int dz = 0; dz < 2; dz++) {
+                        level.setBlockAndUpdate(base.offset(dx, -1, dz), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState());
+                        for (int i = 0; i < 18; i++) {
+                            BlockPos log = base.offset(dx, i, dz);
+                            level.setBlockAndUpdate(log, net.minecraft.world.level.block.Blocks.OAK_LOG.defaultBlockState());
+                            treeLogs.add(log);
+                        }
                     }
-                    for (BlockPos p : BlockPos.betweenClosed(base.offset(-2, 3, -2), base.offset(2, 5, 2))) {
+                    for (BlockPos p : BlockPos.betweenClosed(base.offset(-2, 14, -2), base.offset(3, 20, 3))) {
                         if (level.getBlockState(p).isAir()) level.setBlockAndUpdate(p, net.minecraft.world.level.block.Blocks.OAK_LEAVES.defaultBlockState());
                     }
-                    // Коровы за стенами: скотовод должен пригнать их в загон.
+                    // Дерево внутри стен: лесоруб обязан расчистить двор и не сажать его обратно.
+                    BlockPos innerBase = new BlockPos(o.center.getX() + 3, o.center.getY() + 1, o.center.getZ() + 5);
+                    courtyardTreeBase[0] = innerBase;
+                    level.setBlockAndUpdate(innerBase.below(), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState());
+                    for (int i = 0; i < 8; i++) {
+                        BlockPos log = innerBase.above(i);
+                        level.setBlockAndUpdate(log, net.minecraft.world.level.block.Blocks.OAK_LOG.defaultBlockState());
+                        courtyardTreeLogs.add(log);
+                    }
+                    for (BlockPos p : BlockPos.betweenClosed(innerBase.offset(-2, 6, -2), innerBase.offset(2, 9, 2))) {
+                        if (level.getBlockState(p).isAir()) level.setBlockAndUpdate(p, net.minecraft.world.level.block.Blocks.OAK_LEAVES.defaultBlockState());
+                    }
+                    // Растительность во дворе: лесоруб должен убрать траву и молодую поросль, не трогая посевы.
+                    BlockPos plant = new BlockPos(o.center.getX() + 5, o.center.getY() + 1, o.center.getZ() + 5);
+                    courtyardPlant[0] = plant;
+                    level.setBlockAndUpdate(plant.below(), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState());
+                    level.setBlockAndUpdate(plant, net.minecraft.world.level.block.Blocks.TALL_GRASS.defaultBlockState());
+                    // Коровы рядом с внешней стороной калитки: проверяем, что скотовод физически заводит их через проход.
                     BlockPos pen = o.marker(Marker.PEN);
+                    // Пустой шаблон GameTest не имеет естественного грунта: создаём площадку перед калиткой.
+                    int penFloor = pen.getY() - 1;
+                    int cowLineZ = pen.getZ() + 4;
+                    for (int wx = pen.getX() - 4; wx <= pen.getX() + 4; wx++) {
+                        level.setBlock(new BlockPos(wx, penFloor, cowLineZ), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState(), 2);
+                    }
+                    for (int wz = pen.getZ() + 2; wz <= cowLineZ; wz++) {
+                        level.setBlock(new BlockPos(pen.getX(), penFloor, wz), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState(), 2);
+                    }
                     for (int i = 0; i < 3; i++) {
                         var cow = net.minecraft.world.entity.EntityType.COW.create(level);
-                        int cx = o.center.getX() - o.reach() - Layout.MARGIN - 4 - i * 2, cz = pen.getZ();
-                        cow.moveTo(cx + 0.5, level.getChunk(cx >> 4, cz >> 4).getHeight(Heightmap.Types.WORLD_SURFACE, cx & 15, cz & 15), cz + 0.5, 0, 0);
+                        int cx = pen.getX() - 2 + i * 2, cz = cowLineZ;
+                        level.setBlock(new BlockPos(cx, penFloor, cz), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState(), 2);
+                        cow.moveTo(cx + 0.5, pen.getY(), cz + 0.5, 0, 0);
                         cow.setPersistenceRequired();
                         level.addFreshEntity(cow);
                     }
@@ -756,13 +1042,32 @@ public final class OutpostGameTests {
                         level.addFreshEntity(e);
                         litter.add(e);
                     }
+                    // Пустой GameTest-мир не содержит природной породы: заполняем первые колонны штрека камнем,
+                    // чтобы проверить реальную добычу, а не только наличие шахтёра и его маршрута.
+                    for (com.vladosiwe.lordsoutpost.entity.ai.WorkGoal.Column column
+                            : com.vladosiwe.lordsoutpost.entity.ai.WorkGoal.tunnel(o, level.getMinBuildHeight())) {
+                        level.setBlockAndUpdate(column.floor(), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState());
+                        level.setBlockAndUpdate(column.floor().below(), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState());
+                        level.setBlockAndUpdate(column.floor().above(), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+                    }
                     mark[0] = h.getTick();
                     stage[0] = 1;
                 }
                 case 1 -> {
+                    // Фиксируем каждое животное сразу после входа: тест проверяет перегон, а не случайное блуждание стада.
+                    for (net.minecraft.world.entity.animal.Animal penned
+                            : com.vladosiwe.lordsoutpost.data.ChunkReconciliation.penAnimals(level, o)) penned.setNoAi(true);
                     int logsLeft = 0;
                     for (BlockPos p : treeLogs) if (level.getBlockState(p).is(net.minecraft.tags.BlockTags.LOGS)) logsLeft++;
+                    int courtyardLogsLeft = 0;
+                    for (BlockPos p : courtyardTreeLogs) if (level.getBlockState(p).is(net.minecraft.tags.BlockTags.LOGS)) courtyardLogsLeft++;
+                    boolean courtyardReplanted = courtyardTreeBase[0] != null
+                            && level.getBlockState(courtyardTreeBase[0]).getBlock() == net.minecraft.world.level.block.Blocks.OAK_SAPLING;
+                    boolean courtyardPlantCleared = courtyardPlant[0] != null && level.getBlockState(courtyardPlant[0]).isAir();
                     boolean litterGone = litter.stream().noneMatch(net.minecraft.world.entity.Entity::isAlive);
+                    boolean replanted = !treeLogs.isEmpty() && treeLogs.stream()
+                            .filter(p -> p.getY() == treeLogs.get(0).getY())
+                            .anyMatch(p -> level.getBlockState(p).getBlock() == net.minecraft.world.level.block.Blocks.OAK_SAPLING);
                     if ((h.getTick() - mark[0]) % 200 == 0) {
                         LordsOutpost.LOGGER.info("Работа жителей: тик {}, брёвен осталось {}, мусор подобран {}, донесено до склада {}, дерево {}",
                                 h.getTick() - mark[0], logsLeft, litterGone, o.depositedItems, o.claimedTrees);
@@ -772,8 +1077,12 @@ public final class OutpostGameTests {
                         }
                     }
                     int penned = com.vladosiwe.lordsoutpost.data.ChunkReconciliation.penAnimals(level, o).size();
-                    if ((h.getTick() - mark[0]) % 200 == 0) LordsOutpost.LOGGER.info("Работа жителей: в загоне {}", penned);
-                    if (logsLeft > 0 || !litterGone || o.depositedItems < 24 + 5 || penned < 3) return;
+                    maxPenned[0] = Math.max(maxPenned[0], penned);
+                    boolean minerWorked = level.getEntitiesOfClass(WorkerEntity.class, area,
+                            w -> w.outpostId() == o.id && w.role() == Role.MINER && w.resident() != null && w.resident().miningXp > 0).size() > 0;
+                    if ((h.getTick() - mark[0]) % 200 == 0) LordsOutpost.LOGGER.info("Работа жителей: в загоне {}, шахтёр добыл блоки {}", penned, minerWorked);
+                    if (logsLeft > 0 || courtyardLogsLeft > 0 || courtyardReplanted || !courtyardPlantCleared
+                            || !replanted || !litterGone || o.depositedItems < 24 + 5 || maxPenned[0] < 3 || !minerWorked) return;
                     // Склад: бочки отражают запас.
                     var barrels = com.vladosiwe.lordsoutpost.data.Storehouse.barrels(level, o);
                     h.assertTrue(!barrels.isEmpty(), "у склада нет бочек");
@@ -782,9 +1091,8 @@ public final class OutpostGameTests {
                         double diff = Math.abs(have.get(r) - o.stock(r));
                         h.assertTrue(diff < 10 || have.get(r) > 0, "бочки склада не совпадают с запасом: " + r + " " + have.get(r) + " / " + o.stock(r));
                     }
-                    BlockPos sapling = treeLogs.get(0);
-                    LordsOutpost.LOGGER.info("Работа жителей: дерево свалено, саженец {}, мусор подобран, донесено {}, в загоне {}, склад {}",
-                            level.getBlockState(sapling).getBlock(), o.depositedItems, penned, have);
+                    LordsOutpost.LOGGER.info("Работа жителей: внешнее дерево свалено и пересажено, дерево и трава во дворе убраны без повторной посадки, мусор подобран, шахтёр получил опыт, донесено {}, максимум в загоне {}, склад {}",
+                            o.depositedItems, maxPenned[0], have);
                     OutpostManager.abandon(data, o, level.getGameTime());
                     data.remove(o);
                     for (var npc : level.getEntitiesOfClass(OutpostNpc.class, area)) npc.discard();
