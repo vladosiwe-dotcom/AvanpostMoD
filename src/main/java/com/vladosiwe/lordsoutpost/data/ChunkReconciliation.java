@@ -266,6 +266,13 @@ public final class ChunkReconciliation {
         return idx;
     }
 
+    /** Продлевает заявку, пока строитель действительно продолжает работать над этим шагом. */
+    public static boolean renewClaim(Outpost o, int index, long now) {
+        if (index < 0 || !o.claims.containsKey(index)) return false;
+        o.claims.put(index, now + CLAIM_TIME);
+        return true;
+    }
+
     /** Освобождает шаг, если строитель не смог до него добраться или был прерван. */
     public static void releaseClaim(@Nullable Outpost o, int index) {
         if (o != null && index >= 0) o.claims.remove(index);
