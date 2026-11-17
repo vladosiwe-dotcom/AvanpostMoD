@@ -556,7 +556,9 @@ public final class OutpostGameTests {
         int x = origin.getX() + 640, z = origin.getZ() + 640;
         for (int cx = -4; cx <= 4; cx++)
             for (int cz = -4; cz <= 4; cz++) level.setChunkForced((x >> 4) + cx, (z >> 4) + cz, true);
-        int y = level.getChunk(x >> 4, z >> 4).getHeight(Heightmap.Types.WORLD_SURFACE, x & 15, z & 15);
+        // Поднимаем тестовый форт выше нижней границы мира, чтобы шахтный ствол действительно помещался.
+        int y = Math.max(level.getChunk(x >> 4, z >> 4).getHeight(Heightmap.Types.WORLD_SURFACE, x & 15, z & 15),
+                level.getMinBuildHeight() + 8);
         Outpost o = OutpostManager.createManual(data, new BlockPos(x, y, z), Layout.SQUARE, Palette.TIMBER, Rotation.NONE, Difficulty.FRONTIER_POST, level.getGameTime(), level.random);
         UUID lord = UUID.randomUUID();
         AABB area = new AABB(o.center).inflate(60, 40, 60);
@@ -877,8 +879,10 @@ public final class OutpostGameTests {
                         }
                     }
                     int penned = com.vladosiwe.lordsoutpost.data.ChunkReconciliation.penAnimals(level, o).size();
-                    if ((h.getTick() - mark[0]) % 200 == 0) LordsOutpost.LOGGER.info("Работа жителей: в загоне {}", penned);
-                    if (logsLeft > 0 || !litterGone || o.depositedItems < 24 + 5 || penned < 3) return;
+                    boolean minerWorked = level.getEntitiesOfClass(WorkerEntity.class, area,
+                            w -> w.outpostId() == o.id && w.role() == Role.MINER && w.resident() != null && w.resident().miningXp > 0).size() > 0;
+                    if ((h.getTick() - mark[0]) % 200 == 0) LordsOutpost.LOGGER.info("Работа жителей: в загоне {}, шахтёр добыл блоки {}", penned, minerWorked);
+                    if (logsLeft > 0 || !litterGone || o.depositedItems < 24 + 5 || penned < 3 || !minerWorked) return;
                     // Склад: бочки отражают запас.
                     var barrels = com.vladosiwe.lordsoutpost.data.Storehouse.barrels(level, o);
                     h.assertTrue(!barrels.isEmpty(), "у склада нет бочек");
@@ -888,7 +892,7 @@ public final class OutpostGameTests {
                         h.assertTrue(diff < 10 || have.get(r) > 0, "бочки склада не совпадают с запасом: " + r + " " + have.get(r) + " / " + o.stock(r));
                     }
                     BlockPos sapling = treeLogs.get(0);
-                    LordsOutpost.LOGGER.info("Работа жителей: дерево свалено, саженец {}, мусор подобран, донесено {}, в загоне {}, склад {}",
+                    LordsOutpost.LOGGER.info("Работа жителей: дерево свалено, саженец {}, мусор подобран, шахтёр получил опыт, донесено {}, в загоне {}, склад {}",
                             level.getBlockState(sapling).getBlock(), o.depositedItems, penned, have);
                     OutpostManager.abandon(data, o, level.getGameTime());
                     data.remove(o);
