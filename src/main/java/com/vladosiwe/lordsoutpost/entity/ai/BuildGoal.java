@@ -61,7 +61,7 @@ public class BuildGoal extends Goal {
             }
             target = o.world(o.nextPlan().get(claim).pos());
             workPosition = null;
-            timeout = 160;
+            timeout = 200;
         }
 
         if (ChunkReconciliation.blockedByForeignBlock(level, o, claim)) {
