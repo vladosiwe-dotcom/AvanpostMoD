@@ -6,8 +6,7 @@ import net.minecraft.network.chat.Component;
 public enum Role {
     STEWARD("steward", false),
     BUILDER("builder", false),
-    HUNTER("hunter", false),
-    HERDER("herder", false),
+    SKOTOVOD("herder", false),
     MINER("miner", false),
     LUMBERJACK("lumberjack", false),
     SMITH("smith", false),
@@ -39,6 +38,8 @@ public enum Role {
     }
 
     public static Role byId(String id) {
+        // Старые сохранения содержат отдельные hunter/herder роли. Обе мигрируют в одну профессию.
+        if ("hunter".equals(id) || "herder".equals(id)) return SKOTOVOD;
         for (Role r : VALUES) if (r.id.equals(id)) return r;
         return SHIELDMAN;
     }
