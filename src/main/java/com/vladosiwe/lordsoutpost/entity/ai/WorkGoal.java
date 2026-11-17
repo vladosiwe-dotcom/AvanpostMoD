@@ -89,6 +89,9 @@ public class WorkGoal extends Goal {
     // Охотник.
     @Nullable private Animal prey;
     private int kills;
+    /** Скотовод чередует животноводство и охоту, чтобы одно направление не вытесняло другое. */
+    private boolean skotovodHuntNext;
+    private boolean skotovodHunting;
     private int huntPoint = -1;
     private int emptyPoints;
 
@@ -187,11 +190,11 @@ public class WorkGoal extends Goal {
                 boolean done = switch (role) {
                     case LUMBERJACK -> chop(level, o, r, now);
                     case MINER -> mine(level, o, r, now);
-                    case HERDER -> herd(level, o, r, now);
-                    case HUNTER -> hunt(level, o, r, now);
+                    case SKOTOVOD -> skotovodHunting ? hunt(level, o, r, now) : herd(level, o, r, now);
                     default -> true;
                 };
                 if (done) {
+                    if (role == Role.SKOTOVOD) skotovodHuntNext = !skotovodHunting;
                     release();
                     phase = mob.carried() > 0 ? Phase.DEPOSIT : Phase.DECIDE;
                 }
@@ -226,13 +229,24 @@ public class WorkGoal extends Goal {
             return;
         }
         Role role = r.role;
-        boolean physical = role == Role.LUMBERJACK || role == Role.MINER || role == Role.HERDER || role == Role.HUNTER;
+        boolean physical = role == Role.LUMBERJACK || role == Role.MINER || role == Role.SKOTOVOD;
         if (physical && now >= noJobUntil) {
             boolean found = switch (role) {
                 case LUMBERJACK -> findTree(level, o);
                 case MINER -> claimColumn(level, o);
-                case HERDER -> planHerd(level, o, now);
-                default -> startHunt();
+                case SKOTOVOD -> {
+                    boolean huntFirst = skotovodHuntNext;
+                    boolean selected = huntFirst ? startHunt() : planHerd(level, o, now);
+                    if (selected) {
+                        skotovodHunting = huntFirst;
+                        yield true;
+                    }
+                    boolean fallbackHunt = !huntFirst;
+                    selected = fallbackHunt ? startHunt() : planHerd(level, o, now);
+                    skotovodHunting = fallbackHunt;
+                    yield selected;
+                }
+                default -> false;
             };
             if (found) {
                 phase = Phase.JOB;
@@ -806,9 +820,10 @@ public class WorkGoal extends Goal {
         }
     }
 
-    // ============================== Охотник ==============================
+    // ============================== Охота (вторая обязанность скотовода) ==============================
 
     private boolean startHunt() {
+        if (mob.outpost() == null || mob.outpost().markers(Marker.OUTER_PATROL).isEmpty()) return false;
         kills = 0;
         emptyPoints = 0;
         prey = null;
@@ -899,7 +914,7 @@ public class WorkGoal extends Goal {
     private void chore(ServerLevel level, Outpost o, Role role) {
         if (spot == null) spot = workplace(level, o, role);
         if (timer <= 0) {
-            if (!go(o, spot, role == Role.HERDER ? 4.5 : 2.5, 400)) return;
+            if (!go(o, spot, role == Role.SKOTOVOD ? 4.5 : 2.5, 400)) return;
             timer = 140 + mob.getRandom().nextInt(120);
         }
         if (--timer % 25 == 0) {
@@ -922,13 +937,7 @@ public class WorkGoal extends Goal {
             case MINER -> o.marker(Marker.MINE);
             case SMITH -> o.design().markers(Marker.SMITHY).isEmpty() ? o.marker(Marker.STORAGE) : o.marker(Marker.SMITHY);
             case MAGE -> o.design().markers(Marker.MAGE).isEmpty() ? o.marker(Marker.THRONE) : o.marker(Marker.MAGE);
-            case HERDER -> o.design().markers(Marker.PEN).isEmpty() ? o.marker(Marker.YARD) : o.marker(Marker.PEN);
-            case HUNTER -> {
-                List<BlockPos> outer = o.markers(Marker.OUTER_PATROL);
-                if (outer.isEmpty()) yield o.marker(Marker.YARD);
-                BlockPos p = outer.get(mob.getRandom().nextInt(outer.size()));
-                yield NpcLifecycle.groundAt(level, o, p.getX(), p.getZ());
-            }
+            case SKOTOVOD -> o.design().markers(Marker.PEN).isEmpty() ? o.marker(Marker.YARD) : o.marker(Marker.PEN);
             case STEWARD -> switch (cycle % 3) {
                 case 0 -> o.marker(Marker.THRONE);
                 case 1 -> o.marker(Marker.BOARD);
@@ -949,7 +958,7 @@ public class WorkGoal extends Goal {
             case MINER -> SoundEvents.STONE_HIT;
             case SMITH -> SoundEvents.SMITHING_TABLE_USE;
             case MAGE -> SoundEvents.BOOK_PAGE_TURN;
-            case HERDER -> SoundEvents.GRASS_STEP;
+            case SKOTOVOD -> SoundEvents.GRASS_STEP;
             case STEWARD -> SoundEvents.BOOK_PAGE_TURN;
             default -> null;
         };
