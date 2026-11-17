@@ -876,12 +876,16 @@ public final class OutpostGameTests {
                     int tx = o.center.getX() + o.reach() + Layout.MARGIN + 6, tz = wood.getZ();
                     int ty = level.getChunk(tx >> 4, tz >> 4).getHeight(Heightmap.Types.WORLD_SURFACE, tx & 15, tz & 15);
                     BlockPos base = new BlockPos(tx, ty, tz);
-                    level.setBlockAndUpdate(base.below(), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState());
-                    for (int i = 0; i < 5; i++) {
-                        level.setBlockAndUpdate(base.above(i), net.minecraft.world.level.block.Blocks.OAK_LOG.defaultBlockState());
-                        treeLogs.add(base.above(i));
+                    // Крупное 2×2 дерево на 18 блоков (72 бревна): проверяем, что лимит обхода не обрезает верхушку.
+                    for (int dx = 0; dx < 2; dx++) for (int dz = 0; dz < 2; dz++) {
+                        level.setBlockAndUpdate(base.offset(dx, -1, dz), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState());
+                        for (int i = 0; i < 18; i++) {
+                            BlockPos log = base.offset(dx, i, dz);
+                            level.setBlockAndUpdate(log, net.minecraft.world.level.block.Blocks.OAK_LOG.defaultBlockState());
+                            treeLogs.add(log);
+                        }
                     }
-                    for (BlockPos p : BlockPos.betweenClosed(base.offset(-2, 3, -2), base.offset(2, 5, 2))) {
+                    for (BlockPos p : BlockPos.betweenClosed(base.offset(-2, 14, -2), base.offset(3, 20, 3))) {
                         if (level.getBlockState(p).isAir()) level.setBlockAndUpdate(p, net.minecraft.world.level.block.Blocks.OAK_LEAVES.defaultBlockState());
                     }
                     // Коровы рядом с внешней стороной калитки: проверяем, что скотовод физически заводит их через проход.
