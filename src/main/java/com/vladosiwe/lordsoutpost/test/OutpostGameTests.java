@@ -137,6 +137,8 @@ public final class OutpostGameTests {
         h.assertTrue(level.getBlockState(target).is(net.minecraft.world.level.block.Blocks.CHEST),
                 "проверка не должна разрушать сундук игрока");
         builder.discard();
+        for (int cx = -2; cx <= 2; cx++)
+            for (int cz = -2; cz <= 2; cz++) level.setChunkForced((center.getX() >> 4) + cx, (center.getZ() >> 4) + cz, false);
         h.succeed();
     }
 
