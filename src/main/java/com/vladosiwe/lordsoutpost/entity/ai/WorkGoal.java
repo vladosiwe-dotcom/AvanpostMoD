@@ -732,6 +732,10 @@ public class WorkGoal extends Goal {
                 if (!ChunkReconciliation.penAnimals(level, o).contains(animal)) {
                     BlockPos pen = o.marker(Marker.PEN);
                     int inner = ChunkReconciliation.penSize(o) - 1;
+                    int gateDx = Integer.signum(gate.getX() - pen.getX());
+                    int gateDz = Integer.signum(gate.getZ() - pen.getZ());
+                    // Ведём животное к дальней стороне загона, чтобы поводок действительно натянулся за калиткой.
+                    BlockPos herdDestination = pen.offset(-gateDx * inner, 0, -gateDz * inner);
                     boolean workerInside = Math.abs(mob.getX() - (pen.getX() + 0.5)) <= inner + 0.5
                             && Math.abs(mob.getZ() - (pen.getZ() + 0.5)) <= inner + 0.5
                             && Math.abs(mob.getY() - pen.getY()) <= 2.0;
@@ -743,7 +747,7 @@ public class WorkGoal extends Goal {
                             level.playSound(null, gate, SoundEvents.FENCE_GATE_OPEN, SoundSource.BLOCKS, 0.8f, 1f);
                         }
                         // Не телепортируем скот: житель проходит через открытую калитку.
-                        go(o, pen, 0.8, 800);
+                        go(o, herdDestination, 0.8, 800);
                     } else {
                         // Поводок не всегда заставляет моба пройти узкий проход: задаём животному физический маршрут внутрь.
                         BlockState gs = level.getBlockState(gate);
@@ -751,7 +755,7 @@ public class WorkGoal extends Goal {
                             level.setBlockAndUpdate(gate, gs.setValue(FenceGateBlock.OPEN, true));
                         }
                         if (animal.getNavigation().isDone() || level.getGameTime() % 20 == 0) {
-                            animal.getNavigation().moveTo(pen.getX() + 0.5, pen.getY(), pen.getZ() + 0.5, 1.0);
+                            animal.getNavigation().moveTo(herdDestination.getX() + 0.5, herdDestination.getY(), herdDestination.getZ() + 0.5, 1.0);
                         }
                     }
                     // Животное должно реально войти в AABB загона; только после этого отпускаем поводок.
