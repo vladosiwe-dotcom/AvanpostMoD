@@ -125,6 +125,30 @@ public class WorkGoal extends Goal {
     }
 
     /** Коротко: чем житель занят (для журнала и отладки). */
+    /** Чем житель занят сейчас — ключ для окна управления (lordsoutpost.activity.*). */
+    public String activity() {
+        // Ночью все, кроме строителей, идут спать.
+        if (mob.level().isNight() && acting != Role.BUILDER && phase != Phase.DEPOSIT) return "sleep";
+        return switch (phase) {
+            case DECIDE -> "idle";
+            case PICKUP -> "pickup";
+            case DEPOSIT -> "deposit";
+            case CRAFT -> "craft";
+            case CHORE -> "chore";
+            case PAUSE -> "talk";
+            case JOB -> switch (acting) {
+                case MINER -> sinking ? "sink" : !vein.isEmpty() ? "vein" : "tunnel";
+                case LUMBERJACK -> vegetation != null ? "clear" : "chop";
+                case SKOTOVOD -> skotovodHunting ? "hunt" : "herd";
+                case FARMER -> "farm";
+                case SMITH -> smeltFurnace != null ? "smelt" : "smith";
+                case CARAVANEER -> "shop";
+                case BUILDER -> "tidy";
+                default -> "work";
+            };
+        };
+    }
+
     public String status() {
         Resident resident = mob.resident();
         String mining = resident != null && resident.role == Role.MINER
@@ -253,7 +277,7 @@ public class WorkGoal extends Goal {
                 boolean done = switch (role) {
                     case LUMBERJACK -> vegetation != null ? clearVegetation(level, o, r, now) : chop(level, o, r, now);
                     case BUILDER -> clearVegetation(level, o, r, now);
-                    case MINER -> sinking ? sink(level, o, r, now) : mine(level, o, r, now);
+                    case MINER -> sinking ? sink(level, o, r, now) : !vein.isEmpty() ? vein(level, o, r, now) : mine(level, o, r, now);
                     case SKOTOVOD -> skotovodHunting ? hunt(level, o, r, now) : herd(level, o, r, now);
                     case FARMER -> farm(level, o, r, now);
                     case SMITH -> smeltFurnace != null ? smelt(level, o, r, now) : smith(level, o, r, now);
@@ -313,7 +337,8 @@ public class WorkGoal extends Goal {
         if (physical && now >= noJobUntil) {
             boolean found = switch (role) {
                 case LUMBERJACK -> findVegetation(level, o) || findTree(level, o);
-                case BUILDER -> findJunk(level, o);
+                // Уборка — только когда нет стройки: тир и заказы важнее.
+                case BUILDER -> !ChunkReconciliation.hasWork(o) && !com.vladosiwe.lordsoutpost.data.Projects.hasWork(o) && findJunk(level, o);
                 case MINER -> {
                     Outpost.MineSite site = o.mine();
                     if (site.exists() && !site.ready()) {
@@ -454,6 +479,9 @@ public class WorkGoal extends Goal {
                 return false;
             }
         }
+        // Шахтёр под землёй упёрся в породу — прорубает её, а не стоит на месте.
+        if (acting == Role.MINER && mob.stuckTicks > 60 && mob.getNavigation().isDone() && mob.level() instanceof ServerLevel sl
+                && mob.getY() < o.mine().groundY() - 0.5) breakObstacle(sl, o, target);
         return mob.approach(target, 1.0, reach, patience);
     }
 
@@ -1307,8 +1335,160 @@ public class WorkGoal extends Goal {
             OutpostSavedData.get(level).setDirty();
         }
         if (mob.cargoReadyToDeposit()) return true;
+        // Рядом в породе видна жила — шахтёр прорубает к ней короткий проход и выбирает её целиком.
+        if (!pick.isEmpty() && planVein(level, o, c)) return false;
         // Следующий столбец — сразу, не поднимаясь наверх; шахтёр работает до 75% ноши или конца штрека.
         return !claimColumn(level, o);
+    }
+
+    // ---------- Жилы: шахтёр замечает руду рядом со штреком и идёт за ней ----------
+
+    /** Очередь блоков: сначала проход (ноги и голова), затем сама жила. */
+    private final java.util.ArrayDeque<BlockPos> vein = new java.util.ArrayDeque<>();
+    private int veinTimer = -1;
+    private static final int VEIN_SCAN = 4, VEIN_MAX = 12, PASSAGE_MAX = 4;
+
+    private static boolean ore(BlockState s) {
+        return s.is(net.neoforged.neoforge.common.Tags.Blocks.ORES);
+    }
+
+    private static boolean wet(ServerLevel level, BlockPos p) {
+        for (Direction e : Direction.values()) if (!level.getFluidState(p.relative(e)).isEmpty()) return true;
+        return false;
+    }
+
+    /** Можно ли шахтёру ломать этот блок: камень/грунт/руда, не постройка форта, не бедрок, рядом нет воды и лавы. */
+    private static boolean diggable(ServerLevel level, Outpost o, BlockPos p, BlockState s) {
+        if (s.isAir() || !s.getFluidState().isEmpty() || level.getBlockEntity(p) != null) return false;
+        float hard = s.getDestroySpeed(level, p);
+        if (hard < 0 || hard > 30) return false;
+        if (o.design().cells.containsKey(p.subtract(o.center)) || o.placedByPlayer(p)) return false;
+        return !wet(level, p);
+    }
+
+    /**
+     * Ищет руду в породе вокруг только что пройденного столбца (до 4 блоков в стороны), которую не видно из самого
+     * штрека. Если нашлась — составляет план: короткий проход 1×2 к ней и вся связанная жила (до 12 блоков).
+     */
+    private boolean planVein(ServerLevel level, Outpost o, Column c) {
+        BlockPos best = null;
+        double bestD = Double.MAX_VALUE;
+        for (int dx = -VEIN_SCAN; dx <= VEIN_SCAN; dx++)
+            for (int dz = -VEIN_SCAN; dz <= VEIN_SCAN; dz++)
+                for (int dy = -1; dy <= 2; dy++) {
+                    BlockPos p = c.floor().offset(dx, dy, dz);
+                    if (Math.abs(dx) + Math.abs(dz) <= 1 && dy >= -1 && dy <= 2) continue;
+                    BlockState s = level.getBlockState(p);
+                    if (!ore(s) || !diggable(level, o, p, s)) continue;
+                    double d = p.distSqr(c.floor());
+                    if (d < bestD) {
+                        bestD = d;
+                        best = p;
+                    }
+                }
+        if (best == null) return false;
+        // Проход: от места в штреке шагами к руде на уровне пола штрека, ноги и голова.
+        List<BlockPos> plan = new ArrayList<>();
+        BlockPos at = c.floor();
+        for (int i = 0; i < PASSAGE_MAX; i++) {
+            int sx = Integer.signum(best.getX() - at.getX()), sz = Integer.signum(best.getZ() - at.getZ());
+            if (Math.abs(best.getX() - at.getX()) + Math.abs(best.getZ() - at.getZ()) <= 1) break;
+            at = Math.abs(best.getX() - at.getX()) >= Math.abs(best.getZ() - at.getZ()) ? at.offset(sx, 0, 0) : at.offset(0, 0, sz);
+            for (BlockPos p : new BlockPos[]{at, at.above()}) {
+                BlockState s = level.getBlockState(p);
+                if (s.isAir()) continue;
+                if (!diggable(level, o, p, s)) return false;
+                plan.add(p);
+            }
+        }
+        // Жила: связанные блоки руды (включая диагональные), ближние — первыми.
+        java.util.ArrayDeque<BlockPos> open = new java.util.ArrayDeque<>();
+        java.util.Set<BlockPos> seen = new java.util.HashSet<>();
+        open.add(best);
+        seen.add(best);
+        List<BlockPos> ores = new ArrayList<>();
+        while (!open.isEmpty() && ores.size() < VEIN_MAX) {
+            BlockPos p = open.poll();
+            BlockState s = level.getBlockState(p);
+            if (!ore(s) || !diggable(level, o, p, s)) continue;
+            ores.add(p);
+            for (BlockPos n : BlockPos.betweenClosed(p.offset(-1, -1, -1), p.offset(1, 1, 1))) {
+                BlockPos q = n.immutable();
+                if (q.distSqr(c.floor()) <= (VEIN_SCAN + 3) * (VEIN_SCAN + 3) && seen.add(q)) open.add(q);
+            }
+        }
+        if (ores.isEmpty()) return false;
+        BlockPos end = at;
+        ores.sort(java.util.Comparator.comparingDouble(p -> p.distSqr(end)));
+        vein.clear();
+        vein.addAll(plan);
+        vein.addAll(ores);
+        veinTimer = -1;
+        return true;
+    }
+
+    /** Выбирает жилу по плану: подходит на расстояние руки, ломает настоящей киркой, добыча — в ношу. */
+    private boolean vein(ServerLevel level, Outpost o, Resident r, long now) {
+        ItemStack pick = carriedPickaxe(WorkerEntity.minerToolTier(o, r));
+        if (pick == null || pick.isEmpty() || mob.cargoReadyToDeposit()) {
+            vein.clear();
+            return true;
+        }
+        BlockPos p = vein.peek();
+        BlockState s = level.getBlockState(p);
+        if (!diggable(level, o, p, s)) {
+            vein.poll();
+            veinTimer = -1;
+            return vein.isEmpty() && !claimColumn(level, o);
+        }
+        double eye = mob.getY() + mob.getEyeHeight();
+        double dx = p.getX() + 0.5 - mob.getX(), dy = p.getY() + 0.5 - eye, dz = p.getZ() + 0.5 - mob.getZ();
+        if (dx * dx + dy * dy + dz * dz > 4.0 * 4.0) {
+            if (!mob.approach(p, 1.0, 2.5, 300)) return false;
+        }
+        mob.getNavigation().stop();
+        mob.getLookControl().setLookAt(p.getX() + 0.5, p.getY() + 0.5, p.getZ() + 0.5);
+        if (veinTimer < 0) veinTimer = 12 + (int) (Math.max(0.5f, s.getDestroySpeed(level, p)) * 8);
+        if (--veinTimer > 0) {
+            if (veinTimer % 5 == 0) {
+                mob.swing(InteractionHand.MAIN_HAND);
+                level.playSound(null, p, SoundEvents.STONE_HIT, SoundSource.BLOCKS, 0.6f, 0.9f + mob.getRandom().nextFloat() * 0.2f);
+            }
+            return false;
+        }
+        dig(level, r, p, s, pick, now);
+        OutpostSavedData.get(level).setDirty();
+        vein.poll();
+        veinTimer = -1;
+        if (pick.isEmpty()) showPickaxe(null);
+        return vein.isEmpty() && !claimColumn(level, o);
+    }
+
+    /**
+     * Под землёй путь перегородил камень (обвал, неровный штрек, выросший сталагмит): шахтёр не стоит,
+     * а прорубает блок перед собой на уровне ног и головы — настоящей киркой, с добычей в ношу.
+     */
+    private int obstacleAt;
+
+    private void breakObstacle(ServerLevel level, Outpost o, BlockPos target) {
+        if (mob.tickCount < obstacleAt) return;
+        obstacleAt = mob.tickCount + 20;
+        Resident r = mob.resident();
+        if (r == null) return;
+        ItemStack pick = carriedPickaxe(WorkerEntity.minerToolTier(o, r));
+        if (pick == null || pick.isEmpty()) return;
+        double ddx = target.getX() + 0.5 - mob.getX(), ddz = target.getZ() + 0.5 - mob.getZ();
+        Direction d = Math.abs(ddx) >= Math.abs(ddz) ? (ddx > 0 ? Direction.EAST : Direction.WEST) : (ddz > 0 ? Direction.SOUTH : Direction.NORTH);
+        BlockPos front = mob.blockPosition().relative(d);
+        for (BlockPos p : new BlockPos[]{front.above(), front}) {
+            BlockState s = level.getBlockState(p);
+            if (s.getCollisionShape(level, p).isEmpty() || !diggable(level, o, p, s)) continue;
+            mob.getLookControl().setLookAt(p.getX() + 0.5, p.getY() + 0.5, p.getZ() + 0.5);
+            mob.swing(InteractionHand.MAIN_HAND);
+            dig(level, r, p, s, pick, level.getGameTime());
+            mob.repathNow();
+            return;
+        }
     }
 
     // ============================== Скотовод ==============================

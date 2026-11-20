@@ -178,9 +178,9 @@ public final class Simulation {
         boolean helped = o.boosted(Resource.WOOD, now) || o.boosted(Resource.STONE, now) || o.boosted(Resource.IRON, now);
         double rate = builders * BUILDER_STEPS_PER_DAY * OutpostConfig.get(OutpostConfig.BUILD_SPEED, 1.0) * o.law.buildSpeed()
                 * (helped ? boost : 1) * (o.starving ? 0.5 : 1);
-        // Планировщик приостановил стройку: еды почти нет, строители помогают добывать её.
-        // Накопленный кредит шагов сохраняется до конца голода.
-        if (o.foodCritical) return;
+        // Голод вдали от игрока: стройка ждёт, накопленный кредит шагов сохраняется до конца голода.
+        // Рядом с игроком строители не стоят без дела — строят вдвое медленнее (голодные), пока поле и охота кормят форт.
+        if (o.foodCritical && !o.online) return;
         o.buildCredit = Math.min(MAX_BUILD_CREDIT + rate * days, o.buildCredit + rate * days);
         while (o.buildCredit >= 1 && o.steps < plan.size()) {
             Resource cost = plan.get(o.steps).cost();

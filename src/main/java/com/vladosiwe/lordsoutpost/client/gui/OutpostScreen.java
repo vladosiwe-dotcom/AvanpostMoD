@@ -485,8 +485,24 @@ public class OutpostScreen extends Screen {
             Ui.text(g, font, state, x + 6, ty + 9, colW - 6, color);
             ty += 20;
         }
-        // Дань почтой: то, что ещё не легло в Сундук Дани (копится, пока форт не загружен).
+        // Жители: кто чем занят прямо сейчас.
         int my = top + H - 22;
+        if (m.tasks.isEmpty()) ty += 20;
+        if (!m.people.isEmpty() && ty < my - 20) {
+            ty += 3;
+            g.drawString(font, Component.translatable("lordsoutpost.ui.people"), x, ty, Ui.TEXT, false);
+            hits.add(x, ty, colW, 9, null, Component.translatable("lordsoutpost.ui.people.tip"));
+            ty += 10;
+            for (OutpostView.PersonInfo p : m.people) {
+                if (ty > my - 11) break;
+                boolean idle = p.activity().equals("idle") || p.activity().equals("chore");
+                Component line = Component.literal(p.name() + " ").append(Component.translatable("lordsoutpost.role." + p.role()).withStyle(net.minecraft.ChatFormatting.DARK_GRAY))
+                        .append(": ").append(Component.translatable("lordsoutpost.activity." + p.activity()));
+                Ui.text(g, font, line, x, ty, colW, idle ? Ui.MUTED : Ui.TEXT);
+                ty += 9;
+            }
+        }
+        // Дань почтой: то, что ещё не легло в Сундук Дани (копится, пока форт не загружен).
         Ui.text(g, font, Component.translatable("lordsoutpost.ui.mail.tribute", view.tributeStacks), x, my + 2, 110, view.tributeStacks > 0 ? Ui.ACCENT : Ui.MUTED);
         Ui.button(g, font, hits, x + 112, my, 66, 12, Component.translatable("lordsoutpost.ui.mail.send"), view.tributeStacks > 0, false, mouseX, mouseY,
                 () -> Net.action(view.id, Action.MAIL_TRIBUTE), Component.translatable("lordsoutpost.ui.mail.send.tip"));

@@ -338,6 +338,15 @@ public class BuildGoal extends Goal {
 
     private BlockPos findWorkPosition(ServerLevel level, Outpost o, BlockPos block) {
         java.util.Arrays.fill(rejects, 0);
+        // Строитель уже стоит там, откуда достаёт до блока (например, прямо над ним): работает с места.
+        BlockPos here = mob.blockPosition();
+        if (validWorkPosition(level, here) && !here.equals(block) && !here.above().equals(block)) {
+            double hx = block.getX() + 0.5 - mob.getX(), hy = block.getY() + 0.5 - (mob.getY() + mob.getEyeHeight()), hz = block.getZ() + 0.5 - mob.getZ();
+            if (hx * hx + hy * hy + hz * hz <= reach(o) * reach(o)) {
+                workPath = null;
+                return here;
+            }
+        }
         BlockPos best = null;
         Path bestPath = null;
         workPath = null;

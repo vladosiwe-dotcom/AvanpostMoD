@@ -282,6 +282,38 @@ public final class Views {
         }
         m.put("tasks", tasks);
 
+        // Кто чем занят: тела жителей в загруженных чанках; остальные работают «вдали» (A-Life считает их сам).
+        java.util.Map<java.util.UUID, com.vladosiwe.lordsoutpost.entity.OutpostNpc> bodies = new java.util.HashMap<>();
+        if (o.online) {
+            int rr = o.reach() + 24;
+            for (var npc : level.getEntitiesOfClass(com.vladosiwe.lordsoutpost.entity.OutpostNpc.class,
+                    new net.minecraft.world.phys.AABB(o.center).inflate(rr, 64, rr), n -> n.outpostId() == o.id && n.residentId() != null)) {
+                bodies.put(npc.residentId(), npc);
+            }
+        }
+        ListTag people = new ListTag();
+        for (com.vladosiwe.lordsoutpost.outpost.Resident r : o.residents) {
+            if (!r.active()) continue;
+            CompoundTag pt = new CompoundTag();
+            pt.putString("name", r.name);
+            pt.putString("role", r.role.id);
+            var body = bodies.get(r.id);
+            String act;
+            if (body == null) act = o.online ? "away" : "virtual";
+            else if (body.isSleeping()) act = "sleep";
+            else if (body instanceof com.vladosiwe.lordsoutpost.entity.WorkerEntity w) {
+                java.util.List<String> running = w.goalClassNames();
+                if (running.stream().anyMatch(n -> n.startsWith("BuildGoal"))) act = "build";
+                else if (running.stream().anyMatch(n -> n.startsWith("MageWorkGoal"))) act = "mage";
+                else if (running.stream().anyMatch(n -> n.startsWith("CaravanGoal"))) act = "caravan";
+                else if (running.stream().anyMatch(n -> n.startsWith("ShelterGoal"))) act = "shelter";
+                else act = w.workGoal == null ? "idle" : w.workGoal.activity();
+            } else act = body.getTarget() != null ? "fight" : "guard";
+            pt.putString("act", act);
+            people.add(pt);
+        }
+        m.put("people", people);
+
         ListTag zones = new ListTag();
         for (com.vladosiwe.lordsoutpost.outpost.WorkZone z : com.vladosiwe.lordsoutpost.outpost.WorkZone.VALUES) {
             if (!o.hasZone(z)) continue;

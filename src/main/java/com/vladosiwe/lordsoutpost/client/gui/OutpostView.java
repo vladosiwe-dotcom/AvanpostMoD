@@ -60,6 +60,8 @@ public final class OutpostView {
     /** Хозяйство (только для Лорда): планировщик, задачи, зоны, лавка, магия, заказанные постройки. */
     @Nullable public final Manage manage;
 
+    public record PersonInfo(String name, String role, String activity) {}
+
     public record TaskInfo(String type, String state, String who, String subject, String reason, String product) {}
 
     public record ZoneInfo(String id, boolean relocatable, boolean moved, String problem) {}
@@ -72,6 +74,7 @@ public final class OutpostView {
         public final boolean foodCritical;
         public final java.util.Map<Role, Integer> priorities = new EnumMap<>(Role.class);
         public final List<TaskInfo> tasks = new ArrayList<>();
+        public final List<PersonInfo> people = new ArrayList<>();
         public final List<ZoneInfo> zones = new ArrayList<>();
         public final List<net.minecraft.world.item.ItemStack> shop = new ArrayList<>();
         public final int mages, pyroRejoin, projectLimit, houses;
@@ -100,6 +103,11 @@ public final class OutpostView {
                 CompoundTag t = ts.getCompound(i);
                 tasks.add(new TaskInfo(t.getString("type"), t.getString("state"), t.getString("who"), t.getString("subject"),
                         t.getString("reason"), t.getString("product")));
+            }
+            ListTag pl = m.getList("people", Tag.TAG_COMPOUND);
+            for (int i = 0; i < pl.size(); i++) {
+                CompoundTag p = pl.getCompound(i);
+                people.add(new PersonInfo(p.getString("name"), p.getString("role"), p.getString("act")));
             }
             ListTag zs = m.getList("zones", Tag.TAG_COMPOUND);
             for (int i = 0; i < zs.size(); i++) {

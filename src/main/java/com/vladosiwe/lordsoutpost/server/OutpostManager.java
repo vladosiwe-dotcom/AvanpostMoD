@@ -132,7 +132,8 @@ public final class OutpostManager {
         for (int i = o.residents.size(); i < o.populationCap() / 2 + 3; i++) addSettler(o, com.vladosiwe.lordsoutpost.data.Simulation.nextRole(o, rnd), rnd);
         o.setStock(Resource.WOOD, 160);
         o.setStock(Resource.STONE, 120);
-        o.setStock(Resource.FOOD, 160);
+        // Запас первых поселенцев — около четырёх дней: поле должно успеть взойти, а охота — наладиться.
+        o.setStock(Resource.FOOD, 300);
         o.setStock(Resource.SEEDS, 24);
         o.setStock(Resource.IRON, 16);
         o.setStock(Resource.HIDES, 12);

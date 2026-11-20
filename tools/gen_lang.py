@@ -243,6 +243,17 @@ add(P + 'mail.inventory_full', 'Не всё поместилось — оста�
 add(P + 'mail.tribute', 'дань владения (%s стопок)', 'tribute of the domain (%s stacks)')
 add(P + 'mail.tribute_empty', 'Новой дани нет: всё уже в Сундуке Дани.', 'No new tribute: everything is already in the Tribute Chest.')
 add(P + 'mail.caravan_delivered', 'караван доставил на склад %s предметов, казна заплатила %s золота', 'a caravan delivered %s items to the storehouse, the treasury paid %s gold')
+add(P + 'ui.people', 'Жители сейчас', 'Residents now')
+add(P + 'ui.people.tip', 'Что делает каждый житель прямо сейчас. «Вдали» — житель вне загруженных чанков: его работу считает A-Life.', 'What each resident is doing right now. "Far away" — outside loaded chunks: A-Life simulates their work.')
+for k, ru, en in [('idle', 'ищет работу', 'looking for work'), ('pickup', 'подбирает вещи', 'picking up items'), ('deposit', 'несёт на склад', 'carrying to the storehouse'),
+                  ('craft', 'мастерит у склада', 'crafting at the storehouse'), ('chore', 'отдыхает, обходит двор', 'resting, walking the yard'), ('talk', 'разговаривает', 'talking'),
+                  ('sink', 'копает новый ствол', 'sinking a new shaft'), ('vein', 'выбирает рудную жилу', 'mining an ore vein'), ('tunnel', 'ведёт штрек', 'digging the tunnel'),
+                  ('clear', 'расчищает двор', 'clearing the yard'), ('chop', 'рубит дерево', 'felling a tree'), ('hunt', 'охотится', 'hunting'), ('herd', 'в загоне со скотом', 'tending the herd'),
+                  ('farm', 'работает в поле', 'working the field'), ('smelt', 'плавит руду', 'smelting ore'), ('smith', 'в кузнице', 'at the smithy'), ('shop', 'в лавке', 'at the shop'),
+                  ('tidy', 'прибирает в постройках', 'tidying the buildings'), ('work', 'работает', 'working'), ('build', 'строит', 'building'), ('mage', 'колдует у башни', 'working at the tower'),
+                  ('caravan', 'в караване', 'with a caravan'), ('shelter', 'прячется от опасности', 'taking shelter'), ('sleep', 'спит', 'sleeping'),
+                  ('fight', 'сражается', 'fighting'), ('guard', 'на посту', 'on guard'), ('away', 'вне форта', 'outside the fort'), ('virtual', 'работает вдали', 'working far away')]:
+    add(P + 'activity.' + k, ru, en)
 add(P + 'ui.mail.tribute', 'Дань: %s стоп.', 'Tribute: %s stacks')
 add(P + 'ui.mail.send', 'Почтой', 'By mail')
 add(P + 'ui.mail.send.tip', 'Отправить накопленную дань посылкой: её можно забрать в любом почтомате.', 'Send the accumulated tribute as a parcel: collect it at any postbox.')
@@ -260,7 +271,7 @@ add(P + 'ui.director', 'Планировщик', 'Director')
 add(P + 'ui.director.food', 'Еды на %s дн.', 'Food for %s days')
 add(P + 'ui.director.no_shortage', 'Стройке всего хватает', 'Construction has everything it needs')
 add(P + 'ui.director.shortage', 'Дефицит: %s', 'Shortage: %s')
-add(P + 'ui.director.paused', 'Голод: стройка приостановлена', 'Famine: construction is paused')
+add(P + 'ui.director.paused', 'Голод: стройка идёт вдвое медленнее, вдали — стоит', 'Famine: building runs at half speed (paused while you are away)')
 add(P + 'ui.director.priorities', 'Важнее всего: %s', 'Top priorities: %s')
 add(P + 'ui.tasks', 'Задачи жителей', 'Residents\' tasks')
 add(P + 'ui.tasks.empty', 'Особых поручений нет: каждый занят своим делом.', 'No special orders: everyone is about their own work.')
