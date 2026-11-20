@@ -2145,8 +2145,10 @@ public class WorkGoal extends Goal {
         double harvestDistance = Double.MAX_VALUE;
         double plantDistance = Double.MAX_VALUE;
         double tillDistance = Double.MAX_VALUE;
-        for (int dx = -2; dx <= 2; dx++) {
-            for (int dz = -2; dz <= 2; dz++) {
+        // Просторная планировка: поле 9×9 с водой в центре; первая — пятачок 5×5 вокруг воды.
+        int fr = o.version >= 2 && o.zones.override(WorkZone.FARM) == null ? com.vladosiwe.lordsoutpost.blueprint.FortDesigner.FIELD_HALF : 2;
+        for (int dx = -fr; dx <= fr; dx++) {
+            for (int dz = -fr; dz <= fr; dz++) {
                 if (dx == 0 && dz == 0) continue;
                 BlockPos crop = center.offset(dx, 0, dz);
                 BlockPos soil = crop.below();
@@ -2170,7 +2172,7 @@ public class WorkGoal extends Goal {
         // Поля нет совсем (зону перенесли на камень или мостовую): фермер сообщает планировщику.
         if (harvest == null && plant == null && till == null) {
             boolean anyField = false;
-            for (BlockPos p : BlockPos.betweenClosed(center.offset(-2, -1, -2), center.offset(2, 0, 2))) {
+            for (BlockPos p : BlockPos.betweenClosed(center.offset(-fr, -1, -fr), center.offset(fr, 0, fr))) {
                 BlockState st = level.getBlockState(p);
                 if (st.is(Blocks.FARMLAND) || st.is(Blocks.WHEAT)) anyField = true;
             }

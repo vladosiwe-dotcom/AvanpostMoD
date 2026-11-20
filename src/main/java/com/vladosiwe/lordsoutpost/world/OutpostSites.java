@@ -47,11 +47,11 @@ public final class OutpostSites {
     /** Перепад высот на площадке, при котором место считается непригодным. */
     public static final int MAX_SLOPE = 14;
 
-    public record Site(BlockPos center, Layout layout, Palette palette, Rotation rotation, Difficulty difficulty) {
+    public record Site(BlockPos center, Layout layout, Palette palette, Rotation rotation, Difficulty difficulty, int version) {
         /** Радиус, который форт займёт с учётом уже начатого расширения. */
         public int reach() {
             int tier = difficulty.progress > 0 && difficulty.tier < 3 ? difficulty.tier + 1 : difficulty.tier;
-            return Layout.RADIUS[tier] + Layout.MARGIN;
+            return Layout.radius(version, tier) + Layout.MARGIN;
         }
 
         public int topTier() {
@@ -81,7 +81,8 @@ public final class OutpostSites {
         Rotation rotation = Rotation.values()[rnd.nextInt(4)];
 
         int tier = difficulty.progress > 0 && difficulty.tier < 3 ? difficulty.tier + 1 : difficulty.tier;
-        int r = Layout.RADIUS[tier] + Layout.MARGIN;
+        int version = Layout.currentVersion();
+        int r = Layout.radius(version, tier) + Layout.MARGIN;
         int min = Integer.MAX_VALUE, max = Integer.MIN_VALUE;
         long sum = 0;
         int n = 0;
@@ -102,7 +103,7 @@ public final class OutpostSites {
 
         Holder<Biome> biome = generator.getBiomeSource().getNoiseBiome(QuartPos.fromBlock(x), QuartPos.fromBlock(baseY + 1), QuartPos.fromBlock(z), randomState.sampler());
         if (!validBiome.test(biome)) return Optional.empty();
-        return Optional.of(new Site(new BlockPos(x, baseY, z), layout, palette(biome), rotation, difficulty));
+        return Optional.of(new Site(new BlockPos(x, baseY, z), layout, palette(biome), rotation, difficulty, version));
     }
 
     /** Чем дальше от центра мира, тем чаще встречаются сильные аванпосты. */

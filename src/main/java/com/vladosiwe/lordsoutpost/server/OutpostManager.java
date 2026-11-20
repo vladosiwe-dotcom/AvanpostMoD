@@ -26,8 +26,10 @@ public final class OutpostManager {
 
     /** Запись для форта, созданного генерацией мира: блоки уже стоят. */
     public static Outpost createGenerated(OutpostSavedData data, long id, BlockPos center, Layout layout, Palette palette, Rotation rotation,
-                                          Difficulty difficulty, long now, RandomSource rnd) {
+                                          Difficulty difficulty, long now, RandomSource rnd, int version) {
         Outpost o = new Outpost(id, center, layout, palette, rotation, difficulty, false);
+        // Версия — та, по которой генерация ставит (или поставит) блоки этого форта.
+        o.version = version;
         o.steps = Outpost.initialSteps(o.blueprint(), difficulty);
         o.placed = o.steps;
         o.basePlaced = true;

@@ -86,7 +86,7 @@ public final class Views {
         if (own != null) tag.put("hud", hud(own));
         if (own == null || !detailed) return tag;
 
-        if (!own.complete()) tag.putIntArray("nextOutline", flat(own.outline(Layout.RADIUS[own.tier + 1])));
+        if (!own.complete()) tag.putIntArray("nextOutline", flat(own.outline(Layout.radius(own.version, own.tier + 1))));
         ListTag squads = new ListTag();
         for (Squad s : own.squads) {
             CompoundTag st = new CompoundTag();

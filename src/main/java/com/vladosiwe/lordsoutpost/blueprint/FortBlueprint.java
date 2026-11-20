@@ -37,6 +37,8 @@ public final class FortBlueprint {
     public final Layout layout;
     public final Palette palette;
     public final Rotation rotation;
+    /** Версия планировки: 1 — форты старых миров, 2 — просторная. */
+    public final int version;
     private final Design[] designs = new Design[MAX_TIER + 1];
     @SuppressWarnings("unchecked")
     private final List<Step>[] plans = new List[MAX_TIER + 1];
@@ -47,20 +49,27 @@ public final class FortBlueprint {
         }
     };
 
-    private FortBlueprint(Layout layout, Palette palette, Rotation rotation) {
+    private FortBlueprint(Layout layout, Palette palette, Rotation rotation, int version) {
         this.layout = layout;
         this.palette = palette;
         this.rotation = rotation;
-        for (int t = 1; t <= MAX_TIER; t++) designs[t] = FortDesigner.design(layout, palette, t).rotated(rotation);
+        this.version = version;
+        int[] field = version >= 2 ? FortDesigner.findField(layout, palette) : null;
+        for (int t = 1; t <= MAX_TIER; t++) designs[t] = FortDesigner.design(layout, palette, t, version, field).rotated(rotation);
         for (int t = 1; t <= MAX_TIER; t++) plans[t] = buildPlan(t > 1 ? designs[t - 1] : null, designs[t]);
     }
 
+    /** Первая планировка (старые миры). */
     public static FortBlueprint get(Layout layout, Palette palette, Rotation rotation) {
-        String key = layout.id + '/' + palette.id + '/' + rotation.ordinal();
+        return get(layout, palette, rotation, 1);
+    }
+
+    public static FortBlueprint get(Layout layout, Palette palette, Rotation rotation, int version) {
+        String key = layout.id + '/' + palette.id + '/' + rotation.ordinal() + '/' + version;
         synchronized (CACHE) {
             FortBlueprint bp = CACHE.get(key);
             if (bp == null) {
-                bp = new FortBlueprint(layout, palette, rotation);
+                bp = new FortBlueprint(layout, palette, rotation, version);
                 CACHE.put(key, bp);
             }
             return bp;

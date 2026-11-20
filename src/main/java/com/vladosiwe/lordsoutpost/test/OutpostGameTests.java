@@ -185,13 +185,37 @@ public final class OutpostGameTests {
         Marker[] always = {Marker.GATE, Marker.KEEP_DOOR, Marker.THRONE, Marker.TREASURE, Marker.TRIBUTE, Marker.SUPPLY, Marker.BOARD, Marker.STORAGE,
                 Marker.STORE_INSIDE, Marker.STOCKPILE, Marker.STORE_GUARD, Marker.MINE_SHAFT, Marker.MINE_DIR,
                 Marker.MINE, Marker.WOODYARD, Marker.PEN, Marker.HOUSING, Marker.GUARD_POST, Marker.PATROL, Marker.OUTER_PATROL, Marker.YARD, Marker.CARAVAN, Marker.LOOT_CHEST};
+        for (int version = 1; version <= 2; version++)
         for (Layout layout : Layout.VALUES)
             for (Palette palette : Palette.VALUES) {
-                FortBlueprint bp = FortBlueprint.get(layout, palette, Rotation.NONE);
+                FortBlueprint bp = FortBlueprint.get(layout, palette, Rotation.NONE, version);
                 int prev = 0;
+                BlockPos fieldAt = null;
                 for (int tier = 1; tier <= FortBlueprint.MAX_TIER; tier++) {
                     Design d = bp.design(tier);
-                    String id = layout.id + "/" + palette.id + "/T" + tier;
+                    String id = "v" + version + "/" + layout.id + "/" + palette.id + "/T" + tier;
+                    h.assertTrue(!d.markers(Marker.FARM).isEmpty(), id + ": нет поля");
+                    if (version >= 2 && palette == Palette.TIMBER) {
+                        var col = com.vladosiwe.lordsoutpost.blueprint.FortDesigner.collisions(layout, palette, tier, version);
+                        LordsOutpost.LOGGER.info("План {}:\n{}", id, asciiPlan(d, Layout.radius(version, tier) + Layout.MARGIN));
+                        h.assertTrue(col.isEmpty(), id + ": здания налезают друг на друга: " + col);
+                    }
+                    if (version >= 2) {
+                        // Поле одно и то же во всех тирах: 9×9 земли под пашню, вода в центре, ограда с калиткой.
+                        BlockPos f = d.markers(Marker.FARM).get(0);
+                        if (fieldAt == null) fieldAt = f;
+                        h.assertTrue(f.equals(fieldAt), id + ": поле переезжает между тирами");
+                        int h4 = com.vladosiwe.lordsoutpost.blueprint.FortDesigner.FIELD_HALF;
+                        int dirt = 0;
+                        for (int dx = -h4; dx <= h4; dx++)
+                            for (int dz = -h4; dz <= h4; dz++) {
+                                Canvas.Cell soil = d.cells.get(f.offset(dx, -1, dz));
+                                if (soil != null && soil.state().is(net.minecraft.world.level.block.Blocks.DIRT)) dirt++;
+                            }
+                        h.assertTrue(dirt == (2 * h4 + 1) * (2 * h4 + 1) - 1, id + ": под поле не положена земля (" + dirt + ")");
+                        h.assertTrue(d.cells.get(f.below()).state().is(net.minecraft.world.level.block.Blocks.WATER), id + ": в центре поля нет воды");
+                        h.assertTrue(layout.inside(f.getX(), f.getZ(), Layout.radius(2, 1) - h4 - 2), id + ": поле за стенами первого тира");
+                    }
                     h.assertTrue(d.cells.size() > prev, id + ": тир не крупнее предыдущего (" + d.cells.size() + ")");
                     prev = d.cells.size();
                     for (Marker m : always) h.assertTrue(!d.markers(m).isEmpty(), id + ": нет точки " + m);
@@ -200,7 +224,7 @@ public final class OutpostGameTests {
                         h.assertTrue(!d.markers(Marker.SMITHY).isEmpty(), id + ": нет кузницы");
                     }
                     if (tier == 3) h.assertTrue(!d.markers(Marker.MAGE).isEmpty(), id + ": нет башни мага");
-                    int reach = Layout.RADIUS[tier] + Layout.MARGIN + 2;
+                    int reach = Layout.radius(version, tier) + Layout.MARGIN + 2;
                     for (BlockPos p : d.cells.keySet()) {
                         h.assertTrue(Math.abs(p.getX()) <= reach && Math.abs(p.getZ()) <= reach && p.getY() >= -8 && p.getY() <= 26, id + ": блок вне площадки " + p);
                     }
@@ -225,18 +249,50 @@ public final class OutpostGameTests {
                         }
                     }
                 }
-                LordsOutpost.LOGGER.info("Чертёж {}/{}: T1 {} блоков, план T2 {} шагов, план T3 {} шагов", layout.id, palette.id,
+                LordsOutpost.LOGGER.info("Чертёж v{} {}/{}: T1 {} блоков, план T2 {} шагов, план T3 {} шагов", version, layout.id, palette.id,
                         bp.plan(1).size(), bp.plan(2).size(), bp.plan(3).size());
             }
         h.succeed();
     }
 
+    /** Вид сверху на чертёж: для глаз разработчика (поле, загон, дома, дороги). */
+    private static String asciiPlan(Design d, int reach) {
+        StringBuilder sb = new StringBuilder();
+        for (int z = -reach; z <= reach; z++) {
+            for (int x = -reach; x <= reach; x++) {
+                char ch = ' ';
+                for (int y = 26; y >= -1; y--) {
+                    Canvas.Cell cell = d.cells.get(new BlockPos(x, y, z));
+                    if (cell == null || cell.state().isAir()) continue;
+                    var st = cell.state();
+                    var b = st.getBlock();
+                    if (b == net.minecraft.world.level.block.Blocks.WATER) ch = '~';
+                    else if (b == net.minecraft.world.level.block.Blocks.DIRT) ch = ',';
+                    else if (b instanceof net.minecraft.world.level.block.FenceGateBlock) ch = 'G';
+                    else if (b instanceof net.minecraft.world.level.block.FenceBlock) ch = '#';
+                    else if (y == 0 && cell.stage() == 0) ch = '.';
+                    else if (cell.stage() <= 2) ch = 'W';
+                    else if (cell.stage() == 3) ch = 'K';
+                    else if (cell.stage() == 4) ch = 'M';
+                    else if (cell.stage() == 5) ch = 'S';
+                    else if (cell.stage() == 6) ch = 'H';
+                    else ch = 'd';
+                    break;
+                }
+                sb.append(ch);
+            }
+            sb.append('\n');
+        }
+        return sb.toString();
+    }
+
     /** План тира превращает готовый предыдущий тир ровно в следующий, при любом повороте. */
     @GameTest(template = "empty")
     public static void plansTransformTiers(GameTestHelper h) {
+        for (int version = 1; version <= 2; version++)
         for (Layout layout : Layout.VALUES)
             for (Rotation rot : Rotation.values()) {
-                FortBlueprint bp = FortBlueprint.get(layout, Palette.TIMBER, rot);
+                FortBlueprint bp = FortBlueprint.get(layout, Palette.TIMBER, rot, version);
                 for (int tier = 2; tier <= FortBlueprint.MAX_TIER; tier++) {
                     Map<BlockPos, BlockState> world = new HashMap<>();
                     for (var e : bp.design(tier - 1).cells.entrySet()) world.put(e.getKey(), e.getValue().state());
@@ -1640,7 +1696,9 @@ public final class OutpostGameTests {
                     // Хотя бы одну корову, стоящую за калиткой, скотовод должен привести в загон приманиванием.
                     var inPen = com.vladosiwe.lordsoutpost.data.ChunkReconciliation.penAnimals(level, o);
                     long luredCows = testCows.stream().filter(inPen::contains).count();
-                    if ((h.getTick() - mark[0]) % 200 == 0) LordsOutpost.LOGGER.info("Работа жителей: приведено коров {}", luredCows);
+                    if ((h.getTick() - mark[0]) % 200 == 0) LordsOutpost.LOGGER.info("Работа жителей: приведено коров {}, загон {}, коровы {}", luredCows,
+                            o.zone(com.vladosiwe.lordsoutpost.outpost.WorkZone.PEN).subtract(o.center).toShortString(),
+                            testCows.stream().map(c -> c.blockPosition().subtract(o.center).toShortString() + (c.isAlive() ? "" : "†")).toList());
                     if ((h.getTick() - mark[0]) % 200 == 0) LordsOutpost.LOGGER.info("Работа жителей: условия: брёвна {} двор {} двор-пересажен {} трава {} пересажено {} мусор {} донесено {} коровы {} шахтёр {}",
                             logsLeft, courtyardLogsLeft, courtyardReplanted, courtyardPlantCleared, replanted, litterGone, o.depositedItems, luredCows, minerWorked);
                     if (logsLeft > 0 || courtyardLogsLeft > 0 || courtyardReplanted || !courtyardPlantCleared

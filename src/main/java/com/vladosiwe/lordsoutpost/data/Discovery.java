@@ -59,7 +59,8 @@ public final class Discovery {
                 Optional<OutpostSites.Site> site = OutpostSites.predict(level, rx, rz);
                 if (site.isEmpty()) continue;
                 OutpostSites.Site s = site.get();
-                OutpostManager.createGenerated(data, OutpostSavedData.regionKey(rx, rz), s.center(), s.layout(), s.palette(), s.rotation(), s.difficulty(), now, level.random);
+                Outpost created = OutpostManager.createGenerated(data, OutpostSavedData.regionKey(rx, rz), s.center(), s.layout(), s.palette(),
+                        s.rotation(), s.difficulty(), now, level.random, s.version());
             }
     }
 }

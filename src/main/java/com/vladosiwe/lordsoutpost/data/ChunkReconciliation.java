@@ -533,8 +533,8 @@ public final class ChunkReconciliation {
      * @return true, когда площадка готова
      */
     private static boolean levelGround(ServerLevel level, Outpost o, int fromTier, int toTier, int budget) {
-        int outer = Layout.RADIUS[toTier] + Layout.MARGIN - 1;
-        int inner = fromTier <= 0 ? -1 : Layout.RADIUS[fromTier] + Layout.MARGIN - 1;
+        int outer = Layout.radius(o.version, toTier) + Layout.MARGIN - 1;
+        int inner = fromTier <= 0 ? -1 : Layout.radius(o.version, fromTier) + Layout.MARGIN - 1;
         int side = 2 * outer + 1;
         int total = side * side;
         int baseY = o.center.getY();

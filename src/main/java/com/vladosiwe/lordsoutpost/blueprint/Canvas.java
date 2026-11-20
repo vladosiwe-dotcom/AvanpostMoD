@@ -31,6 +31,17 @@ public final class Canvas {
     private int group;
     private int seq;
     private int ox, oy, oz;
+    /** Сколько раз здание легло на клетку другого здания (для проверки планировки). */
+    private int collisions;
+    private final List<String> collisionAt = new ArrayList<>();
+
+    public int collisions() {
+        return collisions;
+    }
+
+    public List<String> collisionSamples() {
+        return collisionAt;
+    }
     private Rotation rot = Rotation.NONE;
 
     public void stage(int stage) {
@@ -75,7 +86,14 @@ public final class Canvas {
 
     private void put(int x, int y, int z, BlockState state, boolean chain) {
         BlockState rotated = rot == Rotation.NONE ? state : state.rotate(rot);
-        cells.put(world(x, y, z), new Cell(rotated, stage, group, seq++, chain));
+        BlockPos at = world(x, y, z);
+        Cell old = cells.get(at);
+        // Здания (этап донжона и дальше) не должны ложиться друг на друга; дороги и стены — не в счёт.
+        if (old != null && old.stage() >= 1 && stage >= 3 && old.group() != group && !old.state().isAir()) {
+            collisions++;
+            if (collisionAt.size() < 8) collisionAt.add(at.toShortString());
+        }
+        cells.put(at, new Cell(rotated, stage, group, seq++, chain));
     }
 
     public void fill(int x1, int y1, int z1, int x2, int y2, int z2, BlockState state) {

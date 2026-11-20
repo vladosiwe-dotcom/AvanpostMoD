@@ -85,7 +85,7 @@ public final class Projects {
         int active = 0;
         for (Project p : o.projects) if (p.active()) active++;
         if (active >= MAX_ACTIVE) return OrderResult.TOO_MANY;
-        int inner = Layout.RADIUS[FortBlueprint.MAX_TIER] + Layout.MARGIN + 4;
+        int inner = Layout.radius(o.version, FortBlueprint.MAX_TIER) + Layout.MARGIN + 4;
         for (int r = inner; r <= inner + EXTENT - 6; r += 3) {
             for (int a = 0; a < 16; a++) {
                 double ang = (a * 2 * Math.PI) / 16 + (r % 2) * 0.2;
@@ -118,7 +118,7 @@ public final class Projects {
             if (!other.active() && other.state != Project.State.DONE) continue;
             for (Step s : other.steps(o)) taken.add(s.pos());
         }
-        int limit = Layout.RADIUS[FortBlueprint.MAX_TIER] + Layout.MARGIN + EXTENT;
+        int limit = Layout.radius(o.version, FortBlueprint.MAX_TIER) + Layout.MARGIN + EXTENT;
         for (Step s : p.steps(o)) {
             BlockPos pos = o.world(s.pos());
             if (!o.insideHorizontally(pos.getX(), pos.getZ(), limit) || level.isOutsideBuildHeight(pos)) return OrderResult.NOT_HERE;

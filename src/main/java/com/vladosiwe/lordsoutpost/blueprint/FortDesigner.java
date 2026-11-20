@@ -17,6 +17,9 @@ import net.minecraft.world.level.block.state.properties.BedPart;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.Half;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import static com.vladosiwe.lordsoutpost.blueprint.Canvas.facing;
 import static com.vladosiwe.lordsoutpost.blueprint.Canvas.log;
 import static com.vladosiwe.lordsoutpost.blueprint.Canvas.stairs;
@@ -41,29 +44,100 @@ public final class FortDesigner {
     private final Palette p;
     private final int tier;
     private final int r;
+    private final int version;
+    /** Центр поля (версия 2) в канонических координатах; null — поле не нашло места (старая лужа с грунтом). */
+    @org.jetbrains.annotations.Nullable private final int[] field;
+    /** Половина стороны поля: 9×9 вспаханной земли, вокруг ограда. */
+    public static final int FIELD_HALF = 4;
 
-    private FortDesigner(Layout layout, Palette palette, int tier) {
+    private FortDesigner(Layout layout, Palette palette, int tier, int version, @org.jetbrains.annotations.Nullable int[] field) {
         this.layout = layout;
         this.p = palette;
         this.tier = tier;
-        this.r = Layout.RADIUS[tier];
+        this.version = version;
+        this.field = field;
+        this.r = Layout.radius(version, tier);
     }
 
+    /** Первая планировка (форты старых миров): без изменений, блок в блок. */
     public static Design design(Layout layout, Palette palette, int tier) {
-        FortDesigner d = new FortDesigner(layout, palette, tier);
+        return design(layout, palette, tier, 1, null);
+    }
+
+    public static Design design(Layout layout, Palette palette, int tier, int version, @org.jetbrains.annotations.Nullable int[] field) {
+        FortDesigner d = new FortDesigner(layout, palette, tier, version, field);
         d.ground();
         d.perimeter();
         d.gate();
         d.interior();
+        if (version >= 2 && field != null) d.field(field[0], field[1]);
         d.posts();
         d.lamps();
         return new Design(tier, d.r, d.c.cells(), d.c.markers());
+    }
+
+    /**
+     * Место для поля в просторной планировке: квадрат с оградой, свободный во всех трёх тирах (поле не переезжает
+     * при росте форта) и внутри стен первого тира. Ближайшее к восточной половине двора, детерминированно.
+     */
+    /**
+     * Место поля в просторной планировке: одно на все три тира (поле не переезжает при росте форта).
+     * Квадратный форт — юго-западная четверть двора, восьмиугольный — к востоку от донжона.
+     */
+    public static int[] findField(Layout layout, Palette palette) {
+        return layout == Layout.SQUARE ? new int[]{-9, 8} : new int[]{0, -11};
+    }
+
+    /** Наложения зданий друг на друга в чертеже (для проверки планировки; должно быть 0). */
+    public static List<String> collisions(Layout layout, Palette palette, int tier, int version) {
+        FortDesigner d = new FortDesigner(layout, palette, tier, version, version >= 2 ? findField(layout, palette) : null);
+        d.ground();
+        d.perimeter();
+        d.gate();
+        d.interior();
+        if (version >= 2) d.field(d.field[0], d.field[1]);
+        List<String> out = new ArrayList<>(d.c.collisionSamples());
+        if (d.c.collisions() > out.size()) out.add("… всего " + d.c.collisions());
+        return out;
+    }
+
+    /** Поле: земля под пашню, вода в центре (увлажняет все 9×9), ограда от скота, калитка на юг. */
+    private void field(int fx, int fz) {
+        c.stage(ST_WORKS);
+        int h = FIELD_HALF;
+        for (int x = -h; x <= h; x++)
+            for (int z = -h; z <= h; z++) {
+                c.set(fx + x, 0, fz + z, Blocks.DIRT);
+                c.set(fx + x, -1, fz + z, Blocks.DIRT);
+                c.clear(fx + x, 1, fz + z, fx + x, 2, fz + z);
+            }
+        c.set(fx, 0, fz, Blocks.WATER);
+        c.set(fx, 1, fz, Blocks.LILY_PAD);
+        int s = h + 1;
+        for (int i = -s; i <= s; i++) {
+            c.set(fx + i, 1, fz - s, p.fence);
+            c.set(fx + i, 1, fz + s, p.fence);
+            c.set(fx - s, 1, fz + i, p.fence);
+            c.set(fx + s, 1, fz + i, p.fence);
+        }
+        if (layout == Layout.SQUARE) {
+            c.set(fx, 1, fz + s, facing(p.fenceGate, Direction.SOUTH));
+            c.set(fx + 1, 1, fz + s + 1, Blocks.COMPOSTER);
+        } else {
+            // В восьмиугольном форте поле лежит между донжоном и северной стеной: калитка — на запад.
+            c.set(fx - s, 1, fz, facing(p.fenceGate, Direction.WEST));
+            c.set(fx - s - 1, 1, fz + 1, Blocks.COMPOSTER);
+        }
+        c.set(fx - s, 2, fz - s, Blocks.LANTERN);
+        c.set(fx + s, 2, fz - s, Blocks.LANTERN);
+        c.mark(Marker.FARM, fx, 1, fz);
     }
 
     // ============================== Земля и дороги ==============================
 
     private int keepZ() {
         if (layout == Layout.OCTAGON) return 0;
+        if (version >= 2) return switch (tier) { case 1 -> -11; case 2 -> -15; default -> -19; };
         return switch (tier) { case 1 -> -8; case 2 -> -11; default -> -14; };
     }
 
@@ -157,11 +231,13 @@ public final class FortDesigner {
         c.mark(Marker.YARD, 0, 1, r - 6);
         c.mark(Marker.YARD, 3, 1, r - 7);
         // Одно постоянное поле на каждый форт. Координаты не пересекаются с модулями всех трёх тиров.
-        int farmX = layout == Layout.SQUARE ? 3 : 0;
-        int farmZ = layout == Layout.SQUARE ? -2 : 11;
-        // Землю не кладём чертежом: фермер сам вручную вспашет естественный грунт вокруг воды.
-        c.set(farmX, 0, farmZ, Blocks.WATER);
-        c.mark(Marker.FARM, farmX, 1, farmZ);
+        if (version < 2 || field == null) {
+            int farmX = layout == Layout.SQUARE ? 3 : 0;
+            int farmZ = layout == Layout.SQUARE ? -2 : 11;
+            // Землю не кладём чертежом: фермер сам вручную вспашет естественный грунт вокруг воды.
+            c.set(farmX, 0, farmZ, Blocks.WATER);
+            c.mark(Marker.FARM, farmX, 1, farmZ);
+        }
         if (tier == 1) {
             for (int side = -1; side <= 1; side += 2) {
                 c.fill(side * 2, 1, r, side * 2, 5, r, p.log);
@@ -254,7 +330,8 @@ public final class FortDesigner {
     }
 
     private void watchtower() {
-        int cx = layout == Layout.SQUARE ? 9 : 7, cz = layout == Layout.SQUARE ? -9 : -8;
+        int cx = version >= 2 ? (layout == Layout.SQUARE ? 12 : 10) : layout == Layout.SQUARE ? 9 : 7;
+        int cz = version >= 2 ? (layout == Layout.SQUARE ? -12 : -10) : layout == Layout.SQUARE ? -9 : -8;
         c.at(cx, cz, FACE_S, () -> {
             for (int sx = -1; sx <= 1; sx += 2)
                 for (int sz = -1; sz <= 1; sz += 2) c.fill(sx, 1, sz, sx, 6, sz, p.log);
@@ -278,8 +355,107 @@ public final class FortDesigner {
     // ============================== Расстановка зданий ==============================
 
     private void interior() {
-        if (layout == Layout.SQUARE) interiorSquare();
+        if (version >= 2) {
+            if (layout == Layout.SQUARE) interiorSquareV2();
+            else interiorOctagonV2();
+        } else if (layout == Layout.SQUARE) interiorSquare();
         else interiorOctagon();
+    }
+
+    /**
+     * Просторный квадратный форт. Юго-западная четверть двора (x −14…−4, z 3…13 и проход вокруг) во всех тирах
+     * отдана под поле; донжон у северной стены, службы вдоль восточной, жильё вдоль западной, загон у ворот.
+     */
+    private void interiorSquareV2() {
+        switch (tier) {
+            case 1 -> {
+                module(ST_KEEP, 0, -11, FACE_S, this::hall);
+                module(ST_WORKS, 11, -5, FACE_W, this::storeroomSmall);
+                module(ST_WORKS, 11, 3, FACE_W, this::woodyard);
+                module(ST_WORKS, 12, 10, FACE_W, this::minePile);
+                module(ST_WORKS, 6, 9, FACE_S, () -> pen(2));
+                module(ST_HOUSING, -11, -11, FACE_E, this::shelter);
+                module(ST_HOUSING, -11, -5, FACE_E, this::shelter);
+                module(ST_DECOR, 0, 2, FACE_S, this::campfire);
+                module(ST_DECOR, 2, 12, FACE_N, this::questBoard);
+            }
+            case 2 -> {
+                module(ST_KEEP, 0, -15, FACE_S, () -> keep(4, 2));
+                module(ST_WORKS, 16, -8, FACE_W, this::storehouse);
+                module(ST_WORKS, 16, 4, FACE_W, this::smithy);
+                module(ST_WORKS, 16, 14, FACE_W, this::woodyard);
+                module(ST_WORKS, 15, -18, FACE_S, this::mineHead);
+                module(ST_WORKS, 7, 13, FACE_S, () -> pen(3));
+                module(ST_HOUSING, -16, -10, FACE_E, () -> barracks(3));
+                module(ST_HOUSING, -16, -2, FACE_E, this::infirmary);
+                module(ST_DECOR, 6, 5, FACE_S, this::well);
+                module(ST_DECOR, 2, 18, FACE_N, this::questBoard);
+            }
+            default -> {
+                module(ST_KEEP, 0, -19, FACE_S, () -> keep(5, 3));
+                module(ST_MAGE, 19, -21, FACE_S, this::mageTower);
+                module(ST_WORKS, 22, -8, FACE_W, this::storehouse);
+                module(ST_WORKS, 22, 4, FACE_W, this::smithy);
+                module(ST_WORKS, 21, 15, FACE_W, this::woodyard);
+                module(ST_WORKS, 22, 23, FACE_W, this::mineHead);
+                module(ST_WORKS, 8, 15, FACE_S, () -> pen(3));
+                module(ST_HOUSING, -22, -15, FACE_E, () -> barracks(4));
+                module(ST_HOUSING, -22, -5, FACE_E, () -> barracks(4));
+                module(ST_HOUSING, -22, 6, FACE_E, this::infirmary);
+                module(ST_DECOR, -9, 21, FACE_S, this::marketStall);
+                module(ST_DECOR, -14, 21, FACE_S, this::marketStall);
+                module(ST_DECOR, 7, 6, FACE_S, this::well);
+                module(ST_DECOR, 2, 24, FACE_N, this::questBoard);
+            }
+        }
+    }
+
+    /**
+     * Просторный восьмиугольный форт: донжон в центре, поле к востоку от него (x 5…15, z −5…5) во всех тирах,
+     * склад и шахта к северу, жильё и загон к западу, лазарет и рынок к югу.
+     */
+    private void interiorOctagonV2() {
+        switch (tier) {
+            case 1 -> {
+                module(ST_KEEP, 0, 0, FACE_S, this::hall);
+                module(ST_WORKS, 11, -4, FACE_W, this::storeroomSmall);
+                module(ST_WORKS, 11, 6, FACE_W, this::woodyard);
+                module(ST_WORKS, -11, 7, FACE_E, this::minePile);
+                module(ST_WORKS, -6, 12, FACE_S, () -> pen(2));
+                module(ST_HOUSING, -11, -4, FACE_E, this::shelter);
+                module(ST_HOUSING, -11, 2, FACE_E, this::shelter);
+                module(ST_DECOR, 5, 8, FACE_S, this::campfire);
+                module(ST_DECOR, 2, 12, FACE_N, this::questBoard);
+            }
+            case 2 -> {
+                module(ST_KEEP, 0, 0, FACE_S, () -> keep(4, 2));
+                module(ST_WORKS, 14, -7, FACE_W, this::storehouse);
+                module(ST_WORKS, 14, 5, FACE_W, this::smithy);
+                module(ST_WORKS, -9, 15, FACE_E, this::woodyard);
+                module(ST_WORKS, 10, -17, FACE_S, this::mineHead);
+                module(ST_WORKS, -15, 4, FACE_S, () -> pen(3));
+                module(ST_HOUSING, -14, -8, FACE_E, () -> barracks(3));
+                module(ST_HOUSING, 13, 12, FACE_W, this::infirmary);
+                module(ST_DECOR, 5, 12, FACE_S, this::well);
+                module(ST_DECOR, 2, 18, FACE_N, this::questBoard);
+            }
+            default -> {
+                module(ST_KEEP, 0, 0, FACE_S, () -> keep(5, 3));
+                module(ST_MAGE, -14, -17, FACE_S, this::mageTower);
+                module(ST_WORKS, 19, -8, FACE_W, this::storehouse);
+                module(ST_WORKS, 19, 5, FACE_W, this::smithy);
+                module(ST_WORKS, -12, 20, FACE_E, this::woodyard);
+                module(ST_WORKS, 12, -22, FACE_S, this::mineHead);
+                module(ST_WORKS, -20, 5, FACE_S, () -> pen(3));
+                module(ST_HOUSING, -21, -5, FACE_E, () -> barracks(4));
+                module(ST_HOUSING, 19, 13, FACE_W, () -> barracks(4));
+                module(ST_HOUSING, 12, 22, FACE_W, this::infirmary);
+                module(ST_DECOR, -6, 14, FACE_S, this::marketStall);
+                module(ST_DECOR, 7, 15, FACE_S, this::marketStall);
+                module(ST_DECOR, 5, 10, FACE_S, this::well);
+                module(ST_DECOR, 2, 24, FACE_N, this::questBoard);
+            }
+        }
     }
 
     private void interiorSquare() {
@@ -748,6 +924,22 @@ public final class FortDesigner {
 
     // ============================== Посты и освещение ==============================
 
+    /** Пост стражи; в просторной планировке, если клетку занял дом или поле, — ближайшая свободная. */
+    private void post(int x, int y, int z) {
+        if (version >= 2 && (c.has(x, y, z) || c.has(x, y + 1, z))) {
+            for (int d = 1; d <= 4; d++)
+                for (int dx = -d; dx <= d; dx++)
+                    for (int dz = -d; dz <= d; dz++) {
+                        if (Math.max(Math.abs(dx), Math.abs(dz)) != d) continue;
+                        if (!c.has(x + dx, y, z + dz) && !c.has(x + dx, y + 1, z + dz) && layout.inside(x + dx, z + dz, r - 1)) {
+                            c.mark(Marker.GUARD_POST, x + dx, y, z + dz);
+                            return;
+                        }
+                    }
+        }
+        c.mark(Marker.GUARD_POST, x, y, z);
+    }
+
     private void posts() {
         int q = r - 4;
         int k = layout == Layout.SQUARE ? q - 1 : q * 7 / 10;
@@ -759,23 +951,23 @@ public final class FortDesigner {
         for (int[] pt : outer) c.mark(Marker.OUTER_PATROL, pt[0], 1, pt[1]);
 
         // Привратная стража.
-        c.mark(Marker.GUARD_POST, -3, 1, r - 3);
-        c.mark(Marker.GUARD_POST, 3, 1, r - 3);
+        post(-3, 1, r - 3);
+        post(3, 1, r - 3);
         if (tier == 1) {
-            c.mark(Marker.GUARD_POST, -(r - 2), 1, 0);
-            c.mark(Marker.GUARD_POST, r - 2, 1, 0);
-            c.mark(Marker.GUARD_POST, 0, 1, -(r - 1));
+            post(-(r - 2), 1, 0);
+            post(r - 2, 1, 0);
+            post(0, 1, -(r - 1));
             return;
         }
         // Стража на боевом ходу.
         int wy = tier == 2 ? 5 : 8;
         int w = r - 1;
-        c.mark(Marker.GUARD_POST, 0, wy, -w);
-        c.mark(Marker.GUARD_POST, -w, wy, 0);
-        c.mark(Marker.GUARD_POST, w, wy, 0);
-        c.mark(Marker.GUARD_POST, -6, wy, w);
-        c.mark(Marker.GUARD_POST, 6, wy, w);
-        c.mark(Marker.GUARD_POST, 0, 1, r - 8);
+        post(0, wy, -w);
+        post(-w, wy, 0);
+        post(w, wy, 0);
+        post(-6, wy, w);
+        post(6, wy, w);
+        post(0, 1, r - 8);
     }
 
     private void lamps() {

@@ -31,9 +31,12 @@ public class OutpostPiece extends StructurePiece {
     private final Palette palette;
     private final Rotation rotation;
     private final Difficulty difficulty;
+    /** Версия планировки: кусок помнит её сам, чанки старого мира достраиваются по первой. */
+    private final int version;
 
     public OutpostPiece(OutpostSites.Site site) {
         super(ModWorldgen.OUTPOST_PIECE.get(), 0, box(site.center(), site.reach(), site.topTier()));
+        this.version = site.version();
         this.center = site.center();
         this.layout = site.layout();
         this.palette = site.palette();
@@ -48,6 +51,7 @@ public class OutpostPiece extends StructurePiece {
         this.palette = Palette.byId(tag.getString("palette"));
         this.rotation = Rotation.values()[Math.max(0, Math.min(3, tag.getByte("rot")))];
         this.difficulty = Difficulty.bySkulls(tag.getByte("skulls"));
+        this.version = tag.contains("ver") ? Math.max(1, Math.min(2, tag.getByte("ver"))) : 1;
     }
 
     private static BoundingBox box(BlockPos center, int reach, int topTier) {
@@ -65,16 +69,17 @@ public class OutpostPiece extends StructurePiece {
         tag.putString("palette", palette.id);
         tag.putByte("rot", (byte) rotation.ordinal());
         tag.putByte("skulls", (byte) difficulty.skulls);
+        tag.putByte("ver", (byte) version);
     }
 
     @Override
     public void postProcess(WorldGenLevel level, StructureManager structures, ChunkGenerator generator, RandomSource random,
                             BoundingBox box, ChunkPos chunkPos, BlockPos pivot) {
-        FortBlueprint bp = FortBlueprint.get(layout, palette, rotation);
+        FortBlueprint bp = FortBlueprint.get(layout, palette, rotation, version);
         Map<BlockPos, BlockState> snapshot = bp.snapshot(difficulty.tier, Outpost.initialSteps(bp, difficulty));
         // Снимок может включать начатое расширение (следующий тир шире): жидкость убирается по полному радиусу.
         int topTier = difficulty.progress > 0 && difficulty.tier < FortBlueprint.MAX_TIER ? difficulty.tier + 1 : difficulty.tier;
-        FortPlacer.clearFluids(level, center, Layout.RADIUS[topTier] + Layout.MARGIN,
+        FortPlacer.clearFluids(level, center, Layout.radius(version, topTier) + Layout.MARGIN,
                 box, rel -> snapshot.containsKey(rel));
         FortPlacer.place(level, center, bp, difficulty, snapshot, box, random);
     }

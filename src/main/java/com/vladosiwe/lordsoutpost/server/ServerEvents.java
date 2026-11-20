@@ -39,6 +39,14 @@ public final class ServerEvents {
         ALifeSimulationManager.tick(event.getServer());
     }
 
+    /** Мир загружается: версия планировки фортов этого мира — до того, как генерация поставит первый форт. */
+    @SubscribeEvent
+    public static void onLevelLoad(net.neoforged.neoforge.event.level.LevelEvent.Load event) {
+        if (event.getLevel() instanceof net.minecraft.server.level.ServerLevel sl && sl.dimension() == net.minecraft.world.level.Level.OVERWORLD) {
+            OutpostSavedData.init(sl);
+        }
+    }
+
     @SubscribeEvent
     public static void onServerStarted(ServerStartedEvent event) {
         OutpostSites.clearCache();

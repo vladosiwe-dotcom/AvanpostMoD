@@ -46,6 +46,8 @@ public final class Outpost {
     public final Palette palette;
     public final Rotation rotation;
     public final Difficulty difficulty;
+    /** Версия планировки (1 — первая, 2 — просторная); новые форты берут версию своего мира. */
+    public int version = Layout.currentVersion();
     /** Создан командой, а не генерацией мира. */
     public final boolean manual;
 
@@ -218,7 +220,7 @@ public final class Outpost {
     // ============================== Чертёж и геометрия ==============================
 
     public FortBlueprint blueprint() {
-        return FortBlueprint.get(layout, palette, rotation);
+        return FortBlueprint.get(layout, palette, rotation, version);
     }
 
     public Design design() {
@@ -240,12 +242,12 @@ public final class Outpost {
     }
 
     public int radius() {
-        return Layout.RADIUS[tier];
+        return Layout.radius(version, tier);
     }
 
     /** Радиус с учётом идущего расширения. */
     public int reach() {
-        return Layout.RADIUS[!complete() && (steps > 0 || state == OutpostState.OWNED) ? tier + 1 : tier];
+        return Layout.radius(version, !complete() && (steps > 0 || state == OutpostState.OWNED) ? tier + 1 : tier);
     }
 
     public BlockPos world(BlockPos rel) {
@@ -549,6 +551,7 @@ public final class Outpost {
         t.putInt("y", center.getY());
         t.putInt("z", center.getZ());
         t.putString("layout", layout.id);
+        t.putByte("layoutVersion", (byte) version);
         t.putString("palette", palette.id);
         t.putByte("rot", (byte) rotation.ordinal());
         t.putByte("skulls", (byte) difficulty.skulls);
@@ -669,6 +672,8 @@ public final class Outpost {
         Outpost o = new Outpost(t.getLong("id"), new BlockPos(t.getInt("x"), t.getInt("y"), t.getInt("z")),
                 Layout.byId(t.getString("layout")), Palette.byId(t.getString("palette")), rot,
                 Difficulty.bySkulls(t.getByte("skulls")), t.getBoolean("manual"));
+        // Записи до просторной планировки — первой версии.
+        o.version = t.contains("layoutVersion") ? Mth.clamp(t.getByte("layoutVersion"), 1, 2) : 1;
         o.state = OutpostState.VALUES[Mth.clamp(t.getByte("state"), 0, OutpostState.VALUES.length - 1)];
         o.name = t.getString("name");
         o.owner = t.hasUUID("owner") ? t.getUUID("owner") : null;

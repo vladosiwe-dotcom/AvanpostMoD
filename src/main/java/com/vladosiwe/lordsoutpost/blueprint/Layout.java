@@ -13,6 +13,23 @@ public enum Layout {
     public static final Layout[] VALUES = values();
     /** Половина стороны периметра по тирам (индекс = тир). */
     public static final int[] RADIUS = {0, 13, 18, 23};
+    /** Просторная планировка (версия 2): стены дальше, здания расставлены свободнее, своё поле. */
+    public static final int[] RADIUS_V2 = {0, 17, 24, 31};
+    /** Версия планировки, которую получают новые форты этого мира (ставится при загрузке мира). */
+    private static volatile int current = 2;
+
+    public static int radius(int version, int tier) {
+        int t = Math.max(0, Math.min(3, tier));
+        return version >= 2 ? RADIUS_V2[t] : RADIUS[t];
+    }
+
+    public static int currentVersion() {
+        return current;
+    }
+
+    public static void setCurrentVersion(int version) {
+        current = Math.max(1, Math.min(2, version));
+    }
     /** На сколько башни и подступы выходят за периметр. */
     public static final int MARGIN = 4;
 

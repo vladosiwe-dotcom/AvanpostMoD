@@ -54,6 +54,15 @@ public final class OutpostSavedData extends SavedData {
      * новый мир с тем же названием или другой сервер на том же адресе не получают чужую карту.
      */
     private UUID worldId = UUID.randomUUID();
+    /**
+     * Версия планировки фортов этого мира. Новый мир — просторная (2), мир, созданный до неё, остаётся на первой:
+     * генерация предсказывает форты заранее, и смешивать версии в одном мире нельзя.
+     */
+    private int layoutVersion = 2;
+
+    public int layoutVersion() {
+        return layoutVersion;
+    }
 
     public UUID worldId() {
         return worldId;
@@ -66,10 +75,25 @@ public final class OutpostSavedData extends SavedData {
         return mail;
     }
 
+    public OutpostSavedData() {
+        // Новый мир: запись (и версия планировки) сохраняется сразу, даже если фортов ещё нет.
+        setDirty();
+    }
+
+    /**
+     * Загрузка мира, до генерации первых чанков: версия планировки этого мира становится текущей для генерации.
+     */
+    public static void init(net.minecraft.server.level.ServerLevel overworld) {
+        OutpostSavedData data = overworld.getDataStorage().computeIfAbsent(FACTORY, NAME);
+        com.vladosiwe.lordsoutpost.blueprint.Layout.setCurrentVersion(data.layoutVersion);
+    }
+
     public static final Factory<OutpostSavedData> FACTORY = new Factory<>(OutpostSavedData::new, OutpostSavedData::load);
 
     public static OutpostSavedData get(MinecraftServer server) {
-        return server.overworld().getDataStorage().computeIfAbsent(FACTORY, NAME);
+        OutpostSavedData data = server.overworld().getDataStorage().computeIfAbsent(FACTORY, NAME);
+        com.vladosiwe.lordsoutpost.blueprint.Layout.setCurrentVersion(data.layoutVersion);
+        return data;
     }
 
     public static OutpostSavedData get(ServerLevel level) {
@@ -220,6 +244,7 @@ public final class OutpostSavedData extends SavedData {
         tag.putLongArray("emptyRegions", emptyRegions.toLongArray());
         tag.putLong("manualCounter", manualCounter);
         tag.putUUID("worldId", worldId);
+        tag.putByte("layoutVersion", (byte) layoutVersion);
         ListTag letters = new ListTag();
         for (var l : mail) letters.add(l.save(registries));
         tag.put("mail", letters);
@@ -252,6 +277,7 @@ public final class OutpostSavedData extends SavedData {
         data.manualCounter = tag.getLong("manualCounter");
         if (tag.hasUUID("worldId")) data.worldId = tag.getUUID("worldId");
         else data.setDirty();
+        data.layoutVersion = tag.contains("layoutVersion") ? Math.max(1, Math.min(2, tag.getByte("layoutVersion"))) : 1;
         ListTag letters = tag.getList("mail", Tag.TAG_COMPOUND);
         for (int i = 0; i < letters.size(); i++) {
             try {
