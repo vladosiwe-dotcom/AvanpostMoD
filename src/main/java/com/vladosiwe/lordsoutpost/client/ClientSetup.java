@@ -67,6 +67,7 @@ public final class ClientSetup {
         @SubscribeEvent
         public static void hud(RegisterGuiLayersEvent event) {
             event.registerAboveAll(LordsOutpost.id("discovery"), DiscoveryBanner::render);
+            event.registerAboveAll(LordsOutpost.id("outpost_status"), com.vladosiwe.lordsoutpost.client.hud.OutpostHud::render);
         }
 
     }

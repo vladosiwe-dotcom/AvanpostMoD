@@ -174,6 +174,9 @@ add(P + 'event.ambush', 'Караван попал в засаду!', 'The carav
 add(P + 'event.ambush_won', 'Конвой отбил засаду на караван.', 'The escort fought off an ambush.')
 add(P + 'event.pyromancer_joined', 'К башне мага пришёл пиромант: он защищает форт огнём и торгует свитками.', 'A pyromancer arrived at the mage tower: he defends the fort with fire and trades scrolls.')
 add(P + 'event.pyromancer_died', 'Пиромант пал. Новый придёт к башне мага через несколько дней.', 'The pyromancer fell. A new one will come to the mage tower in a few days.')
+add(P + 'event.project_ordered', 'Лорд заказал постройку: %s.', 'The Lord ordered a building: %s.')
+add(P + 'event.project_done', 'Достроено: %s.', 'Completed: %s.')
+add(P + 'event.project_cancelled', 'Заказ отменён: %s.', 'Order cancelled: %s.')
 add(P + 'event.zone_moved', 'Рабочая зона «%s» перенесена в %s.', 'Work zone "%s" moved to %s.')
 add(P + 'event.zone_reset', 'Рабочая зона «%s» возвращена на место по чертежу.', 'Work zone "%s" returned to its blueprint place.')
 add(P + 'event.ambush_lost', 'Засада: караван потерял половину груза.', 'Ambush: the caravan lost half its cargo.')
@@ -224,8 +227,76 @@ add(P + 'ui.naming.hint', 'До 32 символов. Имя можно смен�
 add(P + 'ui.confirm', 'Назвать', 'Name it')
 add(P + 'ui.later', 'Позже', 'Later')
 for k, ru, en in [('overview', 'Обзор', 'Overview'), ('garrison', 'Гарнизон', 'Garrison'), ('access', 'Доступ', 'Access'),
-                  ('quests', 'Задания', 'Quests'), ('diplomacy', 'Дипломатия', 'Diplomacy')]:
+                  ('quests', 'Задания', 'Quests'), ('diplomacy', 'Договоры', 'Pacts'), ('economy', 'Хозяйство', 'Economy'),
+                  ('build', 'Стройка', 'Build')]:
     add(P + 'ui.tab.' + k, ru, en)
+# --- HUD владения ---
+add(P + 'hud.tier', 'Тир %s · стройка %s%%', 'Tier %s · building %s%%')
+add(P + 'hud.tier_done', 'Тир %s · крепость достроена', 'Tier %s · fortress complete')
+add(P + 'hud.people', 'Жители: %s/%s', 'Residents: %s/%s')
+add(P + 'hud.food', 'Еда: %s дн.', 'Food: %s days')
+add(P + 'hud.scarce', 'Не хватает: %s', 'Short of: %s')
+add(P + 'hud.projects', 'Заказов в работе: %s', 'Orders in progress: %s')
+add(P + 'hud.problems', 'Проблем в рабочих зонах: %s', 'Work zone problems: %s')
+add(P + 'hud.raid', 'Набег!', 'Raid!')
+# --- Хозяйство и стройка ---
+add(P + 'ui.director', 'Планировщик', 'Director')
+add(P + 'ui.director.food', 'Еды на %s дн.', 'Food for %s days')
+add(P + 'ui.director.no_shortage', 'Стройке всего хватает', 'Construction has everything it needs')
+add(P + 'ui.director.shortage', 'Дефицит: %s', 'Shortage: %s')
+add(P + 'ui.director.paused', 'Голод: стройка приостановлена', 'Famine: construction is paused')
+add(P + 'ui.director.priorities', 'Важнее всего: %s', 'Top priorities: %s')
+add(P + 'ui.tasks', 'Задачи жителей', 'Residents\' tasks')
+add(P + 'ui.tasks.empty', 'Особых поручений нет: каждый занят своим делом.', 'No special orders: everyone is about their own work.')
+add(P + 'ui.zones', 'Рабочие зоны', 'Work zones')
+add(P + 'ui.zones.problem', 'Проблема: %s', 'Problem: %s')
+add(P + 'ui.zones.here', 'Сюда', 'Here')
+add(P + 'ui.zones.here.tip', 'Перенести зону туда, где вы стоите (во дворе).', 'Move the zone to where you stand (in the yard).')
+add(P + 'ui.zones.reset', 'Назад', 'Reset')
+add(P + 'ui.zones.reset.tip', 'Вернуть зону на место по чертежу.', 'Return the zone to its blueprint place.')
+add(P + 'ui.shop', 'Лавка (%s/9)', 'Shop (%s/9)')
+add(P + 'ui.shop.empty', 'Пусто: торговец принесёт излишки склада.', 'Empty: the merchant brings storehouse surplus.')
+add(P + 'ui.magic', 'Магия', 'Magic')
+add(P + 'ui.magic.no_tower', 'Нужна башня мага (тир 3).', 'Needs the mage tower (tier 3).')
+add(P + 'ui.magic.mages', 'Придворных магов: %s · эссенции: %s', 'Court mages: %s · essence: %s')
+add(P + 'ui.magic.work.tip', 'Работа мага: когда полоса заполнится и эссенции хватит (20), в Сундуке Дани появится свиток или реагенты.', 'The mage\'s work: when the bar fills and there is enough essence (20), a scroll or reagents appear in the Tribute Chest.')
+add(P + 'ui.magic.pyro_none', 'Пиромант: нужен мод Iron\'s Spells \'n Spellbooks', 'Pyromancer: needs Iron\'s Spells \'n Spellbooks')
+add(P + 'ui.magic.pyro_here', 'Пиромант охраняет башню', 'The pyromancer guards the tower')
+add(P + 'ui.magic.pyro_wait', 'Пиромант придёт через ~%s мин.', 'The pyromancer arrives in ~%s min.')
+add(P + 'ui.build.order', 'Заказать здесь', 'Order here')
+add(P + 'ui.build.order.tip', 'Встаньте там, откуда строить, и смотрите в сторону постройки: она встанет перед вами, вход — к вам. Место будущих тиров форта занимать нельзя.', 'Stand where you want it and look that way: it is placed in front of you with the entrance facing you. Space reserved for future fort tiers cannot be used.')
+add(P + 'ui.build.limit', 'Одновременно строится не больше %s заказов.', 'At most %s orders can be built at once.')
+add(P + 'ui.build.list', 'Заказы: %s из %s · домов построено: %s', 'Orders: %s of %s · houses built: %s')
+add(P + 'ui.build.empty', 'Заказов пока нет.', 'No orders yet.')
+add(P + 'ui.build.cancel', 'Отменить', 'Cancel')
+add(P + 'ui.build.cancel.tip', 'Построенное останется, неистраченные материалы вернутся на склад.', 'What is built stays; unused materials go back to storage.')
+add(P + 'ui.build.hint', 'Постройки оплачиваются из тех же ресурсов и строятся теми же строителями, что и форт, но после работ по плану тира. Пока вас нет, оплаченное встанет при возвращении. При голоде стройка ждёт.', 'Orders use the same resources and builders as the fort, after the tier plan work. While you are away, what is paid for is placed when you return. During famine construction waits.')
+for k, ru, en, d_ru, d_en in [
+        ('house', 'Дом', 'House', '+2 места для жителей, две кровати.', '+2 resident places, two beds.'),
+        ('watchtower', 'Сторожевая башня', 'Watchtower', 'Пост для стрелка, +5% к обороне.', 'A post for an archer, +5% defence.'),
+        ('wall', 'Участок стены', 'Wall section', 'Стена 11 блоков, +3% к обороне.', '11-block wall, +3% defence.')]:
+    add(P + 'project.' + k, ru, en)
+    add(P + 'project.' + k + '.desc', d_ru, d_en)
+for k, ru, en in [('mine', 'Шахта', 'Mine'), ('woodyard', 'Дровяной двор', 'Woodyard'), ('pen', 'Загон', 'Pen'), ('farm', 'Поле', 'Field'),
+                  ('smithy', 'Кузница', 'Smithy'), ('storehouse', 'Склад', 'Storehouse'), ('mage_tower', 'Башня мага', 'Mage tower'),
+                  ('shop', 'Лавка', 'Shop')]:
+    add(P + 'zone.' + k, ru, en)
+for k, ru, en in [('repair_armor', 'Ремонт брони', 'Armour repair'), ('upgrade_gear', 'Перековка снаряжения', 'Gear upgrade'),
+                  ('breed_animals', 'Разведение', 'Breeding'), ('fetch_seeds', 'Семена', 'Seeds'), ('fetch_torches', 'Факелы', 'Torches'),
+                  ('forge_tool', 'Ковка', 'Forging'), ('fetch_feed', 'Корм', 'Feed'), ('fetch_tools', 'Инструменты', 'Tools'),
+                  ('fetch_pickaxe', 'Кирка', 'Pickaxe'), ('smelt_ore', 'Переплавка', 'Smelting'), ('fetch_sapling', 'Саженец', 'Sapling'),
+                  ('stock_shop', 'Товар в лавку', 'Shop stock')]:
+    add(P + 'task.' + k, ru, en)
+for k, ru, en in [('created', 'создана', 'created'), ('available', 'ждёт исполнителя', 'waiting'), ('reserved', 'материалы отложены', 'materials reserved'),
+                  ('in_progress', 'в работе', 'in progress'), ('paused', 'приостановлена', 'paused')]:
+    add(P + 'taskstate.' + k, ru, en)
+for k, ru, en in [('ok', 'Заказ принят: строители возьмутся за него после работ по плану.', 'Order accepted: builders take it after the tier plan work.'),
+                  ('not_here', 'Слишком далеко от форта.', 'Too far from the fort.'),
+                  ('overlaps_fort', 'Здесь встанет следующий тир форта — выберите другое место.', 'The next fort tier goes here — pick another spot.'),
+                  ('occupied', 'Место занято постройками, сундуками или другим заказом.', 'The spot is taken by buildings, chests or another order.'),
+                  ('too_many', 'Слишком много заказов одновременно.', 'Too many orders at once.'),
+                  ('no_ground', 'Здесь нет ровной земли рядом с фортом.', 'There is no level ground near the fort here.')]:
+    add(P + 'msg.project.' + k, ru, en)
 add(P + 'ui.tier_done', 'Тир %s — крепость достроена', 'Tier %s — the fortress is complete')
 add(P + 'ui.tier_progress', 'Тир %s → %s: %s%%', 'Tier %s → %s: %s%%')
 add(P + 'ui.stalled', 'Стройка стоит: не хватает ресурса «%s»', 'Construction stalled: short of %s')

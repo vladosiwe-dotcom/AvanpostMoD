@@ -196,6 +196,21 @@ public final class ServerActions {
                 feedback(player, "lordsoutpost.msg.caravan." + result.name().toLowerCase(Locale.ROOT),
                         result == Caravans.Result.OK ? ChatFormatting.GREEN : ChatFormatting.RED);
             }
+            case ORDER_PROJECT -> {
+                var type = com.vladosiwe.lordsoutpost.outpost.Project.Type.byId(a.getString("type"));
+                if (type == null || player.level().dimension() != net.minecraft.world.level.Level.OVERWORLD) return;
+                var result = com.vladosiwe.lordsoutpost.data.Projects.order(level, o, type, player.blockPosition(), player.getDirection(), now);
+                feedback(player, "lordsoutpost.msg.project." + result.name().toLowerCase(Locale.ROOT),
+                        result == com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OK ? ChatFormatting.GREEN : ChatFormatting.YELLOW);
+            }
+            case CANCEL_PROJECT -> com.vladosiwe.lordsoutpost.data.Projects.cancel(o, a.getLong("id"), now);
+            case MOVE_ZONE -> {
+                var zone = com.vladosiwe.lordsoutpost.outpost.WorkZone.byId(a.getString("zone"));
+                if (zone == null) return;
+                String error = com.vladosiwe.lordsoutpost.command.SettlementCommands.relocate(player, o, zone, a.getBoolean("here"));
+                if (error != null) feedback(player, error, ChatFormatting.YELLOW);
+                else player.displayClientMessage(Component.translatable("lordsoutpost.settlement.zone_done", zone.id).withStyle(ChatFormatting.GREEN), true);
+            }
             case ABANDON -> {
                 BlockPos standard = o.standard;
                 OutpostManager.abandon(data, o, now);

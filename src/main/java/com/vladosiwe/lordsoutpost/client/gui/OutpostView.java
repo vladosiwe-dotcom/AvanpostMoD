@@ -57,6 +57,88 @@ public final class OutpostView {
     public final List<Entry> chronicle = new ArrayList<>();
     public final List<CaravanInfo> caravans = new ArrayList<>();
     @Nullable public final AccessRules rules;
+    /** Хозяйство (только для Лорда): планировщик, задачи, зоны, лавка, магия, заказанные постройки. */
+    @Nullable public final Manage manage;
+
+    public record TaskInfo(String type, String state, String who, String subject, String reason, String product) {}
+
+    public record ZoneInfo(String id, boolean relocatable, boolean moved, String problem) {}
+
+    public record ProjectInfo(long id, String type, int state, float progress, int paid, int size) {}
+
+    public static final class Manage {
+        public final float foodDays;
+        @Nullable public final Resource scarce;
+        public final boolean foodCritical;
+        public final java.util.Map<Role, Integer> priorities = new EnumMap<>(Role.class);
+        public final List<TaskInfo> tasks = new ArrayList<>();
+        public final List<ZoneInfo> zones = new ArrayList<>();
+        public final List<net.minecraft.world.item.ItemStack> shop = new ArrayList<>();
+        public final int mages, pyroRejoin, projectLimit, houses;
+        public final boolean tower, iss, pyroAvailable, pyromancer;
+        public final float arcane, work;
+        public final List<ProjectInfo> projects = new ArrayList<>();
+        public final java.util.Map<String, EnumMap<Resource, Integer>> costs = new java.util.HashMap<>();
+
+        Manage(CompoundTag m) {
+            foodDays = m.getFloat("foodDays");
+            scarce = m.contains("scarce") ? Resource.byId(m.getString("scarce")) : null;
+            foodCritical = m.getBoolean("foodCritical");
+            CompoundTag pr = m.getCompound("priorities");
+            for (String k : pr.getAllKeys()) priorities.put(Role.byId(k), pr.getInt(k));
+            ListTag ts = m.getList("tasks", Tag.TAG_COMPOUND);
+            for (int i = 0; i < ts.size(); i++) {
+                CompoundTag t = ts.getCompound(i);
+                tasks.add(new TaskInfo(t.getString("type"), t.getString("state"), t.getString("who"), t.getString("subject"),
+                        t.getString("reason"), t.getString("product")));
+            }
+            ListTag zs = m.getList("zones", Tag.TAG_COMPOUND);
+            for (int i = 0; i < zs.size(); i++) {
+                CompoundTag z = zs.getCompound(i);
+                zones.add(new ZoneInfo(z.getString("id"), z.getBoolean("relocatable"), z.getBoolean("moved"), z.getString("problem")));
+            }
+            ListTag sh = m.getList("shop", Tag.TAG_COMPOUND);
+            for (int i = 0; i < sh.size(); i++) {
+                CompoundTag it = sh.getCompound(i);
+                var id = net.minecraft.resources.ResourceLocation.tryParse(it.getString("item"));
+                if (id == null) continue;
+                var item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id);
+                shop.add(new net.minecraft.world.item.ItemStack(item, Math.max(1, it.getInt("count"))));
+            }
+            CompoundTag mg = m.getCompound("magic");
+            mages = mg.getInt("mages");
+            tower = mg.getBoolean("tower");
+            arcane = mg.getFloat("arcane");
+            work = mg.getFloat("work");
+            iss = mg.getBoolean("iss");
+            pyroAvailable = mg.getBoolean("pyroAvailable");
+            pyromancer = mg.getBoolean("pyromancer");
+            pyroRejoin = mg.getInt("pyroRejoin");
+            ListTag ps = m.getList("projects", Tag.TAG_COMPOUND);
+            for (int i = 0; i < ps.size(); i++) {
+                CompoundTag p = ps.getCompound(i);
+                projects.add(new ProjectInfo(p.getLong("id"), p.getString("type"), p.getByte("state"), p.getFloat("progress"), p.getInt("paid"), p.getInt("size")));
+            }
+            CompoundTag cs = m.getCompound("costs");
+            for (String type : cs.getAllKeys()) {
+                EnumMap<Resource, Integer> c = new EnumMap<>(Resource.class);
+                CompoundTag ct = cs.getCompound(type);
+                for (String r : ct.getAllKeys()) {
+                    Resource res = Resource.byId(r);
+                    if (res != null) c.put(res, ct.getInt(r));
+                }
+                costs.put(type, c);
+            }
+            projectLimit = m.getInt("projectLimit");
+            houses = m.getInt("houses");
+        }
+
+        public int activeProjects() {
+            int n = 0;
+            for (ProjectInfo p : projects) if (p.state() <= 1) n++;
+            return n;
+        }
+    }
     public final List<Neighbor> neighbors = new ArrayList<>();
 
     public OutpostView(CompoundTag t) {
@@ -116,6 +198,7 @@ public final class OutpostView {
         }
         autoCaravans = t.getBoolean("autoCaravans");
         surplus = t.getInt("surplus");
+        manage = t.contains("manage") ? new Manage(t.getCompound("manage")) : null;
         if (t.contains("accessRules")) {
             rules = new AccessRules();
             rules.load(t.getCompound("accessRules"));
@@ -162,7 +245,8 @@ public final class OutpostView {
     }
 
     private static String pretty(String arg) {
-        for (String prefix : new String[]{"lordsoutpost.role.", "lordsoutpost.law.", "lordsoutpost.pact.", "lordsoutpost.resource.", "lordsoutpost.questkind."}) {
+        for (String prefix : new String[]{"lordsoutpost.role.", "lordsoutpost.law.", "lordsoutpost.pact.", "lordsoutpost.resource.", "lordsoutpost.questkind.",
+                "lordsoutpost.project.", "lordsoutpost.zone."}) {
             if (arg.matches("[a-z_]+") && I18n.exists(prefix + arg)) return I18n.get(prefix + arg);
         }
         return arg;

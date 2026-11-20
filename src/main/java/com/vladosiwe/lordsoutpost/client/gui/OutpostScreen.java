@@ -33,8 +33,8 @@ import java.util.UUID;
  */
 public class OutpostScreen extends Screen {
     private static final int W = 384, H = 238;
-    private static final int TAB_OVERVIEW = 0, TAB_GARRISON = 1, TAB_ACCESS = 2, TAB_QUESTS = 3, TAB_DIPLOMACY = 4;
-    private static final String[] TABS = {"overview", "garrison", "access", "quests", "diplomacy"};
+    private static final int TAB_OVERVIEW = 0, TAB_GARRISON = 1, TAB_ACCESS = 2, TAB_QUESTS = 3, TAB_DIPLOMACY = 4, TAB_ECONOMY = 5, TAB_BUILD = 6;
+    private static final String[] TABS = {"overview", "garrison", "access", "quests", "diplomacy", "economy", "build"};
     private static final int[] SQUAD_COLORS = {0xFF5AA9FF, 0xFF58D68D, 0xFFE2B44C};
 
     private OutpostView view;
@@ -51,7 +51,7 @@ public class OutpostScreen extends Screen {
         super(Component.translatable("lordsoutpost.ui.title"));
         this.view = view;
         this.naming = tab == ModNetwork.TAB_NAME;
-        this.tab = naming ? TAB_OVERVIEW : Math.max(0, Math.min(4, tab));
+        this.tab = naming ? TAB_OVERVIEW : Math.max(0, Math.min(TABS.length - 1, tab));
     }
 
     public void update(OutpostView fresh) {
@@ -143,6 +143,8 @@ public class OutpostScreen extends Screen {
                 case TAB_ACCESS -> drawAccess(g, cx, cy, mouseX, mouseY);
                 case TAB_QUESTS -> drawQuests(g, cx, cy, mouseX, mouseY);
                 case TAB_DIPLOMACY -> drawDiplomacy(g, cx, cy, mouseX, mouseY);
+                case TAB_ECONOMY -> drawEconomy(g, cx, cy, mouseX, mouseY);
+                case TAB_BUILD -> drawBuild(g, cx, cy, mouseX, mouseY);
                 default -> drawOverview(g, cx, cy, mouseX, mouseY);
             }
         }
@@ -427,6 +429,178 @@ public class OutpostScreen extends Screen {
         for (Map.Entry<Resource, Integer> e : view.boosts.entrySet()) {
             Ui.text(g, font, Component.translatable("lordsoutpost.ui.quests.boost", e.getKey().label(), e.getValue() / 60), x, row, W - 16, Ui.ACCENT);
             row += 9;
+        }
+    }
+
+    // ---------- Хозяйство ----------
+
+    private void drawEconomy(GuiGraphics g, int x, int y, int mouseX, int mouseY) {
+        OutpostView.Manage m = view.manage;
+        if (m == null) {
+            g.drawCenteredString(font, Component.translatable("lordsoutpost.ui.lord_only"), left + W / 2, y + 60, Ui.MUTED);
+            return;
+        }
+        int colW = 178, rx = x + 186;
+        // Планировщик.
+        g.drawString(font, Component.translatable("lordsoutpost.ui.director"), x, y, Ui.TEXT, false);
+        int food = m.foodCritical ? Ui.BAD : m.foodDays < 2 ? Ui.WARN : Ui.GOOD;
+        Ui.text(g, font, Component.translatable("lordsoutpost.ui.director.food", String.format("%.1f", m.foodDays)), x, y + 11, colW, food);
+        Component scarce = m.scarce == null ? Component.translatable("lordsoutpost.ui.director.no_shortage")
+                : Component.translatable("lordsoutpost.ui.director.shortage", m.scarce.label());
+        Ui.text(g, font, scarce, x, y + 21, colW, m.scarce == null ? Ui.MUTED : Ui.WARN);
+        if (m.foodCritical) Ui.text(g, font, Component.translatable("lordsoutpost.ui.director.paused"), x, y + 31, colW, Ui.BAD);
+        int py = y + (m.foodCritical ? 41 : 31);
+        StringBuilder pr = new StringBuilder();
+        for (var e : m.priorities.entrySet()) {
+            if (pr.length() > 0) pr.append(", ");
+            pr.append(e.getKey().label().getString()).append(" +").append(e.getValue() - 50);
+        }
+        if (pr.length() > 0) {
+            Ui.text(g, font, Component.translatable("lordsoutpost.ui.director.priorities", pr.toString()), x, py, colW, Ui.ACCENT);
+            hits.add(x, py, colW, 9, null, Component.translatable("lordsoutpost.ui.director.priorities", pr.toString()));
+            py += 10;
+        }
+        // Задачи жителей.
+        int ty = py + 6;
+        g.drawString(font, Component.translatable("lordsoutpost.ui.tasks"), x, ty, Ui.TEXT, false);
+        ty += 11;
+        if (m.tasks.isEmpty()) Ui.text(g, font, Component.translatable("lordsoutpost.ui.tasks.empty"), x, ty, colW, Ui.MUTED);
+        for (OutpostView.TaskInfo t : m.tasks) {
+            if (ty > top + H - 20) break;
+            Component what = Component.translatable("lordsoutpost.task." + t.type());
+            if (!t.product().isEmpty()) {
+                var id = net.minecraft.resources.ResourceLocation.tryParse(t.product());
+                if (id != null) what = what.copy().append(": ").append(net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id).getDescription());
+            }
+            if (!t.subject().isEmpty()) what = what.copy().append(" → " + t.subject());
+            int color = switch (t.state()) {
+                case "in_progress" -> Ui.GOOD;
+                case "paused" -> Ui.WARN;
+                default -> Ui.MUTED;
+            };
+            Ui.text(g, font, what, x, ty, colW, Ui.TEXT);
+            Component state = Component.translatable("lordsoutpost.taskstate." + t.state()).copy()
+                    .append(t.who().isEmpty() ? "" : " · " + t.who()).append(t.reason().isEmpty() ? "" : " · " + t.reason());
+            Ui.text(g, font, state, x + 6, ty + 9, colW - 6, color);
+            ty += 20;
+        }
+        // Рабочие зоны.
+        g.drawString(font, Component.translatable("lordsoutpost.ui.zones"), rx, y, Ui.TEXT, false);
+        int zy = y + 11;
+        for (OutpostView.ZoneInfo z : m.zones) {
+            Component label = Component.translatable("lordsoutpost.zone." + z.id());
+            int color = !z.problem().isEmpty() ? Ui.WARN : z.moved() ? Ui.ACCENT : Ui.MUTED;
+            Ui.text(g, font, label, rx, zy + 1, 84, color);
+            if (!z.problem().isEmpty()) hits.add(rx, zy, 84, 10, null, Component.translatable("lordsoutpost.ui.zones.problem", z.problem()));
+            if (z.relocatable()) {
+                String zid = z.id();
+                Ui.button(g, font, hits, rx + 88, zy, 52, 10, Component.translatable("lordsoutpost.ui.zones.here"), true, false, mouseX, mouseY,
+                        () -> Net.action(view.id, Action.MOVE_ZONE, t -> { t.putString("zone", zid); t.putBoolean("here", true); }),
+                        Component.translatable("lordsoutpost.ui.zones.here.tip"));
+                if (z.moved()) Ui.button(g, font, hits, rx + 142, zy, 40, 10, Component.translatable("lordsoutpost.ui.zones.reset"), true, false, mouseX, mouseY,
+                        () -> Net.action(view.id, Action.MOVE_ZONE, t -> { t.putString("zone", zid); t.putBoolean("here", false); }),
+                        Component.translatable("lordsoutpost.ui.zones.reset.tip"));
+            }
+            zy += 11;
+        }
+        // Лавка торговца.
+        int sy = zy + 5;
+        g.drawString(font, Component.translatable("lordsoutpost.ui.shop", m.shop.size()), rx, sy, Ui.TEXT, false);
+        sy += 10;
+        if (m.shop.isEmpty()) {
+            Ui.text(g, font, Component.translatable("lordsoutpost.ui.shop.empty"), rx, sy, 182, Ui.MUTED);
+            sy += 10;
+        } else {
+            for (int i = 0; i < m.shop.size(); i++) {
+                ItemStack st = m.shop.get(i);
+                int ix = rx + i * 19, iy = sy;
+                g.renderItem(st, ix, iy);
+                g.renderItemDecorations(font, st, ix, iy);
+                hits.add(ix, iy, 16, 16, null, st.getHoverName().copy().append(" ×" + st.getCount()));
+            }
+            sy += 18;
+        }
+        // Магия.
+        sy += 4;
+        g.drawString(font, Component.translatable("lordsoutpost.ui.magic"), rx, sy, Ui.TEXT, false);
+        sy += 11;
+        if (!m.tower) {
+            Ui.text(g, font, Component.translatable("lordsoutpost.ui.magic.no_tower"), rx, sy, 182, Ui.MUTED);
+            return;
+        }
+        Ui.text(g, font, Component.translatable("lordsoutpost.ui.magic.mages", m.mages, (int) m.arcane), rx, sy, 182, Ui.TEXT);
+        sy += 10;
+        Ui.bar(g, rx, sy, 120, 6, Math.min(1f, m.work), 0xFFB37BFF);
+        hits.add(rx, sy, 120, 6, null, Component.translatable("lordsoutpost.ui.magic.work.tip"));
+        sy += 9;
+        Component pyro = !m.pyroAvailable ? Component.translatable("lordsoutpost.ui.magic.pyro_none")
+                : m.pyromancer ? Component.translatable("lordsoutpost.ui.magic.pyro_here")
+                : Component.translatable("lordsoutpost.ui.magic.pyro_wait", Math.max(1, m.pyroRejoin / 60));
+        Ui.text(g, font, pyro, rx, sy, 182, m.pyromancer ? Ui.GOOD : Ui.MUTED);
+    }
+
+    // ---------- Стройка по заказу Лорда ----------
+
+    private void drawBuild(GuiGraphics g, int x, int y, int mouseX, int mouseY) {
+        OutpostView.Manage m = view.manage;
+        if (m == null) {
+            g.drawCenteredString(font, Component.translatable("lordsoutpost.ui.lord_only"), left + W / 2, y + 60, Ui.MUTED);
+            return;
+        }
+        boolean room = m.activeProjects() < m.projectLimit;
+        int cardW = 120;
+        String[] types = {"house", "watchtower", "wall"};
+        for (int i = 0; i < types.length; i++) {
+            String type = types[i];
+            int cx = x + i * (cardW + 4);
+            g.fill(cx, y, cx + cardW, y + 70, 0xFF151B26);
+            g.renderOutline(cx, y, cardW, 70, Ui.BORDER);
+            g.drawString(font, Component.translatable("lordsoutpost.project." + type), cx + 4, y + 4, Ui.ACCENT, false);
+            int ly = y + 15;
+            for (net.minecraft.util.FormattedCharSequence line : font.split(Component.translatable("lordsoutpost.project." + type + ".desc"), cardW - 8)) {
+                if (ly > y + 40) break;
+                g.drawString(font, line, cx + 4, ly, Ui.MUTED, false);
+                ly += 9;
+            }
+            var cost = m.costs.getOrDefault(type, new java.util.EnumMap<>(Resource.class));
+            int ix = cx + 4;
+            for (var e : cost.entrySet()) {
+                g.renderItem(new ItemStack(e.getKey().icon), ix, y + 41);
+                String n = String.valueOf(e.getValue());
+                g.drawString(font, n, ix + 17, y + 46, Ui.TEXT, false);
+                ix += 22 + font.width(n);
+            }
+            Ui.button(g, font, hits, cx + 4, y + 57, cardW - 8, 11, Component.translatable("lordsoutpost.ui.build.order"), room, false, mouseX, mouseY,
+                    () -> Net.action(view.id, Action.ORDER_PROJECT, t -> t.putString("type", type)),
+                    Component.translatable(room ? "lordsoutpost.ui.build.order.tip" : "lordsoutpost.ui.build.limit", m.projectLimit));
+        }
+        int ry = y + 76;
+        g.drawString(font, Component.translatable("lordsoutpost.ui.build.list", m.activeProjects(), m.projectLimit, m.houses), x, ry, Ui.TEXT, false);
+        ry += 12;
+        if (m.projects.isEmpty()) {
+            Ui.text(g, font, Component.translatable("lordsoutpost.ui.build.empty"), x, ry, W - 16, Ui.MUTED);
+            ry += 10;
+        }
+        int shown = 0;
+        for (int i = scroll; i < m.projects.size() && shown < 5; i++, shown++) {
+            OutpostView.ProjectInfo p = m.projects.get(m.projects.size() - 1 - i);
+            boolean active = p.state() <= 1;
+            Ui.text(g, font, Component.translatable("lordsoutpost.project." + p.type()), x, ry + 1, 110, active ? Ui.TEXT : Ui.GOOD);
+            Ui.bar(g, x + 114, ry + 1, 100, 7, p.progress(), active ? 0xFFE2B44C : 0xFF4CC38A);
+            String pct = Math.round(p.progress() * 100) + "% · " + p.paid() + "/" + p.size();
+            g.drawString(font, pct, x + 220, ry, Ui.MUTED, false);
+            if (active) {
+                long pid = p.id();
+                Ui.button(g, font, hits, left + W - 64, ry - 1, 56, 11, Component.translatable("lordsoutpost.ui.build.cancel"), true, false, mouseX, mouseY,
+                        () -> Net.action(view.id, Action.CANCEL_PROJECT, t -> t.putLong("id", pid)), Component.translatable("lordsoutpost.ui.build.cancel.tip"));
+            }
+            ry += 13;
+        }
+        ry += 4;
+        for (net.minecraft.util.FormattedCharSequence line : font.split(Component.translatable("lordsoutpost.ui.build.hint"), W - 16)) {
+            if (ry > top + H - 10) break;
+            g.drawString(font, line, x, ry, Ui.MUTED, false);
+            ry += 9;
         }
     }
 

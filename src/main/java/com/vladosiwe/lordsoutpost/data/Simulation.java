@@ -170,7 +170,9 @@ public final class Simulation {
 
     private static void build(Outpost o, long now, double days, double boost) {
         o.stalledOn = null;
-        if (o.complete()) return;
+        boolean projects = false;
+        for (com.vladosiwe.lordsoutpost.outpost.Project p : o.projects) if (p.active()) projects = true;
+        if (o.complete() && !projects) return;
         List<Step> plan = o.nextPlan();
         int builders = o.activeCount(Role.BUILDER);
         boolean helped = o.boosted(Resource.WOOD, now) || o.boosted(Resource.STONE, now) || o.boosted(Resource.IRON, now);
@@ -191,9 +193,12 @@ public final class Simulation {
             o.steps++;
             o.buildCredit -= 1;
         }
+        // Заказанные Лордом постройки получают то, что осталось после плана тира.
+        o.buildCredit = Projects.pay(o, o.buildCredit);
+        Projects.prune(o);
         o.dirtyForClients = true;
         // Тир считается достроенным, когда выполнен весь план. Если чанки выгружены, блоки встанут при возвращении игрока.
-        if (o.steps >= plan.size()) {
+        if (!o.complete() && o.steps >= plan.size()) {
             boolean physicalDone = o.placedTier == o.tier + 1 && o.placed >= plan.size() && o.claims.isEmpty();
             if (!o.online || physicalDone) {
                 o.tier++;

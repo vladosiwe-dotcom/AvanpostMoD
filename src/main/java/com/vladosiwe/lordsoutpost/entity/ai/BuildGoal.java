@@ -1,6 +1,8 @@
 package com.vladosiwe.lordsoutpost.entity.ai;
 
+import com.vladosiwe.lordsoutpost.blueprint.Step;
 import com.vladosiwe.lordsoutpost.data.ChunkReconciliation;
+import com.vladosiwe.lordsoutpost.data.Projects;
 import com.vladosiwe.lordsoutpost.entity.WorkerEntity;
 import com.vladosiwe.lordsoutpost.outpost.Outpost;
 import com.vladosiwe.lordsoutpost.outpost.Role;
@@ -13,6 +15,7 @@ import net.minecraft.world.entity.ai.goal.Goal;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.EnumSet;
+import java.util.List;
 
 /**
  * Строитель резервирует шаг чертежа, находит доступное место рядом с ним, расчищает естественные препятствия
@@ -21,6 +24,8 @@ import java.util.EnumSet;
 public class BuildGoal extends Goal {
     private final WorkerEntity mob;
     private int claim = -1;
+    /** Шаг заказанной Лордом постройки (ключ из Projects) или -1. План тира важнее: проект берётся, только когда в плане работы нет. */
+    private long projectKey = -1;
     private BlockPos target = BlockPos.ZERO;
     @Nullable private BlockPos workPosition;
     @Nullable private Path workPath;
@@ -37,7 +42,7 @@ public class BuildGoal extends Goal {
     public boolean canUse() {
         if (mob.level().isClientSide || mob.role() != Role.BUILDER || mob.caravanId != null || mob.cargoReadyToDeposit()) return false;
         Outpost o = mob.outpost();
-        return o != null && (claim >= 0 || ChunkReconciliation.hasWork(o));
+        return o != null && (claim >= 0 || projectKey >= 0 || ChunkReconciliation.hasWork(o) || Projects.hasWork(o));
     }
 
     @Override
@@ -49,47 +54,50 @@ public class BuildGoal extends Goal {
     public void tick() {
         Outpost o = mob.outpost();
         if (o == null || !(mob.level() instanceof ServerLevel level)) return;
-        if (claim < 0) {
+        if (!hasJob()) {
             if (--cooldown > 0) return;
             claim = ChunkReconciliation.claim(o, level.getGameTime());
-            if (claim < 0) {
-                lastResult = "no-claim";
-                cooldown = 10;
-                return;
-            }
             if (claim >= o.nextPlan().size()) {
                 ChunkReconciliation.releaseClaim(o, claim);
                 claim = -1;
                 cooldown = 20;
                 return;
             }
-            target = o.world(o.nextPlan().get(claim).pos());
+            if (claim < 0) projectKey = Projects.claim(o, level.getGameTime());
+            Step step = jobStep(o);
+            if (step == null) {
+                releaseJob(o);
+                lastResult = "no-claim";
+                cooldown = 10;
+                return;
+            }
+            target = o.world(step.pos());
             workPosition = null;
             timeout = 200;
-            lastResult = "claimed";
+            lastResult = projectKey >= 0 ? "claimed-project" : "claimed";
         }
 
-        if (!ChunkReconciliation.renewClaim(o, claim, level.getGameTime())) {
+        Step step = jobStep(o);
+        if (step == null || !renewJob(o, level.getGameTime())) {
             claim = -1;
+            projectKey = -1;
             workPosition = null;
             lastResult = "claim-expired";
             return;
         }
-        if (level.getBlockState(target).equals(o.nextPlan().get(claim).state())) {
-            ChunkReconciliation.place(level, o, claim, false);
+        if (level.getBlockState(target).equals(step.state())) {
+            placeJob(level, o, false);
             lastResult = "already-correct";
-            claim = -1;
             workPosition = null;
             cooldown = 2;
             return;
         }
 
-        if (ChunkReconciliation.blockedByForeignBlock(level, o, claim)) {
+        if (blockedJob(level, o)) {
             // Не сносим сундуки, посевы, декор и постройки игрока ради автоматического чертежа:
             // чертёж уступает клетку, иначе строители вечно возвращались бы к этому шагу и стройка стояла.
             lastResult = "yield-to-player:" + level.getBlockState(target);
-            ChunkReconciliation.yieldToPlayer(o, claim);
-            claim = -1;
+            yieldJob(o);
             workPosition = null;
             workPath = null;
             cooldown = 2;
@@ -141,22 +149,71 @@ public class BuildGoal extends Goal {
             return;
         }
 
-        if (ChunkReconciliation.clearNaturalObstruction(level, o, claim, mob)) {
+        boolean cleared = projectKey >= 0 ? ChunkReconciliation.clearNaturalObstruction(level, o, step, null, mob)
+                : ChunkReconciliation.clearNaturalObstruction(level, o, claim, mob);
+        if (cleared) {
             lastResult = "cleared-natural-obstruction";
             workPosition = null;
             timeout = 200;
             return;
         }
         mob.swing(InteractionHand.MAIN_HAND);
-        ChunkReconciliation.place(level, o, claim, true);
+        placeJob(level, o, true);
         lastResult = "placed";
-        claim = -1;
         workPosition = null;
         cooldown = 8;
     }
 
+    // ---------- Текущая работа: шаг плана тира или шаг заказанной постройки ----------
+
+    private boolean hasJob() {
+        return claim >= 0 || projectKey >= 0;
+    }
+
+    @Nullable
+    private Step jobStep(Outpost o) {
+        if (claim >= 0) {
+            List<Step> plan = o.nextPlan();
+            return claim < plan.size() ? plan.get(claim) : null;
+        }
+        return projectKey >= 0 ? Projects.step(o, projectKey) : null;
+    }
+
+    private boolean renewJob(Outpost o, long now) {
+        return claim >= 0 ? ChunkReconciliation.renewClaim(o, claim, now) : Projects.renew(o, projectKey, now);
+    }
+
+    private void placeJob(ServerLevel level, Outpost o, boolean effects) {
+        if (claim >= 0) ChunkReconciliation.place(level, o, claim, effects);
+        else if (projectKey >= 0) Projects.place(level, o, projectKey, effects);
+        claim = -1;
+        projectKey = -1;
+    }
+
+    private boolean blockedJob(ServerLevel level, Outpost o) {
+        return claim >= 0 ? ChunkReconciliation.blockedByForeignBlock(level, o, claim) : Projects.blocked(level, o, projectKey);
+    }
+
+    private void yieldJob(Outpost o) {
+        if (claim >= 0) ChunkReconciliation.yieldToPlayer(o, claim);
+        else if (projectKey >= 0) Projects.yieldCell(o, projectKey);
+        claim = -1;
+        projectKey = -1;
+    }
+
+    private int jobFailures(Outpost o) {
+        return claim >= 0 ? ChunkReconciliation.stepFailures(o, claim) : projectKey >= 0 ? Projects.failures(o, projectKey) : 0;
+    }
+
+    private void releaseJob(@Nullable Outpost o) {
+        ChunkReconciliation.releaseClaim(o, claim);
+        if (o != null) Projects.release(o, projectKey);
+        claim = -1;
+        projectKey = -1;
+    }
+
     public boolean reservesWorkPosition(BlockPos pos) {
-        return claim >= 0 && workPosition != null && workPosition.equals(pos);
+        return hasJob() && workPosition != null && workPosition.equals(pos);
     }
 
     private boolean reservedByAnotherBuilder(ServerLevel level, Outpost o, BlockPos feet) {
@@ -174,7 +231,7 @@ public class BuildGoal extends Goal {
         double bestDistance = Double.MAX_VALUE;
         double tx = block.getX() + 0.5, ty = block.getY() + 0.5, tz = block.getZ() + 0.5;
         // После двух неудач строитель ищет опору шире: с соседнего яруса лесов, со стены или крыши рядом.
-        boolean wide = ChunkReconciliation.stepFailures(o, claim) >= 2;
+        boolean wide = jobFailures(o) >= 2;
         int span = wide ? 2 : 1, up = wide ? 2 : 1, down = wide ? -6 : -4;
         double reach = reach(o);
         for (int dy = up; dy >= down; dy--) {
@@ -210,7 +267,8 @@ public class BuildGoal extends Goal {
     }
 
     public String debugStatus() {
-        return "BuildGoal{pos=" + mob.blockPosition().toShortString() + ",idx=" + claim + ",target=" + target.toShortString()
+        return "BuildGoal{pos=" + mob.blockPosition().toShortString() + ",idx=" + claim + (projectKey >= 0 ? ",project=" + Long.toHexString(projectKey) : "")
+                + ",target=" + target.toShortString()
                 + ",block=" + mob.level().getBlockState(target)
                 + ",work=" + (workPosition == null ? "-" : workPosition.toShortString())
                 + ",path=" + (workPath == null ? "-" : workPath.getTarget().toShortString() + "/" + workPath.getNodeCount())
@@ -228,13 +286,15 @@ public class BuildGoal extends Goal {
 
     /** Обычная досягаемость руки 4 блока; для трудных клеток — 5, как у игрока. */
     private double reach(Outpost o) {
-        return ChunkReconciliation.stepFailures(o, claim) >= 2 ? 5.0 : 4.0;
+        return jobFailures(o) >= 2 ? 5.0 : 4.0;
     }
 
     /** Шаг недоступен: откладываем его, а строитель берёт следующий. */
     private void defer(Outpost o, long now) {
-        ChunkReconciliation.deferStep(o, claim, now);
+        if (claim >= 0) ChunkReconciliation.deferStep(o, claim, now);
+        else if (projectKey >= 0) Projects.defer(o, projectKey, now);
         claim = -1;
+        projectKey = -1;
         workPosition = null;
         workPath = null;
         cooldown = 10;
@@ -242,8 +302,7 @@ public class BuildGoal extends Goal {
     }
 
     private void release(Outpost o, int retryTicks) {
-        ChunkReconciliation.releaseClaim(o, claim);
-        claim = -1;
+        releaseJob(o);
         workPosition = null;
         workPath = null;
         cooldown = retryTicks;
@@ -252,8 +311,7 @@ public class BuildGoal extends Goal {
 
     @Override
     public void stop() {
-        ChunkReconciliation.releaseClaim(mob.outpost(), claim);
-        claim = -1;
+        releaseJob(mob.outpost());
         workPosition = null;
         workPath = null;
         mob.getNavigation().stop();

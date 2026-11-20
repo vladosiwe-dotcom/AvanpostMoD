@@ -76,21 +76,44 @@ public final class MapTiles {
         if (QUEUED.add(pos.toLong())) QUEUE.add(pos);
     }
 
-    /** Смена мира или измерения: у каждого свой набор плиток. */
-    private static void ensureWorld(Minecraft mc, ClientLevel level) {
-        String server = mc.getSingleplayerServer() != null ? "sp_" + mc.getSingleplayerServer().getWorldData().getLevelName()
-                : mc.getCurrentServer() != null ? "mp_" + mc.getCurrentServer().ip : "unknown";
-        String key = (server + "/" + level.dimension().location()).replaceAll("[^A-Za-z0-9_./-]", "_").replace(':', '_');
-        if (key.equals(worldKey)) return;
+    /**
+     * Смена мира или измерения: у каждого свой набор плиток. Мир узнаётся по id, который присылает сервер
+     * (он хранится в сохранении мира), а не по названию: иначе новый мир с тем же именем подхватывал карту старого.
+     * Пока id не пришёл, плитки не читаются и не пишутся.
+     */
+    private static boolean ensureWorld(Minecraft mc, ClientLevel level) {
+        String world = com.vladosiwe.lordsoutpost.client.ClientState.worldId;
+        if (world.isEmpty() || !world.matches("[0-9a-fA-F-]{36}")) return false;
+        String key = world + "/" + level.dimension().location().toString().replace(':', '_').replaceAll("[^A-Za-z0-9_./-]", "_");
+        if (key.equals(worldKey)) return true;
         flush();
         worldKey = key;
-        dir = mc.gameDirectory.toPath().resolve("lordsoutpost").resolve("map").resolve(key.replace("..", "_"));
+        Path root = mc.gameDirectory.toPath().resolve("lordsoutpost").resolve("map");
+        dropLegacy(root);
+        dir = root.resolve(key.replace("..", "_"));
+        return true;
+    }
+
+    /** Плитки старой схемы (папки по названию мира или адресу сервера) путали миры: они удаляются один раз. */
+    private static void dropLegacy(Path root) {
+        try (var dirs = Files.list(root)) {
+            for (Path p : dirs.toList()) {
+                String n = p.getFileName().toString();
+                if (Files.isDirectory(p) && (n.startsWith("sp_") || n.startsWith("mp_") || n.equals("unknown"))) {
+                    try (var walk = Files.walk(p)) {
+                        for (Path f : walk.sorted(java.util.Comparator.reverseOrder()).toList()) Files.deleteIfExists(f);
+                    }
+                }
+            }
+        } catch (IOException | RuntimeException ignored) {
+            // Папки может не быть — это нормально.
+        }
     }
 
     public static void tick(Minecraft mc) {
         ClientLevel level = mc.level;
         if (level == null || mc.player == null) return;
-        ensureWorld(mc, level);
+        if (!ensureWorld(mc, level)) return;
         ticks++;
         // Раз в пять секунд перерисовываем чанки вокруг игрока: он мог что-то построить.
         if (ticks % 100 == 0) {
@@ -167,6 +190,7 @@ public final class MapTiles {
         Region region = REGIONS.getAndMoveToLast(key);
         if (region != null) return region;
         if (!create && MISSING.contains(key)) return null;
+        if (dir == null) return null;
         NativeImage image = null;
         Path file = file(rx, rz);
         if (file != null && Files.isRegularFile(file)) {

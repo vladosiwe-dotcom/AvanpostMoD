@@ -107,6 +107,13 @@ public final class Outpost {
     public int questCounter;
     /** Дань, которая ещё не легла в сундук (накоплена, пока чанки были выгружены или сундук полон). */
     public final List<ItemStack> tribute = new ArrayList<>();
+    /** Постройки, заказанные Лордом сверх плана тиров (сохраняются). */
+    public final List<Project> projects = new ArrayList<>();
+    public long projectCounter;
+    /** Занятые строителями шаги проектов: ключ (id проекта, шаг) -> тик истечения (не сохраняется). */
+    public transient final Map<Long, Long> projectClaims = new HashMap<>();
+    public transient final Map<Long, Long> projectDeferred = new HashMap<>();
+    public transient final Map<Long, Integer> projectFailures = new HashMap<>();
     /** Личный инвентарь лавки торговца: настоящий товар, взятый со склада (сохраняется). */
     public final List<ItemStack> shopStock = new ArrayList<>();
     public double tributeGold;
@@ -387,7 +394,15 @@ public final class Outpost {
     }
 
     public int populationCap() {
-        return switch (tier) { case 1 -> 10; case 2 -> 18; default -> 28; };
+        int base = switch (tier) { case 1 -> 10; case 2 -> 18; default -> 28; };
+        // Каждый построенный по заказу дом — ещё две кровати (не больше восьми домов).
+        return base + 2 * Math.min(8, builtProjects(Project.Type.HOUSE));
+    }
+
+    public int builtProjects(Project.Type type) {
+        int n = 0;
+        for (Project p : projects) if (p.type == type && p.built(this)) n++;
+        return n;
     }
 
     public int infirmaryBeds() {
@@ -403,6 +418,8 @@ public final class Outpost {
         double sum = 0;
         for (Resident r : residents) sum += r.power();
         double walls = switch (tier) { case 1 -> 1.0; case 2 -> 1.3; default -> 1.6; };
+        // Заказанные башни и участки стен усиливают оборону (до +30%).
+        walls += Math.min(0.3, 0.05 * builtProjects(Project.Type.WATCHTOWER) + 0.03 * builtProjects(Project.Type.WALL));
         return sum * walls * law.defense();
     }
 
@@ -539,6 +556,10 @@ public final class Outpost {
         ListTag shop = new ListTag();
         for (ItemStack s : shopStock) if (!s.isEmpty()) shop.add(s.save(registries));
         t.put("shop", shop);
+        ListTag pr = new ListTag();
+        for (Project p : projects) pr.add(p.save());
+        t.put("projects", pr);
+        t.putLong("projectCounter", projectCounter);
         t.putDouble("tributeGold", tributeGold);
         t.putInt("pen", penAnimals);
         t.putDouble("arcaneWork", arcaneWork);
@@ -623,6 +644,12 @@ public final class Outpost {
         o.tributeGold = t.getDouble("tributeGold");
         ListTag shop = t.getList("shop", Tag.TAG_COMPOUND);
         for (int i = 0; i < shop.size(); i++) ItemStack.parse(registries, shop.getCompound(i)).filter(s -> !s.isEmpty()).ifPresent(o.shopStock::add);
+        ListTag pr = t.getList("projects", Tag.TAG_COMPOUND);
+        for (int i = 0; i < pr.size(); i++) {
+            Project p = Project.load(pr.getCompound(i));
+            if (p != null) o.projects.add(p);
+        }
+        o.projectCounter = t.getLong("projectCounter");
         o.penAnimals = Math.max(0, t.getInt("pen"));
         o.arcaneWork = t.getDouble("arcaneWork");
         o.growth = t.getDouble("growth");

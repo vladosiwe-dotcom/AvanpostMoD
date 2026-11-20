@@ -96,6 +96,21 @@ public final class SettlementCommands {
             return 0;
         }
         ServerPlayer player = (ServerPlayer) c.getSource().getEntity();
+        String error = relocate(player, o, zone, here);
+        if (error != null) {
+            c.getSource().sendFailure(Component.translatable(error));
+            return 0;
+        }
+        c.getSource().sendSuccess(() -> Component.translatable("lordsoutpost.settlement.zone_done", zone.id), false);
+        return 1;
+    }
+
+    /**
+     * Переносит зону туда, где стоит Лорд (или возвращает её на место по чертежу). Общий путь для команды и меню.
+     * Возвращает ключ ошибки или null.
+     */
+    public static String relocate(ServerPlayer player, Outpost o, WorkZone zone, boolean here) {
+        if (!zone.relocatable) return "lordsoutpost.settlement.zone_fixed";
         ServerLevel level = player.server.overworld();
         long now = level.getGameTime();
         if (!here) {
@@ -103,21 +118,14 @@ public final class SettlementCommands {
             o.log(now, "lordsoutpost.event.zone_reset", zone.id);
         } else {
             BlockPos at = player.blockPosition();
-            if (player.level().dimension() != Level.OVERWORLD || !o.insideWalls(at)) {
-                c.getSource().sendFailure(Component.translatable("lordsoutpost.settlement.zone_outside"));
-                return 0;
-            }
-            if (zone == WorkZone.FARM && !tillable(level, at)) {
-                c.getSource().sendFailure(Component.translatable("lordsoutpost.settlement.zone_no_soil"));
-                return 0;
-            }
+            if (player.level().dimension() != Level.OVERWORLD || !o.insideWalls(at)) return "lordsoutpost.settlement.zone_outside";
+            if (zone == WorkZone.FARM && !tillable(level, at)) return "lordsoutpost.settlement.zone_no_soil";
             o.zones.relocate(zone, at);
             o.log(now, "lordsoutpost.event.zone_moved", zone.id, at.toShortString());
         }
         o.dirtyForClients = true;
         OutpostSavedData.get(level).setDirty();
-        c.getSource().sendSuccess(() -> Component.translatable("lordsoutpost.settlement.zone_done", zone.id), false);
-        return 1;
+        return null;
     }
 
     /** Под новой грядкой должна быть земля: хотя бы половина клеток 5×5 вспахивается или уже вспахана. */

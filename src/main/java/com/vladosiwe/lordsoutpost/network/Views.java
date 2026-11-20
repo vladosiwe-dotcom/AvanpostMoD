@@ -81,7 +81,9 @@ public final class Views {
             list.add(b);
         }
         tag.put("outposts", list);
+        tag.putString("world", data.worldId().toString());
         tag.putLong("own", own == null ? 0 : own.id);
+        if (own != null) tag.put("hud", hud(own));
         if (own == null || !detailed) return tag;
 
         if (!own.complete()) tag.putIntArray("nextOutline", flat(own.outline(Layout.RADIUS[own.tier + 1])));
@@ -223,6 +225,7 @@ public final class Views {
 
         // Права и дипломатию видит только Лорд.
         if (access == AccessLevel.LORD) {
+            t.put("manage", manage(level, o, now));
             t.put("accessRules", o.access.save());
             ListTag neighbors = new ListTag();
             OutpostSavedData.Knowledge k = data.knowledge(viewer.getUUID());
@@ -249,6 +252,114 @@ public final class Views {
             t.put("neighbors", neighbors);
         }
         return t;
+    }
+
+    /**
+     * Хозяйство для Лорда: оценки планировщика, задачи жителей, рабочие зоны, лавка, магия и заказанные постройки.
+     */
+    private static CompoundTag manage(ServerLevel level, Outpost o, long now) {
+        CompoundTag m = new CompoundTag();
+        m.putFloat("foodDays", (float) com.vladosiwe.lordsoutpost.data.OutpostDirector.foodDays(o));
+        if (o.scarce != null) m.putString("scarce", o.scarce.id);
+        m.putBoolean("foodCritical", o.foodCritical);
+        CompoundTag pr = new CompoundTag();
+        for (var e : o.priorities.entrySet()) if (e.getValue() != com.vladosiwe.lordsoutpost.data.OutpostDirector.BASE) pr.putInt(e.getKey().id, e.getValue());
+        m.put("priorities", pr);
+
+        ListTag tasks = new ListTag();
+        for (com.vladosiwe.lordsoutpost.outpost.OutpostTask task : o.tasks.all()) {
+            if (!task.active() || tasks.size() >= 8) continue;
+            CompoundTag tt = new CompoundTag();
+            tt.putString("type", task.type.name().toLowerCase(java.util.Locale.ROOT));
+            tt.putString("state", task.state.name().toLowerCase(java.util.Locale.ROOT));
+            Resident who = task.executor == null ? null : o.resident(task.executor);
+            Resident subject = task.subject == null ? null : o.resident(task.subject);
+            tt.putString("who", who == null ? "" : who.name);
+            tt.putString("subject", subject == null ? "" : subject.name);
+            tt.putString("reason", task.reason);
+            if (task.product != null) tt.putString("product", net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(task.product).toString());
+            tasks.add(tt);
+        }
+        m.put("tasks", tasks);
+
+        ListTag zones = new ListTag();
+        for (com.vladosiwe.lordsoutpost.outpost.WorkZone z : com.vladosiwe.lordsoutpost.outpost.WorkZone.VALUES) {
+            if (!o.hasZone(z)) continue;
+            CompoundTag zt = new CompoundTag();
+            zt.putString("id", z.id);
+            zt.putBoolean("relocatable", z.relocatable);
+            zt.putBoolean("moved", o.zones.override(z) != null);
+            String problem = o.zones.problem(z);
+            if (problem != null) zt.putString("problem", problem);
+            zones.add(zt);
+        }
+        m.put("zones", zones);
+
+        ListTag shop = new ListTag();
+        for (net.minecraft.world.item.ItemStack st : o.shopStock) {
+            CompoundTag it = new CompoundTag();
+            it.putString("item", net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString());
+            it.putInt("count", st.getCount());
+            shop.add(it);
+        }
+        m.put("shop", shop);
+
+        CompoundTag magic = new CompoundTag();
+        magic.putInt("mages", o.activeCount(com.vladosiwe.lordsoutpost.outpost.Role.MAGE));
+        magic.putBoolean("tower", o.tier >= 3 && o.hasZone(com.vladosiwe.lordsoutpost.outpost.WorkZone.MAGE_TOWER));
+        magic.putFloat("arcane", (float) o.stock(Resource.ARCANE));
+        magic.putFloat("work", (float) o.arcaneWork);
+        magic.putBoolean("iss", com.vladosiwe.lordsoutpost.compat.MagicLoot.ironsLoaded());
+        magic.putBoolean("pyroAvailable", com.vladosiwe.lordsoutpost.compat.Pyromancer.available());
+        magic.putBoolean("pyromancer", o.pyromancer != null);
+        magic.putInt("pyroRejoin", (int) Math.max(0, (o.pyromancerRejoinAt - now) / 20));
+        m.put("magic", magic);
+
+        ListTag projects = new ListTag();
+        for (com.vladosiwe.lordsoutpost.outpost.Project p : o.projects) {
+            if (p.state == com.vladosiwe.lordsoutpost.outpost.Project.State.CANCELLED) continue;
+            CompoundTag pt = new CompoundTag();
+            pt.putLong("id", p.id);
+            pt.putString("type", p.type.id);
+            pt.putByte("state", (byte) p.state.ordinal());
+            pt.putFloat("progress", p.progress(o));
+            pt.putInt("paid", p.paid);
+            pt.putInt("size", p.size(o));
+            projects.add(pt);
+        }
+        m.put("projects", projects);
+        // Стоимость каждого типа постройки в ресурсах (по шагам её чертежа).
+        CompoundTag costs = new CompoundTag();
+        for (com.vladosiwe.lordsoutpost.outpost.Project.Type type : com.vladosiwe.lordsoutpost.outpost.Project.Type.VALUES) {
+            CompoundTag c = new CompoundTag();
+            var probe = new com.vladosiwe.lordsoutpost.outpost.Project(0, type, o.center, net.minecraft.world.level.block.Rotation.NONE);
+            for (var step : probe.steps(o)) if (step.cost() != null) c.putInt(step.cost().id, c.getInt(step.cost().id) + 1);
+            costs.put(type.id, c);
+        }
+        m.put("costs", costs);
+        m.putInt("projectLimit", com.vladosiwe.lordsoutpost.data.Projects.MAX_ACTIVE);
+        m.putInt("houses", o.builtProjects(com.vladosiwe.lordsoutpost.outpost.Project.Type.HOUSE));
+        return m;
+    }
+
+    /** Короткая сводка своего аванпоста для HUD (приходит с картой раз в несколько секунд). */
+    private static CompoundTag hud(Outpost o) {
+        CompoundTag h = new CompoundTag();
+        h.putByte("tier", (byte) o.tier);
+        h.putFloat("progress", o.progress());
+        h.putBoolean("complete", o.complete());
+        h.putInt("pop", o.residents.size());
+        h.putInt("popCap", o.populationCap());
+        h.putFloat("foodDays", (float) com.vladosiwe.lordsoutpost.data.OutpostDirector.foodDays(o));
+        h.putBoolean("starving", o.starving || o.foodCritical);
+        h.putBoolean("raid", o.raid != null);
+        if (o.scarce != null) h.putString("scarce", o.scarce.id);
+        h.putInt("problems", o.zones.problems().size());
+        h.putInt("tasks", o.tasks.activeCount());
+        int projects = 0;
+        for (com.vladosiwe.lordsoutpost.outpost.Project p : o.projects) if (p.active()) projects++;
+        h.putInt("projects", projects);
+        return h;
     }
 
     public static BlockPos pos(long packed) {

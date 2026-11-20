@@ -17,7 +17,13 @@ public enum Action {
     CARAVAN,
     DELIVER,
     ABANDON,
-    CLOSE;
+    CLOSE,
+    /** Заказ постройки перед Лордом: {type}. */
+    ORDER_PROJECT,
+    /** Отмена заказа: {id}. */
+    CANCEL_PROJECT,
+    /** Перенос рабочей зоны к Лорду или назад по чертежу: {zone, here}. */
+    MOVE_ZONE;
 
     public static final Action[] VALUES = values();
 }

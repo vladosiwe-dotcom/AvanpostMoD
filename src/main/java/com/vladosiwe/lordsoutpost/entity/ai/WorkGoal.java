@@ -219,7 +219,7 @@ public class WorkGoal extends Goal {
         Role role = r.role;
         if (role == Role.BUILDER && phase == Phase.DECIDE) {
             // Строителю нечего строить: планировщик решает, какой ресурс он пойдёт добывать руками.
-            Role helper = ChunkReconciliation.hasWork(o) ? null : OutpostDirector.helperRole(o);
+            Role helper = ChunkReconciliation.hasWork(o) || com.vladosiwe.lordsoutpost.data.Projects.hasWork(o) ? null : OutpostDirector.helperRole(o);
             acting = helper == null ? Role.BUILDER : helper;
         } else if (role != Role.BUILDER) {
             acting = role;
@@ -234,7 +234,11 @@ public class WorkGoal extends Goal {
                 return;
             }
             release();
-            List<BlockPos> beds = o.markers(Marker.HOUSING);
+            List<BlockPos> beds = new ArrayList<>(o.markers(Marker.HOUSING));
+            // Дома, построенные по заказу Лорда, — тоже жильё.
+            for (com.vladosiwe.lordsoutpost.outpost.Project p : o.projects) {
+                if (p.type == com.vladosiwe.lordsoutpost.outpost.Project.Type.HOUSE && p.state == com.vladosiwe.lordsoutpost.outpost.Project.State.DONE) beds.add(p.origin.above());
+            }
             BlockPos bed = beds.isEmpty() ? o.marker(Marker.YARD) : beds.get(Math.floorMod(r.id.hashCode(), beds.size()));
             if (go(o, bed, 2.0, 400)) {
                 // Дошёл до дома: ложится в свободную кровать рядом.
@@ -2043,6 +2047,12 @@ public class WorkGoal extends Goal {
             if (!go(o, spot, role == Role.SKOTOVOD ? 4.5 : 2.5, 400)) return;
             timer = 140 + mob.getRandom().nextInt(120);
         }
+        // Придворный маг работает у стола зачарования: видно, что идёт его работа (и копится шкала в окне «Хозяйство»).
+        if (role == Role.MAGE && timer % 10 == 0 && o.tier >= 3 && o.hasZone(WorkZone.MAGE_TOWER)) {
+            BlockPos at = o.zone(WorkZone.MAGE_TOWER);
+            level.sendParticles(net.minecraft.core.particles.ParticleTypes.ENCHANT, at.getX() + 0.5, at.getY() + 1.2, at.getZ() + 0.5,
+                    6, 0.6, 0.4, 0.6, 0.6);
+        }
         if (--timer % 25 == 0) {
             SoundEvent sound = workSound(role);
             if (sound != null) {
@@ -2063,7 +2073,7 @@ public class WorkGoal extends Goal {
             case FARMER -> o.zone(WorkZone.FARM).offset(1, 0, 0);
             case MINER -> o.marker(Marker.MINE);
             case SMITH -> o.design().markers(Marker.SMITHY).isEmpty() ? o.marker(Marker.STORAGE) : o.marker(Marker.SMITHY);
-            case MAGE -> o.design().markers(Marker.MAGE).isEmpty() ? o.marker(Marker.THRONE) : o.marker(Marker.MAGE);
+            case MAGE -> o.hasZone(WorkZone.MAGE_TOWER) ? o.zone(WorkZone.MAGE_TOWER) : o.marker(Marker.THRONE);
             case SKOTOVOD -> o.design().markers(Marker.PEN).isEmpty() ? o.marker(Marker.YARD) : o.marker(Marker.PEN);
             case STEWARD -> switch (cycle % 3) {
                 case 0 -> o.marker(Marker.THRONE);

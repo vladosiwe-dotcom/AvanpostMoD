@@ -655,6 +655,64 @@ public final class OutpostGameTests {
         h.succeed();
     }
 
+    /**
+     * Заказ построек через меню: место будущих тиров не занимается, постройка оплачивается из той же экономики A-Life,
+     * дом добавляет места жителям, отмена возвращает неистраченное на склад.
+     */
+    @GameTest(template = "empty")
+    public static void ordersRespectFortAndEconomy(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        // Вдали от сетки игровых тестов: соседние площадки иначе заняли бы место постройки.
+        BlockPos base = FAR.offset(1280, 0, 0);
+        for (int cx = -3; cx <= 4; cx++) for (int cz = -3; cz <= 3; cz++) level.getChunk((base.getX() >> 4) + cx, (base.getZ() >> 4) + cz);
+        BlockPos ground = new BlockPos(base.getX(), level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, base.getX(), base.getZ()) - 1, base.getZ());
+        Outpost o = virtualOutpost(level, data, ground, 1, UUID.randomUUID());
+        try {
+            long now = level.getGameTime();
+            var fort = com.vladosiwe.lordsoutpost.data.Projects.order(level, o, com.vladosiwe.lordsoutpost.outpost.Project.Type.HOUSE,
+                    o.center, net.minecraft.core.Direction.EAST, now);
+            h.assertTrue(fort == com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OVERLAPS_FORT
+                            || fort == com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OCCUPIED,
+                    "внутри чертежа форта заказ невозможен, получено " + fort);
+            int edge = Layout.RADIUS[3] + Layout.MARGIN + 3;
+            BlockPos stand = o.center.offset(edge, 0, 0);
+            for (int dx = -2; dx <= 16; dx++)
+                for (int dz = -8; dz <= 8; dz++) level.getChunk((stand.getX() + dx) >> 4, (stand.getZ() + dz) >> 4);
+            int capBefore = o.populationCap();
+            var ok = com.vladosiwe.lordsoutpost.data.Projects.order(level, o, com.vladosiwe.lordsoutpost.outpost.Project.Type.HOUSE,
+                    stand, net.minecraft.core.Direction.EAST, now);
+            h.assertTrue(ok == com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OK, "дом за стенами должен приниматься, получено " + ok);
+            var house = o.projects.get(o.projects.size() - 1);
+            // План тира стоит (форт достроен до 3-го тира), весь кредит идёт на заказ.
+            o.tier = 3;
+            o.setStock(Resource.WOOD, 500);
+            o.setStock(Resource.STONE, 500);
+            o.setStock(Resource.FOOD, 500);
+            long t = level.getGameTime();
+            o.lastSim = t;
+            simulate(level, data, o, t, 0.3);
+            h.assertTrue(house.paid >= house.size(o), "дом должен быть оплачен целиком: " + house.paid + "/" + house.size(o));
+            h.assertTrue(o.populationCap() == capBefore - 10 + 28 + 2 || o.populationCap() > 28, "дом добавляет два места: " + o.populationCap());
+            var wall = com.vladosiwe.lordsoutpost.data.Projects.order(level, o, com.vladosiwe.lordsoutpost.outpost.Project.Type.WALL,
+                    stand.offset(0, 0, 8), net.minecraft.core.Direction.EAST, now);
+            if (wall == com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OK) {
+                var w = o.projects.get(o.projects.size() - 1);
+                o.setStock(Resource.STONE, 0);
+                w.paid = 5;
+                double before = o.stock(Resource.STONE);
+                com.vladosiwe.lordsoutpost.data.Projects.cancel(o, w.id, now);
+                h.assertTrue(o.stock(Resource.STONE) - before >= 5 - 1e-6, "отмена возвращает оплаченное, но не поставленное");
+            }
+            Outpost copy = Outpost.load(o.save(level.registryAccess()), level.registryAccess());
+            h.assertTrue(copy.projects.size() == o.projects.size() && copy.projects.get(0).paid == o.projects.get(0).paid, "заказы сохраняются");
+        } finally {
+            OutpostManager.abandon(data, o, level.getGameTime());
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
     /** Тир кирки ограничен одновременно развитием форта и личным уровнем шахтёра. */
     @GameTest(template = "empty")
     public static void minerToolTierUsesBothProgressions(GameTestHelper h) {

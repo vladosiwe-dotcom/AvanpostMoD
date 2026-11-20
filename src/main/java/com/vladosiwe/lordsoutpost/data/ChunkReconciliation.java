@@ -92,6 +92,7 @@ public final class ChunkReconciliation {
                     o.claims.clear();
                     o.deferredSteps.clear();
                     o.stepFailures.clear();
+                    o.projectClaims.clear();
                 }
                 if (o.online) syncResidents(level, data, o, now);
                 if (o.state == OutpostState.OWNED) {
@@ -171,6 +172,7 @@ public final class ChunkReconciliation {
             o.placed = Math.min(o.steps, plan.size());
         }
         if (o.state == OutpostState.WILD && !o.lootSeeded) seedTreasure(level, o);
+        Projects.arrive(level, o);
         data.setDirty();
         return true;
     }
@@ -416,12 +418,17 @@ public final class ChunkReconciliation {
     public static boolean clearNaturalObstruction(ServerLevel level, Outpost o, int index, WorkerEntity builder) {
         List<Step> plan = o.nextPlan();
         if (index < 0 || index >= plan.size()) return false;
-        Step step = plan.get(index);
+        return clearNaturalObstruction(level, o, plan.get(index), o.design(), builder);
+    }
+
+    /** То же для любого шага (в том числе шага заказанной постройки, где прежнего чертежа нет). */
+    public static boolean clearNaturalObstruction(ServerLevel level, Outpost o, Step step,
+                                                  @Nullable com.vladosiwe.lordsoutpost.blueprint.Design before, WorkerEntity builder) {
         BlockPos pos = o.world(step.pos());
         BlockState old = level.getBlockState(pos);
         if (old.isAir() || old.equals(step.state()) || level.getBlockEntity(pos) != null || o.placedByPlayer(pos)
                 || !isNaturalObstruction(old, step.state())) return false;
-        var previous = o.design().cells.get(step.pos());
+        var previous = before == null ? null : before.cells.get(step.pos());
         if (previous != null && previous.state() == old) return false;
         builder.swing(InteractionHand.MAIN_HAND);
         for (ItemStack drop : Block.getDrops(old, level, pos, null, builder, builder.getMainHandItem())) {
@@ -457,7 +464,7 @@ public final class ChunkReconciliation {
         advancePlaced(o);
     }
 
-    private static void placeStep(ServerLevel level, Outpost o, Step step, boolean effects) {
+    public static void placeStep(ServerLevel level, Outpost o, Step step, boolean effects) {
         BlockPos pos = o.world(step.pos());
         if (level.isOutsideBuildHeight(pos)) return;
         BlockState state = step.state();

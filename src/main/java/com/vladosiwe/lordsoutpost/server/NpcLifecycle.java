@@ -79,6 +79,10 @@ public final class NpcLifecycle {
      */
     public static BlockPos postFor(Outpost o, Resident r) {
         List<BlockPos> high = new ArrayList<>(o.markers(Marker.GUARD_POST));
+        // Построенные по заказу сторожевые башни — дополнительные посты для стрелков.
+        for (com.vladosiwe.lordsoutpost.outpost.Project p : o.projects) {
+            if (p.type == com.vladosiwe.lordsoutpost.outpost.Project.Type.WATCHTOWER && p.state == com.vladosiwe.lordsoutpost.outpost.Project.State.DONE) high.add(p.post());
+        }
         high.sort(Comparator.comparingInt(p -> -p.getY()));
         List<BlockPos> low = new ArrayList<>(o.markers(Marker.STORE_GUARD));
         List<BlockPos> ground = new ArrayList<>(o.markers(Marker.GUARD_POST));

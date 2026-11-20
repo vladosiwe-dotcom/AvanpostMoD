@@ -49,6 +49,15 @@ public final class OutpostSavedData extends SavedData {
     /** Регионы, где при загрузке чанков форта не оказалось (мир создан до установки мода). */
     private final LongSet emptyRegions = new LongOpenHashSet();
     private long manualCounter;
+    /**
+     * Уникальный id этого мира для клиентской карты. Плитки рельефа на клиенте лежат в папке по этому id, поэтому
+     * новый мир с тем же названием или другой сервер на том же адресе не получают чужую карту.
+     */
+    private UUID worldId = UUID.randomUUID();
+
+    public UUID worldId() {
+        return worldId;
+    }
 
     public static final Factory<OutpostSavedData> FACTORY = new Factory<>(OutpostSavedData::new, OutpostSavedData::load);
 
@@ -203,6 +212,7 @@ public final class OutpostSavedData extends SavedData {
         tag.put("knowledge", kn);
         tag.putLongArray("emptyRegions", emptyRegions.toLongArray());
         tag.putLong("manualCounter", manualCounter);
+        tag.putUUID("worldId", worldId);
         tag.putLong("savedAtMillis", System.currentTimeMillis());
         return tag;
     }
@@ -230,6 +240,8 @@ public final class OutpostSavedData extends SavedData {
         }
         for (long l : tag.getLongArray("emptyRegions")) data.emptyRegions.add(l);
         data.manualCounter = tag.getLong("manualCounter");
+        if (tag.hasUUID("worldId")) data.worldId = tag.getUUID("worldId");
+        else data.setDirty();
         long savedAt = tag.getLong("savedAtMillis");
         data.awayMillis = savedAt > 0 ? Math.max(0, System.currentTimeMillis() - savedAt) : 0;
         return data;

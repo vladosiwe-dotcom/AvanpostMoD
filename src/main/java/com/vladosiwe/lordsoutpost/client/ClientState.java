@@ -66,6 +66,10 @@ public final class ClientState {
     public static int[] nextOutline = new int[0];
     public static long own;
     public static long mapStamp;
+    /** Id мира с сервера (см. OutpostSavedData.worldId): по нему клиент хранит плитки карты. */
+    public static String worldId = "";
+    /** Сводка своего аванпоста для HUD; пусто, если у игрока нет владения. */
+    public static CompoundTag hud = new CompoundTag();
 
     // Баннер «Найден Аванпост».
     public static int bannerSkulls;
@@ -79,6 +83,8 @@ public final class ClientState {
         CARAVANS.clear();
         nextOutline = new int[0];
         own = 0;
+        worldId = "";
+        hud = new CompoundTag();
         bannerStart = -10000;
     }
 
@@ -110,6 +116,9 @@ public final class ClientState {
             MARKERS.add(m);
         }
         own = tag.getLong("own");
+        hud = tag.getCompound("hud");
+        String world = tag.getString("world");
+        if (!world.isEmpty()) worldId = world;
         nextOutline = tag.getIntArray("nextOutline");
         SQUADS.clear();
         ListTag squads = tag.getList("squads", Tag.TAG_COMPOUND);

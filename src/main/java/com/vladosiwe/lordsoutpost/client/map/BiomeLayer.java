@@ -38,15 +38,17 @@ public final class BiomeLayer {
         for (int j = 0; j < BiomeTiles.SIZE; j++)
             for (int i = 0; i < BiomeTiles.SIZE; i++) {
                 int rgb = COLORS[kinds[j * BiomeTiles.SIZE + i] & 15];
-                // Лёгкая «бумажная» рябь, чтобы подложка не выглядела заливкой.
-                int n = ((i * 7 + j * 13) & 3) - 1;
-                int r = Math.max(0, Math.min(255, ((rgb >> 16) & 0xFF) * 3 / 5 + 28 + n));
-                int g = Math.max(0, Math.min(255, ((rgb >> 8) & 0xFF) * 3 / 5 + 26 + n));
-                int b = Math.max(0, Math.min(255, (rgb & 0xFF) * 3 / 5 + 22 + n));
+                // Приглушённые цвета «старой карты»; без узорной ряби — она давала заметные полосы.
+                int r = Math.max(0, Math.min(255, ((rgb >> 16) & 0xFF) * 3 / 5 + 28));
+                int g = Math.max(0, Math.min(255, ((rgb >> 8) & 0xFF) * 3 / 5 + 26));
+                int b = Math.max(0, Math.min(255, (rgb & 0xFF) * 3 / 5 + 22));
                 image.setPixelRGBA(i, j, 0xFF000000 | (b << 16) | (g << 8) | r);
             }
         ResourceLocation id = LordsOutpost.id("map/biome_" + rx + "_" + rz);
-        Minecraft.getInstance().getTextureManager().register(id, new DynamicTexture(image));
+        DynamicTexture texture = new DynamicTexture(image);
+        // Сглаживание: одна точка подложки — 16 блоков, без фильтра границы биомов выглядят ступеньками.
+        texture.setFilter(true, false);
+        Minecraft.getInstance().getTextureManager().register(id, texture);
         TILES.put(key(rx, rz), id);
     }
 

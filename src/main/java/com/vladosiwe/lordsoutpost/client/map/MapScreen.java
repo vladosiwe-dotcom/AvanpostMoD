@@ -150,7 +150,18 @@ public class MapScreen extends Screen implements Ui.Projection {
         }
         Component help = Component.translatable(mode == NONE ? "lordsoutpost.map.help" : mode == ROUTE ? "lordsoutpost.map.help_route" : "lordsoutpost.map.help_hold");
         g.fill(0, height - 12, width, height, 0xC0101620);
-        g.drawString(font, help, 6, height - 10, Ui.MUTED, false);
+        // Подсказка не обрезается на узком окне: при нехватке места она ужимается.
+        int helpWidth = font.width(help);
+        if (helpWidth <= width - 12) {
+            g.drawString(font, help, 6, height - 10, Ui.MUTED, false);
+        } else {
+            float k = Math.max(0.5f, (width - 12) / (float) helpWidth);
+            g.pose().pushPose();
+            g.pose().translate(6, height - 10 + (1 - k) * 4, 0);
+            g.pose().scale(k, k, 1);
+            g.drawString(font, help, 0, 0, Ui.MUTED, false);
+            g.pose().popPose();
+        }
         Component tip = hits.tooltip(mouseX, mouseY);
         if (tip != null) g.renderTooltip(font, tip, mouseX, mouseY);
     }
