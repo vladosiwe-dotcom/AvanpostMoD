@@ -154,6 +154,12 @@ public final class OutpostManager {
     public static Resident addSettler(Outpost o, Role role, RandomSource rnd) {
         Resident r = new Resident(UUID.randomUUID(), role, Names.random(rnd));
         if (role.combat) r.squad = pickSquad(o);
+        // Скотовод приходит со своим кормом для животных: приманить первых и начать разведение.
+        if (role == Role.SKOTOVOD) {
+            r.pouch.put("minecraft:wheat", 16);
+            r.pouch.put("minecraft:wheat_seeds", 16);
+            r.pouch.put("minecraft:carrot", 8);
+        }
         o.residents.add(r);
         return r;
     }

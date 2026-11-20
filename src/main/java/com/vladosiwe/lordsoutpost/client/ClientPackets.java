@@ -17,6 +17,11 @@ public final class ClientPackets {
 
     public static void outpostData(Payloads.OutpostData p) {
         if (Minecraft.getInstance().screen instanceof OutpostScreen screen) screen.update(new OutpostView(p.data()));
+        else if (Minecraft.getInstance().screen instanceof com.vladosiwe.lordsoutpost.client.rts.RtsScreen rts) rts.update(new OutpostView(p.data()));
+    }
+
+    public static void placementCheck(Payloads.PlacementCheck p) {
+        if (Minecraft.getInstance().screen instanceof com.vladosiwe.lordsoutpost.client.rts.RtsScreen rts) rts.onCheck(p.data());
     }
 
     public static void mapData(Payloads.MapData p) {

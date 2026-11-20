@@ -77,6 +77,29 @@ public final class NpcLifecycle {
      * Пост бойца. Стрелки занимают башни и стены (сверху вниз), бойцы ближнего боя — сперва двери склада,
      * потом посты у ворот и во дворе.
      */
+    /**
+     * Точка удержания отряда: если Лорд указал место у башни, вышки или на стене — пост наверху (стрелки поднимаются
+     * по лестнице), иначе земля в этой точке.
+     */
+    public static BlockPos holdSpot(ServerLevel level, Outpost o, BlockPos hold) {
+        List<BlockPos> high = new ArrayList<>(o.markers(Marker.GUARD_POST));
+        for (com.vladosiwe.lordsoutpost.outpost.Project p : o.projects) {
+            if (p.type == com.vladosiwe.lordsoutpost.outpost.Project.Type.WATCHTOWER && p.state == com.vladosiwe.lordsoutpost.outpost.Project.State.DONE) high.add(p.post());
+        }
+        BlockPos ground = groundAt(level, o, hold.getX(), hold.getZ());
+        BlockPos best = null;
+        double bestD = 3.5 * 3.5;
+        for (BlockPos p : high) {
+            if (p.getY() < ground.getY() + 2) continue;
+            double dx = p.getX() - hold.getX(), dz = p.getZ() - hold.getZ();
+            if (dx * dx + dz * dz <= bestD) {
+                bestD = dx * dx + dz * dz;
+                best = p;
+            }
+        }
+        return best != null ? best : ground;
+    }
+
     public static BlockPos postFor(Outpost o, Resident r) {
         List<BlockPos> high = new ArrayList<>(o.markers(Marker.GUARD_POST));
         // Построенные по заказу сторожевые башни — дополнительные посты для стрелков.
@@ -116,6 +139,8 @@ public final class NpcLifecycle {
         // Недонесённая ноша не пропадает: её ресурсы засчитываются сразу.
         // Проверка владения не нужна: ноша не должна исчезать и у форта, который только что потерял Лорда.
         if (npc instanceof com.vladosiwe.lordsoutpost.entity.WorkerEntity w && !w.inventory.isEmpty()) {
+            // Корм скотовода — в его сумку в записи, остальное — на склад.
+            if (r != null) w.stashFeed(r);
             com.vladosiwe.lordsoutpost.data.Storehouse.depositVirtually(o, w.inventory);
             // Ноша жителя уже перенесена в запасы/дань — фиксируем её до выгрузки или завершения сервера.
             data.setDirty();

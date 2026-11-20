@@ -39,6 +39,11 @@ public final class Resident {
     public int kills;
     /** Опыт шахтёра за реально добытые блоки; сохраняется вместе с жителем. */
     public int miningXp;
+    /**
+     * Своя сумка скотовода: корм только для животных (приманить, развести). Хранится в записи жителя: при выгрузке
+     * тела корм возвращается сюда, а не на склад, и фермер не печёт из него хлеб. Ключ — id предмета.
+     */
+    public final java.util.Map<String, Integer> pouch = new java.util.LinkedHashMap<>();
 
     /** Уровень шахтёра 1–5. Пороги намеренно умеренные: 50 / 150 / 300 / 500 блоков. */
     public int miningLevel() {
@@ -86,6 +91,11 @@ public final class Resident {
         t.putByte("squad", (byte) squad);
         t.putInt("kills", kills);
         t.putInt("miningXp", miningXp);
+        if (!pouch.isEmpty()) {
+            CompoundTag pt = new CompoundTag();
+            for (var e : pouch.entrySet()) if (e.getValue() > 0) pt.putInt(e.getKey(), e.getValue());
+            t.put("pouch", pt);
+        }
         return t;
     }
 
@@ -99,6 +109,8 @@ public final class Resident {
         r.squad = t.getByte("squad");
         r.kills = t.getInt("kills");
         r.miningXp = Math.max(0, t.getInt("miningXp"));
+        CompoundTag pt = t.getCompound("pouch");
+        for (String k : pt.getAllKeys()) r.pouch.put(k, Math.max(0, pt.getInt(k)));
         return r;
     }
 }

@@ -66,7 +66,21 @@ public final class OutpostView {
 
     public record ZoneInfo(String id, boolean relocatable, boolean moved, String problem) {}
 
-    public record ProjectInfo(long id, String type, int state, float progress, int paid, int size) {}
+    public record ProjectInfo(long id, String type, int state, float progress, int paid, int size,
+                              int x, int y, int z, int rot, int builders, EnumMap<Resource, Integer> lack, EnumMap<Resource, Integer> remaining) {
+        public boolean active() {
+            return state <= 1;
+        }
+    }
+
+    private static EnumMap<Resource, Integer> resources(CompoundTag t) {
+        EnumMap<Resource, Integer> out = new EnumMap<>(Resource.class);
+        for (String k : t.getAllKeys()) {
+            Resource r = Resource.byId(k);
+            if (r != null) out.put(r, t.getInt(k));
+        }
+        return out;
+    }
 
     public static final class Manage {
         public final float foodDays;
@@ -91,6 +105,10 @@ public final class OutpostView {
         public final java.util.Map<String, String> recommended = new java.util.LinkedHashMap<>();
         public final EnumMap<Resource, Float> materials = new EnumMap<>(Resource.class);
         public final java.util.Map<String, EnumMap<Resource, Integer>> costs = new java.util.HashMap<>();
+        /** Для RTS-режима: центр форта, граница заказов, палитра построек, резерв ресурсов под заказы. */
+        public final int cx, cy, cz, reach, orderLimit;
+        public final String palette;
+        public final EnumMap<Resource, Integer> reserved;
 
         Manage(CompoundTag m) {
             foodDays = m.getFloat("foodDays");
@@ -149,7 +167,9 @@ public final class OutpostView {
             ListTag ps = m.getList("projects", Tag.TAG_COMPOUND);
             for (int i = 0; i < ps.size(); i++) {
                 CompoundTag p = ps.getCompound(i);
-                projects.add(new ProjectInfo(p.getLong("id"), p.getString("type"), p.getByte("state"), p.getFloat("progress"), p.getInt("paid"), p.getInt("size")));
+                projects.add(new ProjectInfo(p.getLong("id"), p.getString("type"), p.getByte("state"), p.getFloat("progress"), p.getInt("paid"), p.getInt("size"),
+                        p.getInt("x"), p.getInt("y"), p.getInt("z"), p.getByte("rot"), p.getInt("builders"),
+                        resources(p.getCompound("lack")), resources(p.getCompound("remaining"))));
             }
             CompoundTag cs = m.getCompound("costs");
             for (String type : cs.getAllKeys()) {
@@ -162,6 +182,13 @@ public final class OutpostView {
                 costs.put(type, c);
             }
             projectLimit = m.getInt("projectLimit");
+            cx = m.getInt("cx");
+            cy = m.getInt("cy");
+            cz = m.getInt("cz");
+            reach = m.getInt("reach");
+            orderLimit = m.getInt("orderLimit");
+            palette = m.getString("palette");
+            reserved = resources(m.getCompound("reserved"));
             autoBuild = m.getBoolean("autoBuild");
             CompoundTag rec = m.getCompound("recommended");
             for (String k : rec.getAllKeys()) recommended.put(k, rec.getString(k));

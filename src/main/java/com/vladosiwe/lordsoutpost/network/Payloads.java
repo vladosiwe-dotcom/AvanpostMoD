@@ -30,6 +30,18 @@ public final class Payloads {
         }
     }
 
+    /** Сервер -> клиент: результат проверки места в RTS-режиме строительства. */
+    public record PlacementCheck(CompoundTag data) implements CustomPacketPayload {
+        public static final Type<PlacementCheck> TYPE = of("placement_check");
+        public static final StreamCodec<RegistryFriendlyByteBuf, PlacementCheck> CODEC = StreamCodec.composite(
+                ByteBufCodecs.TRUSTED_COMPOUND_TAG, PlacementCheck::data, PlacementCheck::new);
+
+        @Override
+        public Type<PlacementCheck> type() {
+            return TYPE;
+        }
+    }
+
     /** Сервер -> клиент: свежий снимок аванпоста для уже открытого окна. */
     public record OutpostData(CompoundTag data) implements CustomPacketPayload {
         public static final Type<OutpostData> TYPE = of("outpost_data");

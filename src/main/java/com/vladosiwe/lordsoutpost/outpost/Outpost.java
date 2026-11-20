@@ -216,6 +216,8 @@ public final class Outpost {
     /** Сколько шагов следующего тира уже построено у только что сгенерированного форта этой сложности. */
     public static int initialSteps(FortBlueprint bp, Difficulty d) {
         if (d.tier >= FortBlueprint.MAX_TIER || d.progress <= 0) return 0;
+        // Просторная планировка: дикий форт стоит готовым тиром, без недостроенного второго кольца стен.
+        if (bp.version >= 2) return 0;
         return Math.round(d.progress * bp.plan(d.tier + 1).size());
     }
 
@@ -405,7 +407,13 @@ public final class Outpost {
     }
 
     /** Запас без того, что отложено под задачи жителей (резерв нельзя тратить на стройку и торговлю). */
+    /** Свободный запас: за вычетом отложенного под задачи жителей и резерва принятых заказов Лорда. */
     public double available(Resource r) {
+        return Math.max(0, availableForProjects(r) - com.vladosiwe.lordsoutpost.data.Projects.reserved(this, r));
+    }
+
+    /** Запас за вычетом задач жителей (заказ Лорда оплачивается из своего резерва). */
+    public double availableForProjects(Resource r) {
         double reserved = tasks.reservedValue(item -> {
             var v = com.vladosiwe.lordsoutpost.data.ResourceItems.of(new ItemStack(item));
             return v != null && v.resource() == r ? v.perItem() : 0;

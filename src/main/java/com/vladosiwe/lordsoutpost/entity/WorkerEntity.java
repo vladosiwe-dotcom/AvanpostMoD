@@ -147,6 +147,39 @@ public class WorkerEntity extends OutpostNpc implements net.minecraft.world.item
         };
         setItemSlot(EquipmentSlot.MAINHAND, tool);
         noDrops();
+        // Сумка скотовода переходит в ношу тела (и вернётся в запись при выгрузке): корм не появляется дважды.
+        if (r.role == Role.SKOTOVOD && !r.pouch.isEmpty()) {
+            for (var e : new java.util.ArrayList<>(r.pouch.entrySet())) {
+                var id = net.minecraft.resources.ResourceLocation.tryParse(e.getKey());
+                if (id == null || e.getValue() <= 0) continue;
+                var item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id);
+                ItemStack left = collect(new ItemStack(item, e.getValue()));
+                r.pouch.put(e.getKey(), left.getCount());
+            }
+            r.pouch.values().removeIf(n -> n <= 0);
+        }
+    }
+
+    /** Корм для животных, который скотовод держит при себе (не сдаёт на склад). */
+    public static boolean feed(ItemStack st) {
+        return st.is(Items.WHEAT) || st.is(Items.WHEAT_SEEDS) || st.is(Items.CARROT) || st.is(Items.POTATO) || st.is(Items.BEETROOT)
+                || st.is(Items.BEETROOT_SEEDS) || st.is(Items.MELON_SEEDS) || st.is(Items.PUMPKIN_SEEDS);
+    }
+
+    /** Вынуть корм из ноши в сумку записи (до 32 штук каждого вида); остальное остаётся в ноше. */
+    public void stashFeed(Resident r) {
+        if (r.role != Role.SKOTOVOD) return;
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            ItemStack st = inventory.getItem(i);
+            if (!feed(st)) continue;
+            String key = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString();
+            int have = r.pouch.getOrDefault(key, 0);
+            int n = Math.min(st.getCount(), Math.max(0, 32 - have));
+            if (n <= 0) continue;
+            r.pouch.put(key, have + n);
+            st.shrink(n);
+        }
+        inventory.setChanged();
     }
 
     @Override

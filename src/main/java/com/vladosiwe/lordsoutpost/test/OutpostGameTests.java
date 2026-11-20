@@ -771,6 +771,57 @@ public final class OutpostGameTests {
         h.succeed();
     }
 
+    /**
+     * RTS-заказ: точное место и поворот, проверка ресурсов склада, резерв на весь заказ (его нельзя потратить на
+     * другое), приоритет очереди, резерв переживает сохранение, отмена резерв снимает.
+     */
+    @GameTest(template = "empty")
+    public static void rtsOrdersReserveResources(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        BlockPos base = FAR.offset(2304, 0, 0);
+        for (int cx = -3; cx <= 6; cx++) for (int cz = -4; cz <= 4; cz++) level.getChunk((base.getX() >> 4) + cx, (base.getZ() >> 4) + cz);
+        BlockPos ground = new BlockPos(base.getX(), level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, base.getX(), base.getZ()) - 1, base.getZ());
+        Outpost o = virtualOutpost(level, data, ground, 1, UUID.randomUUID());
+        try {
+            long now = level.getGameTime();
+            var house = com.vladosiwe.lordsoutpost.outpost.Project.Type.HOUSE;
+            int x = o.center.getX() + Layout.radius(o.version, 3) + Layout.MARGIN + 9, z = o.center.getZ();
+            for (Resource r : Resource.VALUES) o.setStock(r, 0);
+            var none = com.vladosiwe.lordsoutpost.data.Projects.orderAt(level, o, house, x, z, 1, now, false);
+            h.assertTrue(none == com.vladosiwe.lordsoutpost.data.Projects.OrderResult.NO_RESOURCES, "без ресурсов заказ не принимается: " + none);
+            h.assertTrue(!com.vladosiwe.lordsoutpost.data.Projects.missing(o, house).isEmpty(), "видно, чего не хватает");
+            o.setStock(Resource.WOOD, 500);
+            o.setStock(Resource.STONE, 500);
+            var cost = com.vladosiwe.lordsoutpost.data.Projects.cost(o, house);
+            var dry = com.vladosiwe.lordsoutpost.data.Projects.orderAt(level, o, house, x, z, 1, now, true);
+            h.assertTrue(dry == com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OK && o.projects.isEmpty(), "проверка места ничего не заказывает: " + dry);
+            var ok = com.vladosiwe.lordsoutpost.data.Projects.orderAt(level, o, house, x, z, 1, now, false);
+            h.assertTrue(ok == com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OK, "заказ в выбранной точке: " + ok);
+            var p = o.projects.get(o.projects.size() - 1);
+            h.assertTrue(p.rotation == net.minecraft.world.level.block.Rotation.CLOCKWISE_90 && p.origin.getX() == x && p.origin.getZ() == z, "место и поворот как выбрал Лорд");
+            int wood = cost.getOrDefault(Resource.WOOD, 0);
+            h.assertTrue(Math.abs(o.available(Resource.WOOD) - (500 - wood)) < 1e-6, "дерево заказа в резерве: свободно " + o.available(Resource.WOOD));
+            h.assertTrue(Math.abs(o.stock(Resource.WOOD) - 500) < 1e-6, "резерв не списывает ресурс сразу");
+            var twice = com.vladosiwe.lordsoutpost.data.Projects.orderAt(level, o, house, x, z, 1, now, false);
+            h.assertTrue(twice == com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OCCUPIED, "второй заказ на то же место: " + twice);
+            var wallRes = com.vladosiwe.lordsoutpost.data.Projects.orderAt(level, o, com.vladosiwe.lordsoutpost.outpost.Project.Type.WALL, x, z + 14, 0, now, false);
+            h.assertTrue(wallRes == com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OK, "второй заказ рядом: " + wallRes);
+            var wall = o.projects.get(o.projects.size() - 1);
+            h.assertTrue(com.vladosiwe.lordsoutpost.data.Projects.move(o, wall.id, true) && o.projects.indexOf(wall) < o.projects.indexOf(p), "приоритет: стена поднята выше дома");
+            Outpost copy = Outpost.load(o.save(level.registryAccess()), level.registryAccess());
+            h.assertTrue(Math.abs(copy.available(Resource.WOOD) - o.available(Resource.WOOD)) < 1e-6, "резерв восстанавливается после загрузки");
+            h.assertTrue(copy.projects.indexOf(copy.projects.stream().filter(q -> q.id == wall.id).findFirst().get()) == 0
+                    || copy.projects.get(0).id == wall.id, "очередь сохраняется");
+            com.vladosiwe.lordsoutpost.data.Projects.cancel(o, p.id, now);
+            h.assertTrue(Math.abs(o.available(Resource.WOOD) - 500) < 1e-6, "отмена снимает резерв: " + o.available(Resource.WOOD));
+        } finally {
+            OutpostManager.abandon(data, o, level.getGameTime());
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
     /** Лавка торговца продаёт только то, что в ней лежит: продажа списывает товар, изумруды идут в казну, лавка сохраняется. */
     @GameTest(template = "empty")
     public static void shopSellsOnlyRealStock(GameTestHelper h) {

@@ -65,6 +65,8 @@ public final class ServerActions {
             if (access.atLeast(AccessLevel.ALLY)) deliver(player, o, a.getInt("quest"), now);
         } else if (access == AccessLevel.LORD) {
             lordAction(player, level, data, o, action, a, now);
+            // Проверка места в RTS-режиме идёт несколько раз в секунду и ничего не меняет — без рассылки снимка.
+            if (action == Action.CHECK_PROJECT) return;
         } else {
             return;
         }
@@ -204,6 +206,23 @@ public final class ServerActions {
                         result == com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OK ? ChatFormatting.GREEN : ChatFormatting.YELLOW);
             }
             case CANCEL_PROJECT -> com.vladosiwe.lordsoutpost.data.Projects.cancel(o, a.getLong("id"), now);
+            case MOVE_PROJECT -> com.vladosiwe.lordsoutpost.data.Projects.move(o, a.getLong("id"), a.getBoolean("up"));
+            case ORDER_PROJECT_AT, CHECK_PROJECT -> {
+                var type = com.vladosiwe.lordsoutpost.outpost.Project.Type.byId(a.getString("type"));
+                if (type == null) return;
+                boolean dry = action == Action.CHECK_PROJECT;
+                var result = com.vladosiwe.lordsoutpost.data.Projects.orderAt(level, o, type, a.getInt("x"), a.getInt("z"), a.getInt("rot"), now, dry);
+                CompoundTag reply = new CompoundTag();
+                reply.putInt("seq", a.getInt("seq"));
+                reply.putString("result", result.name().toLowerCase(Locale.ROOT));
+                reply.putBoolean("ordered", !dry && result == com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OK);
+                CompoundTag miss = new CompoundTag();
+                for (var e : com.vladosiwe.lordsoutpost.data.Projects.missing(o, type).entrySet()) miss.putInt(e.getKey().id, e.getValue());
+                reply.put("missing", miss);
+                ModNetwork.send(player, new Payloads.PlacementCheck(reply));
+                if (!dry) feedback(player, "lordsoutpost.msg.project." + result.name().toLowerCase(Locale.ROOT),
+                        result == com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OK ? ChatFormatting.GREEN : ChatFormatting.YELLOW);
+            }
             case ORDER_RECOMMENDED -> {
                 var type = com.vladosiwe.lordsoutpost.outpost.Project.Type.byId(a.getString("type"));
                 if (type == null) return;

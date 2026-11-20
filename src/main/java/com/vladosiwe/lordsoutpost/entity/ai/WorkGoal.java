@@ -296,7 +296,26 @@ public class WorkGoal extends Goal {
             case DEPOSIT -> {
                 if (go(o, o.marker(Marker.STORE_INSIDE), 1.8, 500)) {
                     mob.swing(InteractionHand.MAIN_HAND);
+                    // Скотовод корм не сдаёт: он для животных, не для кухни.
+                    java.util.List<ItemStack> kept = new ArrayList<>();
+                    if (acting == Role.SKOTOVOD) {
+                        for (int i = 0; i < mob.inventory.getContainerSize(); i++) {
+                            ItemStack st = mob.inventory.getItem(i);
+                            if (WorkerEntity.feed(st) && kept.stream().mapToInt(ItemStack::getCount).sum() < 64) {
+                                kept.add(st.copy());
+                                mob.inventory.setItem(i, ItemStack.EMPTY);
+                            }
+                        }
+                    }
                     Storehouse.deposit(level, o, mob.inventory);
+                    for (ItemStack st : kept) {
+                        ItemStack left = mob.collect(st);
+                        if (!left.isEmpty()) {
+                            net.minecraft.world.SimpleContainer back = new net.minecraft.world.SimpleContainer(1);
+                            back.setItem(0, left);
+                            Storehouse.deposit(level, o, back);
+                        }
+                    }
                     OutpostSavedData.get(level).setDirty();
                     level.playSound(null, mob.blockPosition(), SoundEvents.BARREL_CLOSE, SoundSource.NEUTRAL, 0.6f, 1.0f);
                     phase = Phase.PAUSE;
@@ -1662,6 +1681,10 @@ public class WorkGoal extends Goal {
             // После переноса загона сначала переводится скот из старого загона.
             BlockPos oldPen = o.zones.previous(WorkZone.PEN);
             List<Animal> candidates = new ArrayList<>(level.getEntitiesOfClass(Animal.class, new AABB(pen).inflate(32, 8, 32)));
+            // Рядом скота нет — скотовод ищет дальше, за стенами (до 64 блоков от загона).
+            if (candidates.stream().noneMatch(a -> (a instanceof Cow || a instanceof Sheep || a instanceof Pig || a instanceof Chicken) && !a.isBaby())) {
+                candidates = new ArrayList<>(level.getEntitiesOfClass(Animal.class, new AABB(pen).inflate(64, 12, 64)));
+            }
             if (oldPen != null) {
                 List<Animal> left = level.getEntitiesOfClass(Animal.class, new AABB(oldPen).inflate(3, 2, 3));
                 if (left.isEmpty() && level.isLoaded(oldPen)) o.zones.forgetPrevious(WorkZone.PEN);
@@ -1929,9 +1952,15 @@ public class WorkGoal extends Goal {
             if (prey == null) {
                 if (huntPoint < 0) huntPoint = mob.getRandom().nextInt(points.size());
                 BlockPos p = points.get(huntPoint % points.size());
+                // Сначала обход у стен, потом дальнее кольцо (на 20 блоков дальше): дичь ищут физически, за стенами.
+                if (emptyPoints >= points.size()) {
+                    double ang = (huntPoint % 8) * Math.PI / 4;
+                    int far = o.reach() + com.vladosiwe.lordsoutpost.blueprint.Layout.MARGIN + 24;
+                    p = new BlockPos(o.center.getX() + (int) Math.round(Math.cos(ang) * far), o.center.getY(), o.center.getZ() + (int) Math.round(Math.sin(ang) * far));
+                }
                 if (go(o, NpcLifecycle.groundAt(level, o, p.getX(), p.getZ()), 3.0, 400)) {
                     huntPoint++;
-                    if (++emptyPoints >= points.size()) {
+                    if (++emptyPoints >= points.size() + 8) {
                         noJobUntil = now + 1200;
                         return true;
                     }
@@ -2393,14 +2422,28 @@ public class WorkGoal extends Goal {
         farmHarvest = harvest != null;
         farmTill = harvest == null && plant == null && till != null;
         farmTarget = harvest != null ? harvest : plant != null ? plant : till;
+        farmTimer = -1;
         return farmTarget != null;
     }
 
     /** Физически собирает зрелую пшеницу или тратит реальное семя со склада на посадку. */
+    private int farmTimer = -1;
+
     private boolean farm(ServerLevel level, Outpost o, Resident r, long now) {
         if (farmTarget == null) return true;
         if (!go(o, farmTarget, 2.2, 300)) return false;
         BlockState crop = level.getBlockState(farmTarget);
+        // Каждое действие занимает время, как у игрока: вспахать, посадить, сжать — а не всё поле за секунду.
+        boolean seedsNeeded = crop.isAir() && level.getBlockState(farmTarget.below()).is(Blocks.FARMLAND) && countCarried(Items.WHEAT_SEEDS) == 0;
+        if (!seedsNeeded) {
+            if (farmTimer < 0) farmTimer = farmHarvest ? 16 : farmTill ? 24 : 12;
+            mob.getLookControl().setLookAt(farmTarget.getX() + 0.5, farmTarget.getY(), farmTarget.getZ() + 0.5);
+            if (--farmTimer > 0) {
+                if (farmTimer % 6 == 0) mob.swing(InteractionHand.MAIN_HAND);
+                return false;
+            }
+            farmTimer = -1;
+        }
         if (farmHarvest && crop.is(Blocks.WHEAT) && crop.getValue(CropBlock.AGE) >= 7) {
             mob.swing(InteractionHand.MAIN_HAND);
             for (ItemStack drop : Block.getDrops(crop, level, farmTarget, null, mob, mob.getMainHandItem())) {

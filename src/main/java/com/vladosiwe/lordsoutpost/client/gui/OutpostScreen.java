@@ -89,9 +89,12 @@ public class OutpostScreen extends Screen {
         playerBox.active = accessTab;
     }
 
+    /** Переход в RTS-режим: окно управления закрывается, но подписка на снимки аванпоста остаётся. */
+    private boolean toRts;
+
     @Override
     public void removed() {
-        Net.action(view.id, Action.CLOSE);
+        if (!toRts) Net.action(view.id, Action.CLOSE);
     }
 
     @Override
@@ -607,11 +610,16 @@ public class OutpostScreen extends Screen {
                 : Component.translatable("lordsoutpost.ui.tier_progress", view.tier, view.tier + 1, Math.round(view.progress * 100));
         g.drawString(font, tierLine, x, y, Ui.TEXT, false);
         if (!view.complete) {
-            Ui.bar(g, x + 120, y + 1, W - 136, 7, view.progress, view.stalled != null ? Ui.WARN : Ui.GOOD);
+            Ui.bar(g, x + 120, y + 1, W - 246, 7, view.progress, view.stalled != null ? Ui.WARN : Ui.GOOD);
             Component why = view.stalled != null ? Component.translatable("lordsoutpost.ui.stalled", view.stalled.label())
                     : Component.translatable("lordsoutpost.ui.steps", view.steps, view.planSize);
             Ui.text(g, font, why, x, y + 10, W - 16, view.stalled != null ? Ui.WARN : Ui.MUTED);
         }
+        // RTS-режим: стратегическая камера, выбор места и заказ постройки.
+        Ui.button(g, font, hits, left + W - 112, y - 1, 104, 11, Component.translatable("lordsoutpost.rts.open"), true, false, mouseX, mouseY, () -> {
+            toRts = true;
+            minecraft.setScreen(new com.vladosiwe.lordsoutpost.client.rts.RtsScreen(view));
+        }, Component.translatable("lordsoutpost.rts.open.tip"));
         y += 23;
         // Совет планировщика и авто-застройка: решает Лорд.
         if (!m.recommended.isEmpty()) {

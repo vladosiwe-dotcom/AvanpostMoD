@@ -48,6 +48,8 @@ public final class ModNetwork {
                 (p, ctx) -> com.vladosiwe.lordsoutpost.client.ClientPackets.discovery(p));
         r.playToClient(Payloads.BiomeTile.TYPE, Payloads.BiomeTile.CODEC,
                 (p, ctx) -> com.vladosiwe.lordsoutpost.client.ClientPackets.biomeTile(p));
+        r.playToClient(Payloads.PlacementCheck.TYPE, Payloads.PlacementCheck.CODEC,
+                (p, ctx) -> com.vladosiwe.lordsoutpost.client.ClientPackets.placementCheck(p));
         r.playToServer(Payloads.OutpostAction.TYPE, Payloads.OutpostAction.CODEC,
                 (p, ctx) -> { if (ctx.player() instanceof ServerPlayer sp) ServerActions.handle(sp, p); });
         r.playToServer(Payloads.MapRequest.TYPE, Payloads.MapRequest.CODEC,

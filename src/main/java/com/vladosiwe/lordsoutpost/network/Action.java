@@ -29,7 +29,13 @@ public enum Action {
     /** Построить рекомендованное планировщиком: {type}; место выбирается само. */
     ORDER_RECOMMENDED,
     /** Включить или выключить авто-застройку. */
-    TOGGLE_AUTOBUILD;
+    TOGGLE_AUTOBUILD,
+    /** RTS: заказ в точке {type, x, z, rot}. */
+    ORDER_PROJECT_AT,
+    /** RTS: проверить место {type, x, z, rot, seq} — ответ пакетом PlacementCheck. */
+    CHECK_PROJECT,
+    /** Приоритет заказа: {id, up}. */
+    MOVE_PROJECT;
 
     public static final Action[] VALUES = values();
 }

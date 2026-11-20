@@ -362,8 +362,37 @@ for k, ru, en in [('ok', 'Заказ принят: строители возьм
                   ('overlaps_fort', 'Здесь встанет следующий тир форта — выберите другое место.', 'The next fort tier goes here — pick another spot.'),
                   ('occupied', 'Место занято постройками, сундуками или другим заказом.', 'The spot is taken by buildings, chests or another order.'),
                   ('too_many', 'Слишком много заказов одновременно.', 'Too many orders at once.'),
-                  ('no_ground', 'Здесь нет ровной земли рядом с фортом.', 'There is no level ground near the fort here.')]:
+                  ('no_ground', 'Здесь нет ровной земли рядом с фортом.', 'There is no level ground near the fort here.'),
+                  ('uneven', 'Слишком неровная земля: под полом обрыв или холм.', 'The ground is too uneven: a drop or a hill under the floor.'),
+                  ('no_resources', 'Не хватает ресурсов на складе (с учётом резерва других заказов).', 'Not enough resources in the storehouse (other orders\' reserve included).')]:
     add(P + 'msg.project.' + k, ru, en)
+add(P + 'rts.title', 'Режим строительства', 'Construction mode')
+add(P + 'rts.open', 'Режим строительства', 'Construction mode')
+add(P + 'rts.open.tip', 'Стратегическая камера над аванпостом: выберите постройку, место и поворот — строители сделают остальное.', 'A strategic camera over the outpost: pick a building, a spot and a rotation — the builders do the rest.')
+add(P + 'rts.help', 'WASD — камера · Q/E, средняя кнопка — поворот · R/F — наклон · колесо — приближение; с выбранной постройкой — её поворот (Ctrl+колесо — приближение) · Пробел — к центру · Tab — обзор · ЛКМ — заказать · ПКМ — отменить выбор · Esc — выход', 'WASD — camera · Q/E and middle button — rotate · R/F — tilt · wheel — zoom (with a building — rotate it, Ctrl+wheel — zoom) · Space — to centre · Tab — overview · LMB — order · RMB — cancel')
+add(P + 'rts.catalog', 'Постройки', 'Buildings')
+add(P + 'rts.stock', 'Склад (резерв)', 'Stock (reserved)')
+add(P + 'rts.stock_line', '%s (%s)', '%s (%s)')
+add(P + 'rts.pick', 'Выберите постройку слева, затем место на земле. Зелёный — можно строить, красный — нельзя.', 'Pick a building on the left, then a spot on the ground. Green — can build, red — cannot.')
+add(P + 'rts.cost_line', '%s из %s', '%s of %s')
+add(P + 'rts.point', 'Наведите на землю.', 'Point at the ground.')
+add(P + 'rts.checking', 'Проверка места…', 'Checking the spot…')
+add(P + 'rts.can_place', 'Можно строить: ЛКМ — заказать.', 'Can build: LMB to order.')
+add(P + 'rts.missing', 'Не хватает: %s', 'Missing: %s')
+add(P + 'rts.confirm', 'Заказать', 'Order')
+add(P + 'rts.confirm.tip', 'Ресурсы резервируются на складе; строители принесут материал и поставят постройку блок за блоком.', 'Resources are reserved in the storehouse; builders bring materials and place the building block by block.')
+add(P + 'rts.cancel_pick', 'Отменить выбор', 'Cancel')
+add(P + 'rts.rotation', 'Поворот: %s° (колесо мыши)', 'Rotation: %s° (mouse wheel)')
+add(P + 'rts.exit', 'Выйти из режима строительства', 'Leave construction mode')
+add(P + 'rts.orders', 'Заказы: %s из %s', 'Orders: %s of %s')
+add(P + 'rts.no_orders', 'Заказов нет.', 'No orders.')
+add(P + 'rts.up', 'Выше в очереди', 'Higher priority')
+add(P + 'rts.down', 'Ниже в очереди', 'Lower priority')
+add(P + 'rts.cancel_order', 'Отменить заказ (неистраченное вернётся на склад)', 'Cancel the order (unspent materials return)')
+add(P + 'rts.builders', 'Строителей: %s', 'Builders: %s')
+add(P + 'rts.lack', 'Нехватка: %s', 'Shortage: %s')
+add(P + 'rts.remaining', 'Осталось: %s', 'Remaining: %s')
+add(P + 'rts.show', 'Показать на местности', 'Show on the map')
 add(P + 'ui.tier_done', 'Тир %s — крепость достроена', 'Tier %s — the fortress is complete')
 add(P + 'ui.tier_progress', 'Тир %s → %s: %s%%', 'Tier %s → %s: %s%%')
 add(P + 'ui.stalled', 'Стройка стоит: не хватает ресурса «%s»', 'Construction stalled: short of %s')

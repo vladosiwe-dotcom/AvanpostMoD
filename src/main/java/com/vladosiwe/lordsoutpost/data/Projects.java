@@ -38,7 +38,113 @@ public final class Projects {
     public static final int EXTENT = 24;
     private static final long CLAIM_TIME = 240;
 
-    public enum OrderResult { OK, NOT_HERE, OVERLAPS_FORT, OCCUPIED, TOO_MANY, NO_GROUND }
+    public enum OrderResult { OK, NOT_HERE, OVERLAPS_FORT, OCCUPIED, TOO_MANY, NO_GROUND, UNEVEN, NO_RESOURCES }
+
+    // ============================== Стоимость и резерв ==============================
+
+    /** Стоимость постройки по шагам её чертежа (одна единица ресурса на блок). */
+    public static java.util.EnumMap<Resource, Integer> cost(Outpost o, Project.Type type) {
+        java.util.EnumMap<Resource, Integer> out = new java.util.EnumMap<>(Resource.class);
+        Project probe = new Project(0, type, o.center, Rotation.NONE);
+        for (Step s : probe.steps(o)) if (s.cost() != null) out.merge(s.cost(), 1, Integer::sum);
+        return out;
+    }
+
+    /** Ещё не потраченная часть стоимости заказа (шаги не оплачены и не поставлены). */
+    public static java.util.EnumMap<Resource, Integer> remaining(Outpost o, Project p) {
+        java.util.EnumMap<Resource, Integer> out = new java.util.EnumMap<>(Resource.class);
+        List<Step> steps = p.steps(o);
+        for (int i = Math.max(0, p.paid); i < steps.size(); i++) {
+            if (p.placed.get(i)) continue;
+            Resource c = steps.get(i).cost();
+            if (c != null) out.merge(c, 1, Integer::sum);
+        }
+        return out;
+    }
+
+    /**
+     * Резерв заказов: остаток стоимости всех активных заказов, кроме материала, который строители уже вынесли со
+     * склада. Эти ресурсы не тратятся на стройку тира, лавку и караваны, пока заказ не выполнен или не отменён.
+     * Резерв не хранится отдельно — он считается из состояния заказов, поэтому сохраняется и восстанавливается сам.
+     */
+    public static double reserved(Outpost o, Resource r) {
+        double n = 0;
+        for (Project p : o.projects) {
+            if (!p.active()) continue;
+            n += remaining(o, p).getOrDefault(r, 0);
+        }
+        return Math.max(0, n - o.buildMaterials.getOrDefault(r, 0.0));
+    }
+
+    /** Каких ресурсов не хватает на новый заказ (с учётом резерва уже принятых заказов). */
+    public static java.util.EnumMap<Resource, Integer> missing(Outpost o, Project.Type type) {
+        java.util.EnumMap<Resource, Integer> out = new java.util.EnumMap<>(Resource.class);
+        for (var e : cost(o, type).entrySet()) {
+            int lack = (int) Math.ceil(e.getValue() - o.available(e.getKey()));
+            if (lack > 0) out.put(e.getKey(), lack);
+        }
+        return out;
+    }
+
+    /**
+     * Заказ из RTS-режима: точное место (x, z — центр постройки) и поворот выбирает Лорд, высота — по земле.
+     * Проверки те же, что и у обычного заказа, плюс рельеф и наличие ресурсов на складе этого аванпоста.
+     * dryRun — только проверить (для предпросмотра).
+     */
+    public static OrderResult orderAt(ServerLevel level, Outpost o, Project.Type type, int x, int z, int rot, long now, boolean dryRun) {
+        int active = 0;
+        for (Project p : o.projects) {
+            if (p.active()) active++;
+            if (p.active() && p.type == type && type.relocates != null) return OrderResult.TOO_MANY;
+        }
+        if (active >= MAX_ACTIVE) return OrderResult.TOO_MANY;
+        if (!level.hasChunk(x >> 4, z >> 4)) return OrderResult.NO_GROUND;
+        int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
+        if (Math.abs(y - o.center.getY()) > 12) return OrderResult.NO_GROUND;
+        Project p = new Project(o.projectCounter + 1, type, new BlockPos(x, y, z), Rotation.values()[Math.floorMod(rot, 4)]);
+        OrderResult check = check(level, o, p);
+        if (check != OrderResult.OK) return check;
+        // Рельеф: под полом постройки земля не должна обрываться или вздыматься больше чем на 2 блока.
+        List<Step> steps = p.steps(o);
+        for (int i = 0; i < steps.size(); i++) {
+            if (!p.floor(o, i)) continue;
+            BlockPos w = o.world(steps.get(i).pos());
+            int g = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, w.getX(), w.getZ()) - 1;
+            if (Math.abs(g - w.getY()) > 2) return OrderResult.UNEVEN;
+        }
+        if (!missing(o, type).isEmpty()) return OrderResult.NO_RESOURCES;
+        if (dryRun) return OrderResult.OK;
+        o.projectCounter++;
+        p.orderedAt = now;
+        o.projects.add(p);
+        o.log(now, "lordsoutpost.event.project_ordered", type.id);
+        o.dirtyForClients = true;
+        return OrderResult.OK;
+    }
+
+    /** Приоритет заказа: заказы выполняются по порядку списка; up — поднять на одну позицию выше. */
+    public static boolean move(Outpost o, long id, boolean up) {
+        for (int i = 0; i < o.projects.size(); i++) {
+            if (o.projects.get(i).id != id) continue;
+            int j = i;
+            do {
+                j += up ? -1 : 1;
+            } while (j >= 0 && j < o.projects.size() && !o.projects.get(j).active());
+            if (j < 0 || j >= o.projects.size()) return false;
+            Project p = o.projects.remove(i);
+            o.projects.add(j, p);
+            o.dirtyForClients = true;
+            return true;
+        }
+        return false;
+    }
+
+    /** Сколько строителей сейчас работает на этом заказе (держат его шаги). */
+    public static int builders(Outpost o, Project p) {
+        int n = 0;
+        for (long k : o.projectClaims.keySet()) if ((k >>> 20) == p.id) n++;
+        return n;
+    }
 
     private Projects() {}
 
@@ -145,7 +251,8 @@ public final class Projects {
             List<Step> steps = p.steps(o);
             while (credit >= 1 && p.paid < steps.size()) {
                 Resource cost = steps.get(p.paid).cost();
-                if (cost != null && !useMaterial(o, cost) && (o.available(cost) < 1 || !o.take(cost, 1))) {
+                // Заказ тратит свой резерв: проверяется запас за вычетом задач жителей, а не за вычетом резерва заказов.
+                if (cost != null && !useMaterial(o, cost) && (o.availableForProjects(cost) < 1 || !o.take(cost, 1))) {
                     if (o.stalledOn == null) o.stalledOn = cost;
                     return credit;
                 }

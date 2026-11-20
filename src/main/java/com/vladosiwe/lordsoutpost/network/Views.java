@@ -376,6 +376,23 @@ public final class Views {
             pt.putFloat("progress", p.progress(o));
             pt.putInt("paid", p.paid);
             pt.putInt("size", p.size(o));
+            pt.putInt("x", p.origin.getX());
+            pt.putInt("y", p.origin.getY());
+            pt.putInt("z", p.origin.getZ());
+            pt.putByte("rot", (byte) p.rotation.ordinal());
+            if (p.active()) {
+                pt.putInt("builders", com.vladosiwe.lordsoutpost.data.Projects.builders(o, p));
+                // Нехватка: остатка стоимости больше, чем лежит на складе этого аванпоста.
+                CompoundTag lack = new CompoundTag();
+                for (var e : com.vladosiwe.lordsoutpost.data.Projects.remaining(o, p).entrySet()) {
+                    double have = o.availableForProjects(e.getKey()) + o.buildMaterials.getOrDefault(e.getKey(), 0.0);
+                    if (have + 1e-6 < 1 && e.getValue() > 0) lack.putInt(e.getKey().id, e.getValue());
+                }
+                pt.put("lack", lack);
+                CompoundTag rem = new CompoundTag();
+                for (var e : com.vladosiwe.lordsoutpost.data.Projects.remaining(o, p).entrySet()) rem.putInt(e.getKey().id, e.getValue());
+                pt.put("remaining", rem);
+            }
             projects.add(pt);
         }
         m.put("projects", projects);
@@ -388,6 +405,22 @@ public final class Views {
             costs.put(type.id, c);
         }
         m.put("costs", costs);
+        // Для RTS-режима: где форт, его палитра (вид построек), граница заказов и резерв ресурсов.
+        m.putInt("cx", o.center.getX());
+        m.putInt("cy", o.center.getY());
+        m.putInt("cz", o.center.getZ());
+        m.putInt("reach", o.reach());
+        m.putInt("orderLimit", com.vladosiwe.lordsoutpost.blueprint.Layout.radius(o.version, com.vladosiwe.lordsoutpost.blueprint.FortBlueprint.MAX_TIER)
+                + com.vladosiwe.lordsoutpost.blueprint.Layout.MARGIN + com.vladosiwe.lordsoutpost.data.Projects.EXTENT);
+        m.putString("palette", o.palette.id);
+        m.putString("layout", o.layout.id);
+        m.putByte("frot", (byte) o.rotation.ordinal());
+        CompoundTag reserved = new CompoundTag();
+        for (Resource r : Resource.VALUES) {
+            double n = com.vladosiwe.lordsoutpost.data.Projects.reserved(o, r);
+            if (n > 0) reserved.putInt(r.id, (int) Math.ceil(n));
+        }
+        m.put("reserved", reserved);
         m.putInt("projectLimit", com.vladosiwe.lordsoutpost.data.Projects.MAX_ACTIVE);
         m.putBoolean("autoBuild", o.autoBuild);
         CompoundTag rec = new CompoundTag();

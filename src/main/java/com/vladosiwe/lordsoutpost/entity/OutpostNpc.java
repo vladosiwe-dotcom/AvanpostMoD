@@ -22,6 +22,7 @@ import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.Mth;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
@@ -232,6 +233,11 @@ public abstract class OutpostNpc extends PathfinderMob implements OutpostMember 
             discard();
             return;
         }
+        // Житель не спит вечно: днём, без кровати под собой или если его ИИ сейчас занят другим — просыпается.
+        if (!level().isClientSide && isSleeping() && tickCount % 20 == 0) {
+            boolean bed = getSleepingPos().map(p -> level().getBlockState(p).getBlock() instanceof net.minecraft.world.level.block.BedBlock).orElse(false);
+            if (level().isDay() || !bed) stopSleeping();
+        }
         super.tick();
     }
 
@@ -376,12 +382,58 @@ public abstract class OutpostNpc extends PathfinderMob implements OutpostMember 
         repathAt = 0;
     }
 
+    /**
+     * Подъём по лестнице на пост (башня, вышка, боевой ход): обычный поиск пути лестниц не знает.
+     * Житель идёт к основанию лестницы рядом с постом, лезет вверх и сходит на площадку — ногами, без переноса.
+     */
+    private boolean climbTo(BlockPos target) {
+        if (target.getY() - getY() < 1.5) return false;
+        double tx = target.getX() + 0.5, tz = target.getZ() + 0.5;
+        if (Math.hypot(tx - getX(), tz - getZ()) > 5) return false;
+        BlockPos ladder = null;
+        double best = Double.MAX_VALUE;
+        int y0 = Mth.floor(getY()) - 1;
+        for (BlockPos p : BlockPos.betweenClosed(target.getX() - 3, y0, target.getZ() - 3, target.getX() + 3, target.getY(), target.getZ() + 3)) {
+            if (!level().getBlockState(p).is(net.minecraft.tags.BlockTags.CLIMBABLE)) continue;
+            double d = p.distToCenterSqr(getX(), getY(), getZ());
+            if (d < best) {
+                best = d;
+                ladder = p.immutable();
+            }
+        }
+        if (ladder == null) return false;
+        double lx = ladder.getX() + 0.5, lz = ladder.getZ() + 0.5;
+        if (onClimbable()) {
+            getNavigation().stop();
+            if (getY() >= target.getY() - 0.3) {
+                // Наверху: шаг с лестницы на площадку.
+                setDeltaMovement((tx - getX()) * 0.15, 0.08, (tz - getZ()) * 0.15);
+            } else {
+                setDeltaMovement((lx - getX()) * 0.2, 0.2, (lz - getZ()) * 0.2);
+            }
+            getLookControl().setLookAt(lx, getY() + 1, lz);
+            return true;
+        }
+        double hd = Math.hypot(lx - getX(), lz - getZ());
+        if (hd < 1.2) {
+            getNavigation().stop();
+            setDeltaMovement((lx - getX()) * 0.25, getDeltaMovement().y, (lz - getZ()) * 0.25);
+        } else {
+            pathTo(lx, ladder.getY(), lz, 1.0);
+        }
+        return true;
+    }
+
     public boolean approach(BlockPos pos, double speed, double reach, int patience) {
         double dist = distanceToSqr(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5);
         if (dist <= reach * reach) {
             stuckTicks = 0;
             if (!getNavigation().isDone()) getNavigation().stop();
             return true;
+        }
+        if (!level().isClientSide && climbTo(pos)) {
+            stuckTicks = Math.max(0, stuckTicks - 1);
+            return false;
         }
         if (getNavigation().isDone() || tickCount % 40 == 0) {
             int before = repathAt;

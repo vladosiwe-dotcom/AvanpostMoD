@@ -79,7 +79,7 @@ public class DutyGoal extends Goal {
                 else post(o, r);
             }
             case HOLD -> {
-                if (squad.hold != null) mob.approach(NpcLifecycle.groundAt(level, o, squad.hold.getX(), squad.hold.getZ()), 1.0, 3, 400);
+                if (squad.hold != null) mob.approach(NpcLifecycle.holdSpot(level, o, squad.hold), 1.0, 2, 400);
                 else post(o, r);
             }
             case PATROL -> {
