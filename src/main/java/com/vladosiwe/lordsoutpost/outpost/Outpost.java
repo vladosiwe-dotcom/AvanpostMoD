@@ -157,6 +157,9 @@ public final class Outpost {
     @Nullable public transient Resource scarce;
     /** Еды почти нет: планировщик приостанавливает необязательную стройку. */
     public transient boolean foodCritical;
+    /** Пиромант Iron's Spells у башни мага (сущность мода, сохраняется в чанке сама) и срок прихода нового после гибели. */
+    @Nullable public UUID pyromancer;
+    public long pyromancerRejoinAt;
 
     // --- Правки игрока (сохраняются) ---
     /** Блоки, поставленные игроком на территории или в лесной зоне: их не рубят, не расчищают и не сносят стройкой. */
@@ -497,6 +500,8 @@ public final class Outpost {
         t.putLongArray("playerPlaced", playerPlaced.toLongArray());
         t.put("tasks", tasks.save());
         t.put("zones", zones.save());
+        if (pyromancer != null) t.putUUID("pyromancer", pyromancer);
+        t.putLong("pyromancerRejoin", pyromancerRejoinAt);
         t.putLongArray("playerRemoved", playerRemoved.toLongArray());
 
         CompoundTag st = new CompoundTag();
@@ -587,6 +592,8 @@ public final class Outpost {
         for (long l : t.getLongArray("playerPlaced")) o.playerPlaced.add(l);
         o.tasks.load(t.getCompound("tasks"), o.lastSim);
         o.zones.load(t.getCompound("zones"));
+        o.pyromancer = t.hasUUID("pyromancer") ? t.getUUID("pyromancer") : null;
+        o.pyromancerRejoinAt = t.getLong("pyromancerRejoin");
         for (long l : t.getLongArray("playerRemoved")) o.playerRemoved.add(l);
 
         CompoundTag st = t.getCompound("stock");

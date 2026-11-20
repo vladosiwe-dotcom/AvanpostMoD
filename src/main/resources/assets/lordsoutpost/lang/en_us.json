@@ -147,6 +147,8 @@
   "lordsoutpost.event.caravan_visit": "A caravan arrived from %s.",
   "lordsoutpost.event.ambush": "The caravan was ambushed!",
   "lordsoutpost.event.ambush_won": "The escort fought off an ambush.",
+  "lordsoutpost.event.pyromancer_joined": "A pyromancer arrived at the mage tower: he defends the fort with fire and trades scrolls.",
+  "lordsoutpost.event.pyromancer_died": "The pyromancer fell. A new one will come to the mage tower in a few days.",
   "lordsoutpost.event.zone_moved": "Work zone \"%s\" moved to %s.",
   "lordsoutpost.event.zone_reset": "Work zone \"%s\" returned to its blueprint place.",
   "lordsoutpost.event.ambush_lost": "Ambush: the caravan lost half its cargo.",

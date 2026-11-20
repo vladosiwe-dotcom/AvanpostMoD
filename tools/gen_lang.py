@@ -172,6 +172,8 @@ add(P + 'event.caravan_lost', 'Караван пропал в пути.', 'A car
 add(P + 'event.caravan_visit', 'Прибыл караван из форта %s.', 'A caravan arrived from %s.')
 add(P + 'event.ambush', 'Караван попал в засаду!', 'The caravan was ambushed!')
 add(P + 'event.ambush_won', 'Конвой отбил засаду на караван.', 'The escort fought off an ambush.')
+add(P + 'event.pyromancer_joined', 'К башне мага пришёл пиромант: он защищает форт огнём и торгует свитками.', 'A pyromancer arrived at the mage tower: he defends the fort with fire and trades scrolls.')
+add(P + 'event.pyromancer_died', 'Пиромант пал. Новый придёт к башне мага через несколько дней.', 'The pyromancer fell. A new one will come to the mage tower in a few days.')
 add(P + 'event.zone_moved', 'Рабочая зона «%s» перенесена в %s.', 'Work zone "%s" moved to %s.')
 add(P + 'event.zone_reset', 'Рабочая зона «%s» возвращена на место по чертежу.', 'Work zone "%s" returned to its blueprint place.')
 add(P + 'event.ambush_lost', 'Засада: караван потерял половину груза.', 'Ambush: the caravan lost half its cargo.')

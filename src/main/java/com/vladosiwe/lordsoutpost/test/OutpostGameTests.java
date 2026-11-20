@@ -587,6 +587,44 @@ public final class OutpostGameTests {
         h.succeed();
     }
 
+    /**
+     * Пиромант Iron's Spells приходит к башне мага форта третьего тира ровно один, а после гибели запись это помнит.
+     * Без мода пиромант не появляется и ничего не ломается.
+     */
+    @GameTest(template = "empty")
+    public static void pyromancerJoinsMageTower(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        Outpost o = virtualOutpost(level, data, h.absolutePos(BlockPos.ZERO), 1, UUID.randomUUID());
+        try {
+            o.tier = 3;
+            o.online = true;
+            o.onlineSince = level.getGameTime() - 1000;
+            BlockPos tower = o.zone(com.vladosiwe.lordsoutpost.outpost.WorkZone.MAGE_TOWER);
+            level.getChunk(tower);
+            com.vladosiwe.lordsoutpost.compat.Pyromancer.tick(level, o, level.getGameTime());
+            if (!com.vladosiwe.lordsoutpost.compat.Pyromancer.available()) {
+                h.assertTrue(o.pyromancer == null, "без Iron's Spells пиромант не должен появляться");
+            } else {
+                h.assertTrue(o.pyromancer != null, "к башне мага форта третьего тира должен прийти пиромант");
+                var mob = level.getEntity(o.pyromancer);
+                h.assertTrue(mob != null && com.vladosiwe.lordsoutpost.compat.Pyromancer.ofOutpost(mob, o.id), "пиромант должен быть привязан к форту");
+                com.vladosiwe.lordsoutpost.compat.Pyromancer.tick(level, o, level.getGameTime() + 20);
+                long count = level.getEntitiesOfClass(net.minecraft.world.entity.Mob.class, new AABB(tower).inflate(64),
+                        m -> com.vladosiwe.lordsoutpost.compat.Pyromancer.ofOutpost(m, o.id)).size();
+                h.assertTrue(count == 1, "пиромант должен быть один, найдено " + count);
+                com.vladosiwe.lordsoutpost.compat.Pyromancer.onDeath(level, mob);
+                h.assertTrue(o.pyromancer == null && o.pyromancerRejoinAt > level.getGameTime(), "после гибели новый пиромант придёт через срок");
+                mob.discard();
+            }
+        } finally {
+            o.online = false;
+            OutpostManager.abandon(data, o, level.getGameTime());
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
     /** Тир кирки ограничен одновременно развитием форта и личным уровнем шахтёра. */
     @GameTest(template = "empty")
     public static void minerToolTierUsesBothProgressions(GameTestHelper h) {

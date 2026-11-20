@@ -127,6 +127,25 @@ public final class ServerEvents {
         });
     }
 
+    /** Гибель пироманта форта: запись узнаёт об этом, новый придёт через срок. */
+    @SubscribeEvent
+    public static void onLivingDeath(net.neoforged.neoforge.event.entity.living.LivingDeathEvent event) {
+        if (event.getEntity().level() instanceof net.minecraft.server.level.ServerLevel level) {
+            com.vladosiwe.lordsoutpost.compat.Pyromancer.onDeath(level, event.getEntity());
+        }
+    }
+
+    /**
+     * Свои не ранят пироманта форта (шальная стрела стражника), чтобы он не обозлился на гарнизон.
+     */
+    @SubscribeEvent
+    public static void onIncomingDamage(net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent event) {
+        var target = event.getEntity();
+        if (target.level().isClientSide || !target.getPersistentData().contains(com.vladosiwe.lordsoutpost.compat.Pyromancer.TAG)) return;
+        if (event.getSource().getEntity() instanceof com.vladosiwe.lordsoutpost.entity.OutpostNpc npc && !npc.hostileFaction()
+                && com.vladosiwe.lordsoutpost.compat.Pyromancer.ofOutpost(target, npc.outpostId())) event.setCanceled(true);
+    }
+
     /** Вьючное животное каравана, сохранившееся в чанке, не должно появиться второй раз: караван воссоздаётся из записи. */
     @SubscribeEvent
     public static void onEntityJoin(EntityJoinLevelEvent event) {

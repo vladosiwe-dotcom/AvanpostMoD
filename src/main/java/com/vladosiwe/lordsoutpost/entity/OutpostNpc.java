@@ -267,6 +267,8 @@ public abstract class OutpostNpc extends PathfinderMob implements OutpostMember 
             if (o == null || !(level() instanceof ServerLevel sl)) return false;
             return Access.level(OutpostSavedData.get(sl), o, player.getUUID()).atLeast(AccessLevel.ALLY);
         }
+        // Пиромант Iron's Spells своего форта — союзник: его не трогают, и его заклинания не ранят своих.
+        if (!hostileFaction() && com.vladosiwe.lordsoutpost.compat.Pyromancer.ofOutpost(other, outpostId)) return true;
         return other.getPersistentData().contains(NpcLifecycle.CARAVAN_TAG) && !hostileFaction();
     }
 

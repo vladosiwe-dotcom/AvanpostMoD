@@ -1,13 +1,16 @@
 """Downloads mods for the end-to-end test from Modrinth (NeoForge, Minecraft 1.21.1) with their required dependencies.
 
-usage: fetch_mods.py <server_dir> <client_dir> <summary.md> required:create optional:sable optional:irons-spells-n-spellbooks+irons-lib+curios ...
+usage: fetch_mods.py <server_dir> <client_dir> <summary.md> [pin:<slug>=<version>] required:create optional:sable optional:irons-spells-n-spellbooks+irons-lib+curios ...
 A group joined with "+" is all-or-nothing (for mods whose dependencies Modrinth does not list).
+pin:<slug>=<version> fixes the version of a mod (also when it comes in as a dependency), e.g. when the newest
+release needs a newer NeoForge than the one this project builds against.
 A required group that cannot be fully fetched fails the run; an optional one is reported and skipped.
 """
 import json, os, sys, urllib.parse, urllib.request
 
 API = 'https://api.modrinth.com/v2'
 HEADERS = {'User-Agent': 'lordsoutpost-ci-test/1.0'}
+PINS = {}
 
 
 def get(url):
@@ -15,9 +18,12 @@ def get(url):
         return json.load(r)
 
 
-def version_for(project):
+def version_for(project, pinned=None):
     q = urllib.parse.urlencode({'loaders': json.dumps(['neoforge']), 'game_versions': json.dumps(['1.21.1'])})
     versions = get(f'{API}/project/{project}/version?{q}')
+    if pinned:
+        versions = [v for v in versions if v['version_number'] == pinned]
+        return versions[0] if versions else None
     releases = [v for v in versions if v['version_type'] == 'release'] or versions
     return releases[0] if releases else None
 
@@ -35,7 +41,7 @@ def resolve(slugs, seen):
         if info['id'] in seen:
             continue
         seen.add(info['id'])
-        v = version_for(info['id'])
+        v = version_for(info['id'], PINS.get(info.get('slug')))
         if v is None:
             rows.append(f"| {info['title']} | no NeoForge 1.21.1 version | — | — |"); ok = False; continue
         f = next((x for x in v['files'] if x['primary']), v['files'][0])
@@ -63,6 +69,12 @@ def main():
     os.makedirs(server_dir, exist_ok=True); os.makedirs(client_dir, exist_ok=True)
     seen, lines, failed = set(), ['| Mod | Version | Server | Client |', '|---|---|---|---|'], False
     for arg in sys.argv[4:]:
+        if arg.startswith('pin:'):
+            slug, version = arg[4:].split('=', 1)
+            PINS[slug] = version
+    for arg in sys.argv[4:]:
+        if arg.startswith('pin:'):
+            continue
         kind, group = arg.split(':', 1)
         files, rows, ok = resolve(group.split('+'), seen)
         lines.extend(rows)

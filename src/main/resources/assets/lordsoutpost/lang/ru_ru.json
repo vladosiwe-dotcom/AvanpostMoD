@@ -147,6 +147,8 @@
   "lordsoutpost.event.caravan_visit": "Прибыл караван из форта %s.",
   "lordsoutpost.event.ambush": "Караван попал в засаду!",
   "lordsoutpost.event.ambush_won": "Конвой отбил засаду на караван.",
+  "lordsoutpost.event.pyromancer_joined": "К башне мага пришёл пиромант: он защищает форт огнём и торгует свитками.",
+  "lordsoutpost.event.pyromancer_died": "Пиромант пал. Новый придёт к башне мага через несколько дней.",
   "lordsoutpost.event.zone_moved": "Рабочая зона «%s» перенесена в %s.",
   "lordsoutpost.event.zone_reset": "Рабочая зона «%s» возвращена на место по чертежу.",
   "lordsoutpost.event.ambush_lost": "Засада: караван потерял половину груза.",

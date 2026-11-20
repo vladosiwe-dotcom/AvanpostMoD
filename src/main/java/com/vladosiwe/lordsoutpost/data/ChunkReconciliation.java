@@ -97,6 +97,7 @@ public final class ChunkReconciliation {
                 if (o.state == OutpostState.OWNED) {
                     retinue(level, o, now);
                     caravans(level, data, o, now);
+                    if (o.online) com.vladosiwe.lordsoutpost.compat.Pyromancer.tick(level, o, now);
                 }
             }
             if (o.online) online(level, data, o, now);
