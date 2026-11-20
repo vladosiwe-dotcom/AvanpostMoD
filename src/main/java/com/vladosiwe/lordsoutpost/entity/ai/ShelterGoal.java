@@ -20,8 +20,16 @@ public class ShelterGoal extends Goal {
     public boolean canUse() {
         if (mob.level().isClientSide || mob.caravanId != null) return false;
         Outpost o = mob.outpost();
-        return o != null && o.alarmUntil > mob.level().getGameTime();
+        if (o == null || o.alarmUntil <= mob.level().getGameTime()) return false;
+        // Прятаться — только когда враг рядом; иначе жители работают и во время набега.
+        if (mob.tickCount % 20 == 0 || danger) {
+            danger = !mob.level().getEntitiesOfClass(com.vladosiwe.lordsoutpost.entity.FighterEntity.class, mob.getBoundingBox().inflate(32, 12, 32),
+                    f -> f.isAlive() && f.hostileFaction()).isEmpty();
+        }
+        return danger;
     }
+
+    private boolean danger;
 
     @Override
     public boolean requiresUpdateEveryTick() {

@@ -49,7 +49,15 @@ public class DutyGoal extends Goal {
         if (!(mob.level() instanceof ServerLevel level)) return;
         if (mob.raidTarget != 0) {
             Outpost target = OutpostSavedData.get(level).byId(mob.raidTarget);
-            if (target != null) walk(target.marker(Marker.YARD), 1.0, 5);
+            if (target == null) return;
+            // Налётчик идёт на ближайшего защитника или жителя (видно его или нет), а не стоит у стены.
+            if (mob.getTarget() == null && mob.tickCount % 20 == 0) {
+                OutpostNpc victim = level.getEntitiesOfClass(OutpostNpc.class, mob.getBoundingBox().inflate(48, 16, 48),
+                                n -> n.isAlive() && !n.hostileFaction() && n.outpostId() == target.id)
+                        .stream().min(java.util.Comparator.comparingDouble(n -> n.distanceToSqr(mob))).orElse(null);
+                if (victim != null) mob.setTarget(victim);
+            }
+            if (mob.getTarget() == null) walk(target.marker(Marker.YARD), 1.0, 5);
             return;
         }
         if (mob.caravanId != null) {
@@ -70,6 +78,17 @@ public class DutyGoal extends Goal {
                 patrol(level, o, o.markers(Marker.PATROL), false);
             }
             return;
+        }
+        // Набег: страж сам ищет налётчиков на территории форта, даже если стена закрывает обзор.
+        if (o.raid != null && mob.getTarget() == null && mob.tickCount % 20 == 0) {
+            int rr = o.reach() + 16;
+            FighterEntity raider = level.getEntitiesOfClass(FighterEntity.class, new net.minecraft.world.phys.AABB(o.center).inflate(rr, 24, rr),
+                            f -> f.isAlive() && f.hostileFaction() && f.raidTarget == o.id)
+                    .stream().min(java.util.Comparator.comparingDouble(f -> f.distanceToSqr(mob))).orElse(null);
+            if (raider != null) {
+                mob.setTarget(raider);
+                return;
+            }
         }
         Squad squad = o.squads[Math.max(0, Math.min(Squad.COUNT - 1, r.squad))];
         switch (squad.order) {

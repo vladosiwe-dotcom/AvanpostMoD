@@ -48,6 +48,8 @@ public final class Outpost {
     public final Difficulty difficulty;
     /** Временное хранилище, пока склад сносят и строят заново (не сохраняется: пересчитывается по миру). */
     @org.jetbrains.annotations.Nullable public transient BlockPos tempStore;
+    /** Набор бочек склада (по их местам) — текущий и тот, по которому сверялся запас (при смене сверка начинается заново). */
+    public transient long storeKey, storeSyncedKey = Long.MIN_VALUE;
     /** Природные деревья внутри стен убраны (генерация мира сажает их уже после форта). */
     public boolean natureCleared;
     /** Версия планировки (1 — первая, 2 — просторная); новые форты берут версию своего мира. */

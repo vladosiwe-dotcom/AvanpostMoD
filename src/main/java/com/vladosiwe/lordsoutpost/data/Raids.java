@@ -22,7 +22,7 @@ import java.util.Iterator;
  */
 public final class Raids {
     public static final double RAID_RANGE = 1600;
-    public static final long RAID_TIMEOUT = 6000;
+    public static final long RAID_TIMEOUT = 3600;
 
     private Raids() {}
 

@@ -30,7 +30,7 @@ import java.util.List;
  */
 public final class Simulation {
     public static final long DAY = 24000L;
-    public static final double FOOD_PER_DAY = 6;
+    public static final double FOOD_PER_DAY = 4.5;
     public static final double BUILDER_STEPS_PER_DAY = 600;
     private static final double MAX_BUILD_CREDIT = 40;
     /** Добыча в игровой день на работника. Камня нужно больше всего: каменные стены, башни и донжон. */

@@ -60,11 +60,16 @@ public final class Storehouse {
      */
     public static List<Container> barrels(ServerLevel level, Outpost o) {
         List<Container> out = new ArrayList<>();
+        long key = 0;
         for (BlockPos pos : o.markers(Marker.STOCKPILE)) {
-            if (level.isLoaded(pos) && level.getBlockEntity(pos) instanceof Container c) out.add(c);
+            if (level.isLoaded(pos) && level.getBlockEntity(pos) instanceof Container c) {
+                out.add(c);
+                key = key * 31 + pos.asLong();
+            }
         }
         if (!out.isEmpty()) {
             o.tempStore = null;
+            o.storeKey = key;
             return out;
         }
         BlockPos first = null;
@@ -74,6 +79,7 @@ public final class Storehouse {
                 BlockPos pos = o.world(rel);
                 if (level.isLoaded(pos) && level.getBlockEntity(pos) instanceof Container c) {
                     out.add(c);
+                    key = key * 31 + pos.asLong();
                     if (first == null) first = pos;
                 }
             }
@@ -86,11 +92,13 @@ public final class Storehouse {
                 var be = level.getBlockEntity(pos);
                 if (be instanceof net.minecraft.world.level.block.entity.BarrelBlockEntity || be instanceof net.minecraft.world.level.block.entity.ChestBlockEntity) {
                     out.add((Container) be);
+                    key = key * 31 + pos.asLong();
                     if (first == null) first = pos;
                 }
             }
         }
         o.tempStore = first;
+        o.storeKey = key;
         return out;
     }
 
@@ -130,7 +138,16 @@ public final class Storehouse {
             if (st.isEmpty()) it.remove();
         }
         EnumMap<Resource, Double> have = measure(barrels);
-        if (o.storeLast.isEmpty()) o.storeLast.putAll(have);
+        // Набор бочек сменился (склад снесли, построили новый, Лорд поставил временное хранилище): сравнивать с прошлым
+        // нельзя — пустые новые бочки иначе сочлись бы тратой и запас бы пропал. Отсчёт начинается заново, а бочки
+        // ниже (шаг 2) заполняются по записи запаса.
+        // После перезапуска сохранённой сверке верим (бочки те же), иначе снятое игроком перед выходом выдалось бы снова.
+        if (o.storeSyncedKey == Long.MIN_VALUE && !o.storeLast.isEmpty()) o.storeSyncedKey = o.storeKey;
+        if (o.storeLast.isEmpty() || o.storeKey != o.storeSyncedKey) {
+            o.storeLast.clear();
+            o.storeLast.putAll(have);
+            o.storeSyncedKey = o.storeKey;
+        }
         for (Resource r : PHYSICAL) {
             // 1. Всё, что изменилось в бочках с прошлого раза помимо мода, сделал игрок.
             double delta = have.get(r) - o.storeLast.getOrDefault(r, 0.0);

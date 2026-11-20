@@ -37,8 +37,18 @@ public class FighterRenderer extends HumanoidMobRenderer<FighterEntity, Marauder
         addLayer(new VillagerHeadLayer(this));
     }
 
+    private static final ResourceLocation GUARD_SKIN = LordsOutpost.id("textures/entity/guard.png");
+    private static final ResourceLocation CAPTAIN_SKIN = LordsOutpost.id("textures/entity/guard_captain.png");
+    private static final ResourceLocation MARAUDER_SKIN = LordsOutpost.id("textures/entity/marauder.png");
+    private static final boolean EPIC_FIGHT = net.neoforged.fml.ModList.get().isLoaded("epicfight");
+
     @Override
     public ResourceLocation getTextureLocation(FighterEntity entity) {
+        // Epic Fight рисует бойца своим скелетом игрока: нужна текстура в раскладке игрока, а не разбойника.
+        if (EPIC_FIGHT) {
+            if (entity.role() == Role.CAPTAIN) return entity.hostileFaction() ? MARAUDER_SKIN : CAPTAIN_SKIN;
+            return entity.hostileFaction() ? MARAUDER_SKIN : GUARD_SKIN;
+        }
         if (entity.role() == Role.CAPTAIN) return VINDICATOR;
         return entity.hostileFaction() ? PILLAGER : VINDICATOR;
     }
@@ -100,7 +110,7 @@ public class FighterRenderer extends HumanoidMobRenderer<FighterEntity, Marauder
         @Override
         public void render(PoseStack pose, MultiBufferSource buffer, int light, FighterEntity entity, float limbSwing, float limbSwingAmount,
                            float partialTick, float ageInTicks, float netHeadYaw, float headPitch) {
-            if (!hybrid(entity) || entity.isInvisible()) return;
+            if (!hybrid(entity) || entity.isInvisible() || EPIC_FIGHT) return;
             MarauderModel<FighterEntity> model = getParentModel();
             model.setAllVisible(false);
             model.head.visible = true;
