@@ -119,6 +119,8 @@ public final class NpcLifecycle {
         if (r != null && npc.getUUID().equals(r.entity)) {
             r.entity = null;
             r.health = Math.max(0.05f, npc.getHealth() / Math.max(1f, npc.getMaxHealth()));
+            // Ноша уже на складе: задачи жителя возвращаются в очередь (планируемые) или отменяются (личные запросы).
+            o.tasks.releaseExecutor(r.id, "unloaded", level.getGameTime());
         }
         Caravan c = caravan(o, npc.caravanId);
         if (c != null && c.materialized && r != null && r.id.equals(c.leader)) ChunkReconciliation.dematerialize(level, c, npc.getUUID());
@@ -154,6 +156,8 @@ public final class NpcLifecycle {
         Resident r = o.resident(npc.residentId());
         if (r == null) return;
         r.entity = null;
+        // Ноша погибшего выпала на землю: задача освобождается, её резерв на складе сохраняется для другого работника.
+        o.tasks.releaseExecutor(r.id, "died", now);
         data.setDirty();
 
         if (o.state == OutpostState.WILD) {

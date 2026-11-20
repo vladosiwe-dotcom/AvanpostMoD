@@ -693,13 +693,12 @@ public final class ChunkReconciliation {
     private static BlockPos spawnSpot(ServerLevel level, Outpost o, Resident r) {
         if (r.role == Role.CAPTAIN || r.role == Role.STEWARD) return o.marker(Marker.THRONE);
         if (r.role.combat) return NpcLifecycle.postFor(o, r);
-        Marker m = switch (r.role) {
-            case LUMBERJACK -> Marker.WOODYARD;
-            case MINER -> Marker.MINE;
-            case SKOTOVOD -> Marker.STORAGE;
-            default -> Marker.YARD;
+        return switch (r.role) {
+            case LUMBERJACK -> o.zone(com.vladosiwe.lordsoutpost.outpost.WorkZone.WOODYARD);
+            case MINER -> o.zone(com.vladosiwe.lordsoutpost.outpost.WorkZone.MINE);
+            case SKOTOVOD -> o.marker(Marker.STORAGE);
+            default -> o.marker(Marker.YARD);
         };
-        return o.marker(m);
     }
 
     /** Создаёт сущность по записи жителя. */

@@ -146,6 +146,18 @@ public final class Outpost {
     /** Для форта из генерации мира: проверено, что структура действительно стоит в чанке. */
     public boolean verified;
 
+    // --- Управление поселением ---
+    /** Задачи жителей и резервы склада (сохраняются). */
+    public final TaskBoard tasks = new TaskBoard();
+    /** Рабочие зоны профессий и их перенос (сохраняются). */
+    public final WorkZones zones = new WorkZones();
+    /** Приоритеты профессий, которые выставляет планировщик (пересчитываются, не сохраняются). */
+    public transient final EnumMap<Role, Integer> priorities = new EnumMap<>(Role.class);
+    /** Ресурс, который сейчас нужнее всего (по оценке планировщика), или null. */
+    @Nullable public transient Resource scarce;
+    /** Еды почти нет: планировщик приостанавливает необязательную стройку. */
+    public transient boolean foodCritical;
+
     // --- Правки игрока (сохраняются) ---
     /** Блоки, поставленные игроком на территории или в лесной зоне: их не рубят, не расчищают и не сносят стройкой. */
     public final it.unimi.dsi.fastutil.longs.LongOpenHashSet playerPlaced = new it.unimi.dsi.fastutil.longs.LongOpenHashSet();
@@ -259,6 +271,17 @@ public final class Outpost {
         return rel.isEmpty() ? center.above() : world(rel.get(0));
     }
 
+    /** Якорь рабочей зоны: перенесённый Лордом или стоящий по чертежу. */
+    public BlockPos zone(WorkZone zone) {
+        BlockPos moved = zones.override(zone);
+        return moved != null ? moved : marker(zone.marker);
+    }
+
+    /** Зона существует: перенесена Лордом или есть в чертеже текущего тира. */
+    public boolean hasZone(WorkZone zone) {
+        return zones.override(zone) != null || !design().markers(zone.marker).isEmpty();
+    }
+
     /** Контур периметра в мировых координатах (x, z) для карты. */
     public int[][] outline(int r) {
         int[][] canon = layout.outline(r);
@@ -300,6 +323,15 @@ public final class Outpost {
     public void addPhysical(Resource r, double amount) {
         if (amount <= 0) return;
         stock.put(r, stock(r) + amount);
+    }
+
+    /** Запас без того, что отложено под задачи жителей (резерв нельзя тратить на стройку и торговлю). */
+    public double available(Resource r) {
+        double reserved = tasks.reservedValue(item -> {
+            var v = com.vladosiwe.lordsoutpost.data.ResourceItems.of(new ItemStack(item));
+            return v != null && v.resource() == r ? v.perItem() : 0;
+        });
+        return Math.max(0, stock(r) - reserved);
     }
 
     public boolean take(Resource r, double amount) {
@@ -463,6 +495,8 @@ public final class Outpost {
         t.putInt("mineCursor", mineCursor);
         t.putDouble("credit", buildCredit);
         t.putLongArray("playerPlaced", playerPlaced.toLongArray());
+        t.put("tasks", tasks.save());
+        t.put("zones", zones.save());
         t.putLongArray("playerRemoved", playerRemoved.toLongArray());
 
         CompoundTag st = new CompoundTag();
@@ -551,6 +585,8 @@ public final class Outpost {
         o.mineCursor = Math.max(0, t.getInt("mineCursor"));
         o.buildCredit = t.getDouble("credit");
         for (long l : t.getLongArray("playerPlaced")) o.playerPlaced.add(l);
+        o.tasks.load(t.getCompound("tasks"), o.lastSim);
+        o.zones.load(t.getCompound("zones"));
         for (long l : t.getLongArray("playerRemoved")) o.playerRemoved.add(l);
 
         CompoundTag st = t.getCompound("stock");

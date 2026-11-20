@@ -5,6 +5,7 @@ import com.vladosiwe.lordsoutpost.blueprint.Step;
 import com.vladosiwe.lordsoutpost.compat.MagicLoot;
 import com.vladosiwe.lordsoutpost.config.OutpostConfig;
 import com.vladosiwe.lordsoutpost.outpost.Outpost;
+import com.vladosiwe.lordsoutpost.outpost.OutpostTask;
 import com.vladosiwe.lordsoutpost.outpost.Pact;
 import com.vladosiwe.lordsoutpost.outpost.Relation;
 import com.vladosiwe.lordsoutpost.outpost.Resident;
@@ -74,6 +75,8 @@ public final class Simulation {
 
     private static void owned(ServerLevel level, OutpostSavedData data, Outpost o, long now, double days, RandomSource rnd) {
         heal(o, now, days);
+        // Центральный планировщик: приоритеты профессий, задачи кузнеца, брошенные задачи, пауза стройки при голоде.
+        OutpostDirector.tick(level, o, now);
         boolean steward = o.activeCount(Role.STEWARD) > 0;
         double prod = days * OutpostConfig.get(OutpostConfig.PRODUCTION, 1.0) * o.law.production() * (o.starving ? 0.5 : 1.0);
         double boost = OutpostConfig.get(OutpostConfig.PLAYER_HELP_BOOST, 2.0);
@@ -173,10 +176,14 @@ public final class Simulation {
         boolean helped = o.boosted(Resource.WOOD, now) || o.boosted(Resource.STONE, now) || o.boosted(Resource.IRON, now);
         double rate = builders * BUILDER_STEPS_PER_DAY * OutpostConfig.get(OutpostConfig.BUILD_SPEED, 1.0) * o.law.buildSpeed()
                 * (helped ? boost : 1) * (o.starving ? 0.5 : 1);
+        // Планировщик приостановил стройку: еды почти нет, строители помогают добывать её.
+        // Накопленный кредит шагов сохраняется до конца голода.
+        if (o.foodCritical) return;
         o.buildCredit = Math.min(MAX_BUILD_CREDIT + rate * days, o.buildCredit + rate * days);
         while (o.buildCredit >= 1 && o.steps < plan.size()) {
             Resource cost = plan.get(o.steps).cost();
-            if (cost != null && !o.take(cost, 1)) {
+            // Отложенное под задачи жителей (материалы кузнеца и т. п.) на стройку не идёт.
+            if (cost != null && (o.available(cost) < 1 || !o.take(cost, 1))) {
                 o.stalledOn = cost;
                 o.buildCredit = Math.min(o.buildCredit, MAX_BUILD_CREDIT);
                 break;
@@ -205,33 +212,39 @@ public final class Simulation {
         }
     }
 
+    /**
+     * Кузнец вдали от игрока выполняет те же задачи с доски, что и в мире (ремонт, затем перековка),
+     * тратя тот же объём железа и кожи. Задачу, выполненную виртуально, физический кузнец уже не увидит:
+     * учёт общий, работа не повторяется.
+     */
     private static void smith(Outpost o, long now, double days, double boost) {
         int smiths = virtualWorkers(o, Role.SMITH, now);
         if (smiths == 0) return;
         boolean helped = o.boosted(Resource.HIDES, now) || o.boosted(Resource.IRON, now);
         o.smithWork = Math.min(8, o.smithWork + smiths * 30 * days * (helped ? boost : 1));
         while (o.smithWork >= 1) {
-            Resident worst = null;
-            for (Resident r : o.residents) if (r.role.combat && r.armor < 0.95f && (worst == null || r.armor < worst.armor)) worst = r;
-            if (worst != null) {
-                if (o.stock(Resource.HIDES) < 2 || o.stock(Resource.IRON) < 4) return;
-                o.take(Resource.HIDES, 2);
-                o.take(Resource.IRON, 4);
-                worst.armor = Math.min(1f, worst.armor + 0.25f);
-            } else {
-                // Броня цела — кузнец перековывает снаряжение на следующий уровень.
-                int maxGear = Math.min(Resident.MAX_GEAR, o.tier);
-                Resident lowest = null;
-                for (Resident r : o.residents) if (r.role.combat && r.gear < maxGear && (lowest == null || r.gear < lowest.gear)) lowest = r;
-                if (lowest == null) return;
-                double iron = 12 * (lowest.gear + 1), hides = 6 * (lowest.gear + 1);
-                // Запас на ремонт не трогаем.
-                if (o.stock(Resource.IRON) < iron + 10 || o.stock(Resource.HIDES) < hides + 10) return;
-                o.take(Resource.IRON, iron);
-                o.take(Resource.HIDES, hides);
-                lowest.gear++;
-                o.dirtyForClients = true;
+            OutpostTask task = o.tasks.nextFor(Role.SMITH);
+            if (task == null) return;
+            Resident target = task.subject == null ? null : o.resident(task.subject);
+            if (target == null) {
+                o.tasks.set(task, OutpostTask.State.CANCELLED, "obsolete", now);
+                continue;
             }
+            var materials = OutpostDirector.smithMaterials(task, target);
+            double iron = materials.get(Items.IRON_INGOT) * 4.0, hides = materials.get(Items.LEATHER) * 2.0;
+            // Своё отложенное задача может тратить; чужое — нет. Перековка не трогает ремонтный запас.
+            double ownIron = task.reservedCount(Items.IRON_INGOT) * 4.0, ownHides = task.reservedCount(Items.LEATHER) * 2.0;
+            double spareIron = task.type == OutpostTask.Type.UPGRADE_GEAR && ownIron == 0 ? OutpostDirector.SMITH_IRON_RESERVE * 4.0 : 0;
+            double spareHides = task.type == OutpostTask.Type.UPGRADE_GEAR && ownHides == 0 ? OutpostDirector.SMITH_LEATHER_RESERVE * 2.0 : 0;
+            if (o.available(Resource.IRON) + ownIron < iron + spareIron || o.available(Resource.HIDES) + ownHides < hides + spareHides) {
+                o.tasks.set(task, OutpostTask.State.PAUSED, "no materials", now);
+                return;
+            }
+            task.reserved.clear();
+            o.take(Resource.IRON, iron);
+            o.take(Resource.HIDES, hides);
+            OutpostDirector.applySmithResult(o, task, target);
+            o.tasks.set(task, OutpostTask.State.COMPLETED, "virtual", now);
             o.smithWork -= 1;
         }
     }
@@ -363,6 +376,8 @@ public final class Simulation {
         for (Role role : PRIORITY) {
             int have = role == Role.SHIELDMAN ? o.fighters() : o.count(role);
             int deficit = desired(o, role) - have;
+            // Планировщик поднял приоритет профессии (голод, дефицит ресурса, износ брони): поселенец скорее придёт к ней.
+            if (deficit > 0) deficit += Math.max(0, o.priorities.getOrDefault(role, OutpostDirector.BASE) - OutpostDirector.BASE) / 15;
             // Стройка стоит без ресурса: следующий поселенец — тот, кто его добывает.
             if (o.stalledOn == Resource.STONE && role == Role.MINER && have < o.tier + 2) deficit += 2;
             if (o.stalledOn == Resource.WOOD && role == Role.LUMBERJACK && have < o.tier + 2) deficit += 2;

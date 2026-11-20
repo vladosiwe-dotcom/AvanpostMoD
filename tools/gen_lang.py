@@ -32,14 +32,14 @@ for k, ru, en in [('frontier_post', 'Пограничная Застава', 'Fr
                   ('redoubt', 'Укреплённый Редут', 'Fortified Redoubt'), ('marauder_citadel', 'Цитадель Мародёров', 'Marauder Citadel'),
                   ('great_fortress', 'Великая Крепость', 'Great Fortress')]:
     add(P + 'difficulty.' + k, ru, en)
-for k, ru, en in [('steward', 'Управляющий', 'Steward'), ('builder', 'Строитель', 'Builder'), ('hunter', 'Охотник', 'Hunter'),
-                  ('herder', 'Скотовод', 'Herder'), ('miner', 'Шахтёр', 'Miner'), ('lumberjack', 'Лесоруб', 'Lumberjack'),
+for k, ru, en in [('steward', 'Управляющий', 'Steward'), ('builder', 'Строитель', 'Builder'),
+                  ('herder', 'Скотовод', 'Rancher'), ('farmer', 'Фермер', 'Farmer'), ('miner', 'Шахтёр', 'Miner'), ('lumberjack', 'Лесоруб', 'Lumberjack'),
                   ('smith', 'Кузнец', 'Smith'), ('mage', 'Придворный Маг', 'Court Mage'), ('caravaneer', 'Караванщик', 'Caravaneer'),
                   ('shieldman', 'Щитовик', 'Shieldman'), ('berserker', 'Берсерк', 'Berserker'), ('archer', 'Лучник', 'Archer'),
                   ('crossbowman', 'Арбалетчик', 'Crossbowman'), ('captain', 'Лорд', 'Lord')]:
     add(P + 'role.' + k, ru, en)
 for k, ru, en in [('wood', 'Дерево', 'Wood'), ('stone', 'Камень', 'Stone'), ('iron', 'Железо', 'Iron'), ('food', 'Еда', 'Food'),
-                  ('hides', 'Шкуры', 'Hides'), ('gold', 'Казна', 'Treasury'), ('arcane', 'Эссенция', 'Arcane')]:
+                  ('wheat', 'Пшеница', 'Wheat'), ('seeds', 'Семена', 'Seeds'), ('hides', 'Шкуры', 'Hides'), ('gold', 'Казна', 'Treasury'), ('arcane', 'Эссенция', 'Arcane')]:
     add(P + 'resource.' + k, ru, en)
 for i, (ru, en) in enumerate([('кожа', 'leather'), ('кольчуга', 'chainmail'), ('железо', 'iron'), ('алмаз', 'diamond')]):
     add(P + 'gear.%d' % i, ru, en)
@@ -172,6 +172,8 @@ add(P + 'event.caravan_lost', 'Караван пропал в пути.', 'A car
 add(P + 'event.caravan_visit', 'Прибыл караван из форта %s.', 'A caravan arrived from %s.')
 add(P + 'event.ambush', 'Караван попал в засаду!', 'The caravan was ambushed!')
 add(P + 'event.ambush_won', 'Конвой отбил засаду на караван.', 'The escort fought off an ambush.')
+add(P + 'event.zone_moved', 'Рабочая зона «%s» перенесена в %s.', 'Work zone "%s" moved to %s.')
+add(P + 'event.zone_reset', 'Рабочая зона «%s» возвращена на место по чертежу.', 'Work zone "%s" returned to its blueprint place.')
 add(P + 'event.ambush_lost', 'Засада: караван потерял половину груза.', 'Ambush: the caravan lost half its cargo.')
 
 # --- Карта ---
@@ -294,6 +296,15 @@ add(P + 'ui.caravan.phase.1', 'Торгует: %s', 'Trading at: %s')
 add(P + 'ui.caravan.phase.2', 'Возвращается из: %s', 'Returning from: %s')
 add(P + 'ui.caravan.escort', 'конвой %s', 'escort %s')
 add(P + 'ui.wild_fort', 'Мародёры %s', 'Marauders %s')
+
+# --- Управление поселением ---
+add(P + 'settlement.header', 'Еды на %s дн. Дефицит: %s %s', 'Food for %s days. Shortage: %s %s')
+add(P + 'settlement.priorities', 'Приоритеты планировщика: %s', 'Director priorities: %s')
+add(P + 'settlement.no_tasks', 'Активных задач нет.', 'No active tasks.')
+add(P + 'settlement.zone_fixed', 'Эту зону нельзя перенести без перестройки: доступны farm и woodyard.', 'This zone cannot be moved without rebuilding: farm and woodyard can be moved.')
+add(P + 'settlement.zone_outside', 'Встаньте во дворе своего аванпоста.', 'Stand in the yard of your outpost.')
+add(P + 'settlement.zone_no_soil', 'Здесь нет земли под грядку 5×5.', 'There is no soil for a 5×5 field here.')
+add(P + 'settlement.zone_done', 'Зона «%s» обновлена.', 'Zone "%s" updated.')
 
 # --- Команды ---
 add(P + 'cmd.none_here', 'Здесь нет аванпоста, и своего у вас тоже нет.', 'There is no outpost here and you do not own one.')

@@ -186,7 +186,8 @@ public final class Caravans {
                 case IRON -> 30 + needs.getOrDefault(r, 0);
                 default -> 100 + needs.getOrDefault(r, 0);
             };
-            double spare = Math.min(room, Math.floor(o.stock(r) - reserve));
+            // Отложенное под задачи жителей в караван не грузится.
+            double spare = Math.min(room, Math.floor(o.available(r) - reserve));
             if (spare >= 8) {
                 out.put(r, spare);
                 room -= spare;

@@ -146,7 +146,7 @@ public final class ProtectionEvents {
         for (Outpost o : data.near(pos.getX(), pos.getZ(), FORESTRY_ZONE + 48)) {
             if (o.state == OutpostState.WILD) continue;
             boolean inside = o.contains(pos);
-            boolean forestry = plant && o.marker(Marker.WOODYARD).distSqr(pos) <= (double) FORESTRY_ZONE * FORESTRY_ZONE;
+            boolean forestry = plant && o.zone(com.vladosiwe.lordsoutpost.outpost.WorkZone.WOODYARD).distSqr(pos) <= (double) FORESTRY_ZONE * FORESTRY_ZONE;
             if (inside || forestry) {
                 o.notePlayerPlaced(pos);
                 changed = true;

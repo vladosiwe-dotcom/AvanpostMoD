@@ -2,6 +2,10 @@ package com.vladosiwe.lordsoutpost.entity.ai;
 
 import com.vladosiwe.lordsoutpost.blueprint.Marker;
 import com.vladosiwe.lordsoutpost.data.ChunkReconciliation;
+import com.vladosiwe.lordsoutpost.data.Logistics;
+import com.vladosiwe.lordsoutpost.data.OutpostDirector;
+import com.vladosiwe.lordsoutpost.outpost.OutpostTask;
+import com.vladosiwe.lordsoutpost.outpost.WorkZone;
 import com.vladosiwe.lordsoutpost.data.OutpostSavedData;
 import com.vladosiwe.lordsoutpost.data.Storehouse;
 import com.vladosiwe.lordsoutpost.entity.WorkerEntity;
@@ -97,8 +101,12 @@ public class WorkGoal extends Goal {
     @Nullable private Animal prey;
     @Nullable private BlockPos farmTarget;
     private boolean farmHarvest;
-    @Nullable private UUID smithTarget;
-    private boolean smithRepair;
+    /** Задача с общей доски, которую житель сейчас выполняет (кузнец, корм скотовода, семена фермера…). */
+    @Nullable private OutpostTask task;
+    /** Профессия, работу которой житель выполняет сейчас: своя или назначенная планировщиком (строитель без стройки). */
+    private Role acting = Role.STEWARD;
+    /** Версия рабочих зон, по которой построены кэши профессии. */
+    private int zonesVersion = -1;
     private boolean farmTill;
     private int kills;
     /** Скотовод чередует животноводство и охоту, чтобы одно направление не вытесняло другое. */
@@ -171,8 +179,8 @@ public class WorkGoal extends Goal {
         farmTarget = null;
         farmHarvest = false;
         farmTill = false;
-        smithTarget = null;
-        smithRepair = false;
+        if (task != null && task.active() && o != null) Logistics.cancel(o, task, "interrupted", mob.level().getGameTime());
+        task = null;
         item = null;
     }
 
@@ -181,8 +189,24 @@ public class WorkGoal extends Goal {
         Outpost o = mob.outpost();
         Resident r = mob.resident();
         if (o == null || r == null || !(mob.level() instanceof ServerLevel level)) return;
-        Role role = r.role;
         long now = level.getGameTime();
+        // Лорд перенёс рабочую зону: всё, что житель делал на старом месте, бросается.
+        if (zonesVersion != o.zones.version()) {
+            if (zonesVersion >= 0) {
+                release();
+                phase = Phase.DECIDE;
+            }
+            zonesVersion = o.zones.version();
+        }
+        Role role = r.role;
+        if (role == Role.BUILDER && phase == Phase.DECIDE) {
+            // Строителю нечего строить: планировщик решает, какой ресурс он пойдёт добывать руками.
+            Role helper = ChunkReconciliation.hasWork(o) ? null : OutpostDirector.helperRole(o);
+            acting = helper == null ? Role.BUILDER : helper;
+        } else if (role != Role.BUILDER) {
+            acting = role;
+        }
+        role = acting;
         if (!level.isNight() && mob.isSleeping()) mob.stopSleeping();
         if (level.isNight() && role != Role.BUILDER && phase != Phase.DEPOSIT) {
             if (mob.isSleeping()) return;
@@ -218,7 +242,9 @@ public class WorkGoal extends Goal {
                 if (done) {
                     if (role == Role.SKOTOVOD) skotovodHuntNext = !skotovodHunting;
                     release();
-                    phase = mob.carried() > 0 ? Phase.DEPOSIT : Phase.DECIDE;
+                    // Фермер не бегает на склад после каждой грядки: семена и урожай копятся в ноше до 75%.
+                    boolean keep = role == Role.FARMER && !mob.cargoReadyToDeposit();
+                    phase = mob.carried() > 0 && !keep ? Phase.DEPOSIT : Phase.DECIDE;
                 }
             }
             case CRAFT -> craftBread(level, o, r, now);
@@ -246,7 +272,7 @@ public class WorkGoal extends Goal {
             phase = Phase.DEPOSIT;
             return;
         }
-        if (r.role == Role.FARMER && Storehouse.countItem(level, o, Items.WHEAT) >= FARM_WHEAT_RESERVE + 3 && canCarryItem(Items.BREAD)) {
+        if (acting == Role.FARMER && Storehouse.countItem(level, o, Items.WHEAT) >= FARM_WHEAT_RESERVE + 3 && canCarryItem(Items.BREAD)) {
             phase = Phase.CRAFT;
             return;
         }
@@ -255,7 +281,7 @@ public class WorkGoal extends Goal {
             phase = Phase.PICKUP;
             return;
         }
-        Role role = r.role;
+        Role role = acting;
         if (role == Role.SKOTOVOD && !skotovodScheduleInitialized) {
             // Разводим работников по разным направлениям и сохраняем одинаковый порядок после пересоздания сущности.
             skotovodHuntNext = (r.id.getLeastSignificantBits() & 1L) != 0L;
@@ -267,7 +293,7 @@ public class WorkGoal extends Goal {
                 case LUMBERJACK -> findVegetation(level, o) || findTree(level, o);
                 case MINER -> claimColumn(level, o);
                 case FARMER -> findFarmTask(level, o);
-                case SMITH -> findSmithTask(level, o, now);
+                case SMITH -> findSmithTask(level, o, r, now);
                 case SKOTOVOD -> {
                     boolean huntFirst = skotovodHuntNext;
                     boolean selected = huntFirst ? startHunt() : planHerd(level, o, now);
@@ -349,7 +375,7 @@ public class WorkGoal extends Goal {
      * поиск пути мобов лестниц не знает, поэтому подъём и спуск ведутся вручную.
      */
     private boolean go(Outpost o, BlockPos target, double reach, int patience) {
-        if (mob.role() == Role.MINER && shaftUsable(o, mob.level().getMinBuildHeight())) {
+        if (acting == Role.MINER && shaftUsable(o, mob.level().getMinBuildHeight())) {
             BlockPos bottom = o.marker(Marker.MINE_SHAFT);
             int floor = o.center.getY() + 1;
             boolean under = mob.getY() < o.center.getY() - 0.5;
@@ -397,7 +423,7 @@ public class WorkGoal extends Goal {
     // ============================== Лесоруб ==============================
 
     private boolean findTree(ServerLevel level, Outpost o) {
-        BlockPos center = o.marker(Marker.WOODYARD);
+        BlockPos center = o.zone(WorkZone.WOODYARD);
         OutpostSavedData data = OutpostSavedData.get(level);
         BlockPos best = null;
         double bestD = Double.MAX_VALUE;
@@ -1026,89 +1052,118 @@ public class WorkGoal extends Goal {
 
     // ============================== Кузнец ==============================
 
-    /** Ремонт имеет приоритет; когда броня исправна, кузнец повышает уровень снаряжения бойцов. */
-    private boolean findSmithTask(ServerLevel level, Outpost o, long now) {
-        Resident worst = null;
-        for (Resident candidate : o.residents) {
-            if (candidate.active() && candidate.role.combat && candidate.armor < 0.95f
-                    && (worst == null || candidate.armor < worst.armor)) worst = candidate;
+    /**
+     * Кузнец берёт задачу с общей доски: свою незавершённую или самую важную свободную (ремонт важнее перековки —
+     * это решает планировщик приоритетом). Материалы под неё резервируются на складе.
+     */
+    private boolean findSmithTask(ServerLevel level, Outpost o, Resident r, long now) {
+        OutpostTask t = o.tasks.ofExecutor(r.id);
+        if (t == null) t = o.tasks.nextFor(Role.SMITH);
+        if (t == null) return false;
+        Resident target = t.subject == null ? null : o.resident(t.subject);
+        if (target == null || !target.active() || !target.role.combat) {
+            o.tasks.set(t, OutpostTask.State.CANCELLED, "obsolete", now);
+            return false;
         }
-        if (worst != null) {
-            if (Storehouse.countItem(level, o, Items.IRON_INGOT) < 1
-                    || Storehouse.countItem(level, o, Items.LEATHER) < 1) {
+        if (t.reserved.isEmpty() && t.carried.isEmpty()) {
+            var want = OutpostDirector.smithMaterials(t, target);
+            boolean spare = t.type == OutpostTask.Type.REPAIR_ARMOR
+                    || (Logistics.available(level, o, Items.IRON_INGOT, t) >= want.get(Items.IRON_INGOT) + OutpostDirector.SMITH_IRON_RESERVE
+                    && Logistics.available(level, o, Items.LEATHER, t) >= want.get(Items.LEATHER) + OutpostDirector.SMITH_LEATHER_RESERVE);
+            if (!spare || !Logistics.reserve(level, o, t, want, now)) {
                 noJobUntil = now + 200;
                 return false;
             }
-            smithTarget = worst.id;
-            smithRepair = true;
-            return true;
         }
-
-        int maxGear = Math.min(Resident.MAX_GEAR, o.tier);
-        Resident lowest = null;
-        for (Resident candidate : o.residents) {
-            if (candidate.active() && candidate.role.combat && candidate.gear < maxGear
-                    && (lowest == null || candidate.gear < lowest.gear)) lowest = candidate;
-        }
-        if (lowest == null) return false;
-        int count = 3 * (lowest.gear + 1);
-        if (Storehouse.countItem(level, o, Items.IRON_INGOT) < count + 3
-                || Storehouse.countItem(level, o, Items.LEATHER) < count + 5) {
-            noJobUntil = now + 200;
-            return false;
-        }
-        smithTarget = lowest.id;
-        smithRepair = false;
+        t.executor = r.id;
+        t.updatedAt = now;
+        task = t;
         return true;
     }
 
-    /** Работает у кузницы; реальные слитки и кожа списываются со склада при завершении операции. */
+    /**
+     * Кузнец забирает отложенные слитки и кожу со склада в ношу, несёт их в кузницу, работает у горна
+     * и расходует ровно эти предметы. Результат (починка или новый уровень снаряжения) применяется один раз.
+     */
     private boolean smith(ServerLevel level, Outpost o, Resident worker, long now) {
-        if (smithTarget == null) return true;
-        Resident target = o.resident(smithTarget);
+        if (task == null || !task.active()) return true;
+        Resident target = task.subject == null ? null : o.resident(task.subject);
         if (target == null || !target.active() || !target.role.combat) {
-            smithTarget = null;
+            Logistics.cancel(o, task, "obsolete", now);
+            task = null;
             return true;
         }
-        if (!go(o, o.marker(Marker.SMITHY), 1.6, 500)) return false;
-
-        if (mob.tickCount % 80 == 0) {
+        task.updatedAt = now;
+        var materials = OutpostDirector.smithMaterials(task, target);
+        if (task.carried.isEmpty()) {
+            // 1. На склад за материалами.
+            if (!go(o, o.zone(WorkZone.STOREHOUSE), 1.8, 500)) return false;
+            if (!Logistics.withdraw(level, o, task, mob, now)) {
+                Logistics.cancel(o, task, task.reason.isEmpty() ? "withdraw failed" : task.reason, now);
+                task = null;
+                noJobUntil = now + 200;
+                return true;
+            }
             mob.swing(InteractionHand.MAIN_HAND);
-            mob.playSound(SoundEvents.SMITHING_TABLE_USE, 0.75f, 0.9f + mob.getRandom().nextFloat() * 0.2f);
+            level.playSound(null, mob.blockPosition(), SoundEvents.BARREL_OPEN, SoundSource.NEUTRAL, 0.6f, 1.0f);
+            return false;
         }
-        // Та же шкала smithWork используется офлайн: загрузка чанка не удваивает производство.
+        // 2. В кузницу.
+        BlockPos forge = o.hasZone(WorkZone.SMITHY) ? o.zone(WorkZone.SMITHY) : o.marker(Marker.STORAGE);
+        if (!go(o, forge, 1.6, 500)) return false;
+        if (mob.tickCount % 20 == 0) {
+            mob.swing(InteractionHand.MAIN_HAND);
+            mob.playSound(mob.tickCount % 80 == 0 ? SoundEvents.SMITHING_TABLE_USE : SoundEvents.ANVIL_USE, 0.5f, 0.9f + mob.getRandom().nextFloat() * 0.2f);
+        }
+        // Та же шкала smithWork используется вдали: загрузка чанка не удваивает производство.
         o.smithWork = Math.min(8, o.smithWork + 30.0 / 24000.0);
         if (o.smithWork < 1) return false;
-
-        int count = smithRepair ? 1 : 3 * (target.gear + 1);
-        int ironReserve = smithRepair ? 0 : 3;
-        int leatherReserve = smithRepair ? 0 : 5;
-        if (Storehouse.countItem(level, o, Items.IRON_INGOT) < count + ironReserve
-                || Storehouse.countItem(level, o, Items.LEATHER) < count + leatherReserve
-                || !Storehouse.takeItem(level, o, Items.IRON_INGOT, count)
-                || !Storehouse.takeItem(level, o, Items.LEATHER, count)) {
-            noJobUntil = now + 200;
-            smithTarget = null;
-            return true;
+        // 3. Расход именно взятых предметов: сначала проверить всё, потом списать.
+        for (var e : materials.entrySet()) {
+            if (countCarried(e.getKey()) < e.getValue()) {
+                Logistics.cancel(o, task, "materials lost", now);
+                task = null;
+                return true;
+            }
         }
-
-        if (smithRepair) target.armor = Math.min(1f, target.armor + 0.25f);
-        else target.gear = Math.min(Resident.MAX_GEAR, target.gear + 1);
+        for (var e : materials.entrySet()) Logistics.consume(o, task, mob, e.getKey(), e.getValue(), now);
+        OutpostDirector.applySmithResult(o, task, target);
         o.smithWork -= 1;
-        o.dirtyForClients = true;
+        Logistics.complete(o, task, now);
+        task = null;
         if (target.entity != null && level.getEntity(target.entity) instanceof FighterEntity fighter) {
             fighter.refreshResidentEquipment();
         }
         worker.lastRealWork = now;
-        smithTarget = null;
+        OutpostSavedData.get(level).setDirty();
         return true;
+    }
+
+    private void removeCarried(Item item, int count) {
+        for (int i = 0; i < mob.inventory.getContainerSize() && count > 0; i++) {
+            ItemStack st = mob.inventory.getItem(i);
+            if (!st.is(item)) continue;
+            int n = Math.min(count, st.getCount());
+            st.shrink(n);
+            count -= n;
+        }
+        mob.inventory.setChanged();
+    }
+
+    private int countCarried(Item item) {
+        int n = 0;
+        for (int i = 0; i < mob.inventory.getContainerSize(); i++) {
+            ItemStack st = mob.inventory.getItem(i);
+            if (st.is(item)) n += st.getCount();
+        }
+        return n;
     }
 
     // ============================== Фермер ==============================
 
     /** Выбирает созревшую пшеницу раньше пустой грядки, чтобы урожай не пропадал. */
     private boolean findFarmTask(ServerLevel level, Outpost o) {
-        BlockPos center = o.marker(Marker.FARM);
+        BlockPos center = o.zone(WorkZone.FARM);
         if (!level.hasChunk(center.getX() >> 4, center.getZ() >> 4)) return false;
         BlockPos harvest = null;
         BlockPos plant = null;
@@ -1137,6 +1192,17 @@ public class WorkGoal extends Goal {
                     till = crop.immutable();
                 }
             }
+        }
+        // Поля нет совсем (зону перенесли на камень или мостовую): фермер сообщает планировщику.
+        if (harvest == null && plant == null && till == null) {
+            boolean anyField = false;
+            for (BlockPos p : BlockPos.betweenClosed(center.offset(-2, -1, -2), center.offset(2, 0, 2))) {
+                BlockState st = level.getBlockState(p);
+                if (st.is(Blocks.FARMLAND) || st.is(Blocks.WHEAT)) anyField = true;
+            }
+            if (!anyField) o.zones.report(WorkZone.FARM, "no tillable soil");
+        } else {
+            o.zones.clearProblem(WorkZone.FARM);
         }
         farmHarvest = harvest != null;
         farmTill = harvest == null && plant == null && till != null;
@@ -1168,10 +1234,34 @@ public class WorkGoal extends Goal {
             return true;
         }
         if (crop.isAir() && soil.is(Blocks.FARMLAND)) {
-            if (o.stock(Resource.SEEDS) <= FARM_SEED_RESERVE || !Storehouse.takeItem(level, o, Items.WHEAT_SEEDS, 1)) {
-                noJobUntil = now + 600;
-                return true;
+            if (countCarried(Items.WHEAT_SEEDS) == 0) {
+                // Семян в ноше нет: запрос на склад. Неприкосновенный запас семян не выдаётся.
+                if (task == null) {
+                    int spare = Logistics.available(level, o, Items.WHEAT_SEEDS, null) - FARM_SEED_RESERVE;
+                    if (spare <= 0) {
+                        noJobUntil = now + 600;
+                        return true;
+                    }
+                    task = Logistics.request(level, o, r, OutpostTask.Type.FETCH_SEEDS, java.util.Map.of(Items.WHEAT_SEEDS, Math.min(8, spare)), now);
+                    if (task == null) {
+                        noJobUntil = now + 600;
+                        return true;
+                    }
+                    task.zone = WorkZone.FARM;
+                }
+                if (!go(o, o.zone(WorkZone.STOREHOUSE), 1.8, 500)) return false;
+                boolean ok = Logistics.withdraw(level, o, task, mob, now);
+                if (ok) Logistics.complete(o, task, now);
+                else Logistics.cancel(o, task, "withdraw failed", now);
+                task = null;
+                if (!ok) {
+                    noJobUntil = now + 600;
+                    return true;
+                }
+                return false;
             }
+            // Сажается настоящее семя из ноши: собранное с урожая или взятое со склада.
+            removeCarried(Items.WHEAT_SEEDS, 1);
             mob.swing(InteractionHand.MAIN_HAND);
             level.setBlockAndUpdate(farmTarget, Blocks.WHEAT.defaultBlockState());
             level.playSound(null, farmTarget, SoundEvents.GRASS_PLACE, SoundSource.BLOCKS, 0.7f, 1.0f);
@@ -1233,8 +1323,8 @@ public class WorkGoal extends Goal {
 
     private BlockPos workplace(ServerLevel level, Outpost o, Role role) {
         return switch (role) {
-            case LUMBERJACK -> o.marker(Marker.WOODYARD);
-            case FARMER -> o.marker(Marker.FARM).offset(1, 0, 0);
+            case LUMBERJACK -> o.zone(WorkZone.WOODYARD);
+            case FARMER -> o.zone(WorkZone.FARM).offset(1, 0, 0);
             case MINER -> o.marker(Marker.MINE);
             case SMITH -> o.design().markers(Marker.SMITHY).isEmpty() ? o.marker(Marker.STORAGE) : o.marker(Marker.SMITHY);
             case MAGE -> o.design().markers(Marker.MAGE).isEmpty() ? o.marker(Marker.THRONE) : o.marker(Marker.MAGE);

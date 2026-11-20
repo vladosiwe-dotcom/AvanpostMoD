@@ -62,6 +62,7 @@ public final class ServerEvents {
     @SubscribeEvent
     public static void onCommands(RegisterCommandsEvent event) {
         OutpostCommands.register(event.getDispatcher());
+        com.vladosiwe.lordsoutpost.command.SettlementCommands.register(event.getDispatcher());
     }
 
     @SubscribeEvent

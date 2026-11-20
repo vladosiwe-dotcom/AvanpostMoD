@@ -490,6 +490,103 @@ public final class OutpostGameTests {
         h.succeed();
     }
 
+    /**
+     * Система задач переживает перезапуск без повторной работы: задача планировщика возвращается в очередь
+     * с сохранённым резервом, личный запрос работника отменяется. Резерв не тратится стройкой и торговлей.
+     */
+    @GameTest(template = "empty")
+    public static void tasksRecoverAfterRestart(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        Outpost o = virtualOutpost(level, data, FAR.offset(640, 0, 0), 1, UUID.randomUUID());
+        try {
+            long now = level.getGameTime();
+            Resident worker = o.residents.get(0);
+            com.vladosiwe.lordsoutpost.outpost.OutpostTask planned = o.tasks.create(o, com.vladosiwe.lordsoutpost.outpost.OutpostTask.Type.REPAIR_ARMOR, 60, now);
+            planned.reserved.put(net.minecraft.world.item.Items.IRON_INGOT, 2);
+            planned.executor = worker.id;
+            planned.state = com.vladosiwe.lordsoutpost.outpost.OutpostTask.State.IN_PROGRESS;
+            com.vladosiwe.lordsoutpost.outpost.OutpostTask request = o.tasks.create(o, com.vladosiwe.lordsoutpost.outpost.OutpostTask.Type.FETCH_SEEDS, 50, now);
+            request.reserved.put(net.minecraft.world.item.Items.WHEAT_SEEDS, 4);
+            request.executor = worker.id;
+            request.state = com.vladosiwe.lordsoutpost.outpost.OutpostTask.State.RESERVED;
+            o.setStock(Resource.IRON, 40);
+            h.assertTrue(Math.abs(o.available(Resource.IRON) - 32) < 1e-6, "два отложенных слитка (8 железа) не должны считаться доступными");
+
+            Outpost copy = Outpost.load(o.save(level.registryAccess()), level.registryAccess());
+            var p = copy.tasks.byId(planned.id);
+            var q = copy.tasks.byId(request.id);
+            h.assertTrue(p != null && p.executor == null && p.state == com.vladosiwe.lordsoutpost.outpost.OutpostTask.State.RESERVED
+                    && p.reservedCount(net.minecraft.world.item.Items.IRON_INGOT) == 2, "задача планировщика должна вернуться в очередь с резервом: " + p);
+            h.assertTrue(q != null && q.state == com.vladosiwe.lordsoutpost.outpost.OutpostTask.State.CANCELLED && q.reserved.isEmpty(),
+                    "личный запрос должен отмениться после перезапуска: " + q);
+            var next = copy.tasks.create(copy, com.vladosiwe.lordsoutpost.outpost.OutpostTask.Type.UPGRADE_GEAR, 40, now);
+            h.assertTrue(next.id > request.id, "id задач не должны повторяться после загрузки");
+        } finally {
+            OutpostManager.abandon(data, o, level.getGameTime());
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
+    /** Кузнец вдали выполняет задачи с общей доски: ремонт тратит ровно слиток и кожу и не повторяется. */
+    @GameTest(template = "empty")
+    public static void directorSmithTasksWorkOffline(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        Outpost o = virtualOutpost(level, data, FAR.offset(768, 0, 0), 2, UUID.randomUUID());
+        try {
+            o.tier = 2;
+            OutpostManager.addSettler(o, Role.SMITH, level.random);
+            // Шахтёры и скотоводы сами добывают железо и шкуры: убираем их, чтобы мерить только расход кузнеца.
+            o.residents.removeIf(r -> r.role == Role.MINER || r.role == Role.SKOTOVOD);
+            Resident fighter = null;
+            for (Resident r : o.residents) if (r.role.combat && r.role != Role.CAPTAIN) { fighter = r; break; }
+            h.assertTrue(fighter != null, "в форте должен быть боец");
+            for (Resident r : o.residents) if (r.role.combat) r.armor = 1f;
+            fighter.armor = 0.5f;
+            o.setStock(Resource.IRON, 4);
+            o.setStock(Resource.HIDES, 2);
+            o.setStock(Resource.FOOD, 500);
+            long t = level.getGameTime();
+            o.lastSim = t;
+            simulate(level, data, o, t, 0.2);
+            h.assertTrue(fighter.armor > 0.5f, "кузнец вдали должен починить броню по задаче с доски, броня " + fighter.armor);
+            h.assertTrue(o.stock(Resource.IRON) < 1e-6 && o.stock(Resource.HIDES) < 1e-6, "ремонт тратит ровно слиток и кожу");
+            boolean done = o.tasks.all().stream().anyMatch(x -> x.type == com.vladosiwe.lordsoutpost.outpost.OutpostTask.Type.REPAIR_ARMOR
+                    && x.state == com.vladosiwe.lordsoutpost.outpost.OutpostTask.State.COMPLETED);
+            h.assertTrue(done, "задача ремонта должна быть завершена");
+        } finally {
+            OutpostManager.abandon(data, o, level.getGameTime());
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
+    /** При критической нехватке еды планировщик приостанавливает стройку. */
+    @GameTest(template = "empty")
+    public static void directorPausesBuildingWhenStarving(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        Outpost o = virtualOutpost(level, data, FAR.offset(896, 0, 0), 1, UUID.randomUUID());
+        try {
+            for (Resource r : Resource.VALUES) o.setStock(r, 0);
+            o.setStock(Resource.WOOD, 500);
+            o.setStock(Resource.STONE, 500);
+            o.setStock(Resource.IRON, 200);
+            int before = o.steps;
+            long t = level.getGameTime();
+            o.lastSim = t;
+            simulate(level, data, o, t, 0.05);
+            h.assertTrue(o.foodCritical, "без еды планировщик должен объявить голод");
+            h.assertTrue(o.steps == before, "при голоде необязательная стройка стоит: шагов было " + before + ", стало " + o.steps);
+        } finally {
+            OutpostManager.abandon(data, o, level.getGameTime());
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
     /** Тир кирки ограничен одновременно развитием форта и личным уровнем шахтёра. */
     @GameTest(template = "empty")
     public static void minerToolTierUsesBothProgressions(GameTestHelper h) {
