@@ -25,7 +25,11 @@ public enum Action {
     /** Перенос рабочей зоны к Лорду или назад по чертежу: {zone, here}. */
     MOVE_ZONE,
     /** Накопленную дань — посылкой в почтомат. */
-    MAIL_TRIBUTE;
+    MAIL_TRIBUTE,
+    /** Построить рекомендованное планировщиком: {type}; место выбирается само. */
+    ORDER_RECOMMENDED,
+    /** Включить или выключить авто-застройку. */
+    TOGGLE_AUTOBUILD;
 
     public static final Action[] VALUES = values();
 }

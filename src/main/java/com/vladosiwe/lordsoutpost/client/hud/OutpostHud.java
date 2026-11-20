@@ -53,6 +53,10 @@ public final class OutpostHud {
             lines.add(Component.translatable("lordsoutpost.hud.projects", h.getInt("projects")));
             colors.add(Ui.ACCENT);
         }
+        if (h.contains("advice")) {
+            lines.add(Component.translatable("lordsoutpost.hud.advice", Component.translatable("lordsoutpost.project." + h.getString("advice"))));
+            colors.add(Ui.ACCENT);
+        }
         if (h.getInt("problems") > 0) {
             lines.add(Component.translatable("lordsoutpost.hud.problems", h.getInt("problems")));
             colors.add(Ui.WARN);

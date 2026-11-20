@@ -553,6 +553,25 @@ public class OutpostScreen extends Screen {
             return;
         }
         boolean room = m.activeProjects() < m.projectLimit;
+        // Совет планировщика и авто-застройка: решает Лорд.
+        if (!m.recommended.isEmpty()) {
+            var e = m.recommended.entrySet().iterator().next();
+            String[] parts = e.getValue().split("/");
+            Component advice = Component.translatable("lordsoutpost.ui.build.advice", Component.translatable("lordsoutpost.project." + e.getKey()),
+                    parts.length > 0 ? parts[0] : "?", parts.length > 1 ? parts[1] : "?", parts.length > 2 ? parts[2] : "?");
+            g.fill(x, y, x + 252, y + 13, 0xFF2A2412);
+            Ui.text(g, font, advice, x + 3, y + 3, 190, Ui.ACCENT);
+            String type = e.getKey();
+            Ui.button(g, font, hits, x + 196, y + 1, 54, 11, Component.translatable("lordsoutpost.ui.build.advice.go"), room, false, mouseX, mouseY,
+                    () -> Net.action(view.id, Action.ORDER_RECOMMENDED, t -> t.putString("type", type)),
+                    Component.translatable("lordsoutpost.ui.build.advice.go.tip"));
+        } else {
+            Ui.text(g, font, Component.translatable("lordsoutpost.ui.build.no_advice"), x, y + 3, 250, Ui.MUTED);
+        }
+        Ui.button(g, font, hits, left + W - 112, y + 1, 104, 11,
+                Component.translatable(m.autoBuild ? "lordsoutpost.ui.build.auto_on" : "lordsoutpost.ui.build.auto_off"), true, m.autoBuild, mouseX, mouseY,
+                () -> Net.action(view.id, Action.TOGGLE_AUTOBUILD), Component.translatable("lordsoutpost.ui.build.auto.tip"));
+        y += 17;
         int cardW = 120;
         String[] types = {"house", "watchtower", "wall"};
         for (int i = 0; i < types.length; i++) {
@@ -587,7 +606,7 @@ public class OutpostScreen extends Screen {
             ry += 10;
         }
         int shown = 0;
-        for (int i = scroll; i < m.projects.size() && shown < 5; i++, shown++) {
+        for (int i = scroll; i < m.projects.size() && shown < 4; i++, shown++) {
             OutpostView.ProjectInfo p = m.projects.get(m.projects.size() - 1 - i);
             boolean active = p.state() <= 1;
             Ui.text(g, font, Component.translatable("lordsoutpost.project." + p.type()), x, ry + 1, 110, active ? Ui.TEXT : Ui.GOOD);

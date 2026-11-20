@@ -338,6 +338,13 @@ public final class Views {
         }
         m.put("costs", costs);
         m.putInt("projectLimit", com.vladosiwe.lordsoutpost.data.Projects.MAX_ACTIVE);
+        m.putBoolean("autoBuild", o.autoBuild);
+        CompoundTag rec = new CompoundTag();
+        for (var e : o.recommended.entrySet()) rec.putString(e.getKey().id, e.getValue());
+        m.put("recommended", rec);
+        CompoundTag mat = new CompoundTag();
+        for (var e : o.buildMaterials.entrySet()) if (e.getValue() >= 0.01) mat.putFloat(e.getKey().id, e.getValue().floatValue());
+        m.put("materials", mat);
         m.putInt("houses", o.builtProjects(com.vladosiwe.lordsoutpost.outpost.Project.Type.HOUSE));
         return m;
     }
@@ -359,6 +366,7 @@ public final class Views {
         int projects = 0;
         for (com.vladosiwe.lordsoutpost.outpost.Project p : o.projects) if (p.active()) projects++;
         h.putInt("projects", projects);
+        if (!o.recommended.isEmpty()) h.putString("advice", o.recommended.keySet().iterator().next().id);
         return h;
     }
 

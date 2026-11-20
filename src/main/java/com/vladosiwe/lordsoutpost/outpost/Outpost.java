@@ -110,6 +110,16 @@ public final class Outpost {
     /** Постройки, заказанные Лордом сверх плана тиров (сохраняются). */
     public final List<Project> projects = new ArrayList<>();
     public long projectCounter;
+    /** Авто-застройка: планировщик сам заказывает рекомендованные постройки (иначе только советует Лорду). */
+    public boolean autoBuild;
+    /** Что планировщик советует построить и почему (пересчитывается, не сохраняется). */
+    public transient final Map<Project.Type, String> recommended = new java.util.EnumMap<>(Project.Type.class);
+    public transient long autoBuildTriedAt;
+    /**
+     * Материал, который строители уже принесли со склада и пустили в дело, но ещё не израсходовали на шаги заказов
+     * (бревно даёт 4 единицы дерева, а шаг стоит 1). Сохраняется, чтобы остаток не терялся.
+     */
+    public final EnumMap<Resource, Double> buildMaterials = new EnumMap<>(Resource.class);
     /** Занятые строителями шаги проектов: ключ (id проекта, шаг) -> тик истечения (не сохраняется). */
     public transient final Map<Long, Long> projectClaims = new HashMap<>();
     public transient final Map<Long, Long> projectDeferred = new HashMap<>();
@@ -560,6 +570,10 @@ public final class Outpost {
         for (Project p : projects) pr.add(p.save());
         t.put("projects", pr);
         t.putLong("projectCounter", projectCounter);
+        t.putBoolean("autoBuild", autoBuild);
+        CompoundTag bm = new CompoundTag();
+        for (var e : buildMaterials.entrySet()) bm.putDouble(e.getKey().id, e.getValue());
+        t.put("buildMaterials", bm);
         t.putDouble("tributeGold", tributeGold);
         t.putInt("pen", penAnimals);
         t.putDouble("arcaneWork", arcaneWork);
@@ -650,6 +664,9 @@ public final class Outpost {
             if (p != null) o.projects.add(p);
         }
         o.projectCounter = t.getLong("projectCounter");
+        o.autoBuild = t.getBoolean("autoBuild");
+        CompoundTag bm = t.getCompound("buildMaterials");
+        for (Resource r : Resource.VALUES) if (bm.contains(r.id)) o.buildMaterials.put(r, Math.max(0, bm.getDouble(r.id)));
         o.penAnimals = Math.max(0, t.getInt("pen"));
         o.arcaneWork = t.getDouble("arcaneWork");
         o.growth = t.getDouble("growth");

@@ -55,7 +55,9 @@ public final class OutpostTask {
         /** Лесоруб берёт со склада саженец той же породы, чтобы посадить его на месте срубленного дерева. */
         FETCH_SAPLING(Role.LUMBERJACK, false),
         /** Торговец несёт излишки со склада в свою лавку. */
-        STOCK_SHOP(Role.CARAVANEER, false);
+        STOCK_SHOP(Role.CARAVANEER, false),
+        /** Строитель берёт со склада материал для заказанной Лордом постройки. */
+        FETCH_BUILD(Role.BUILDER, false);
 
         public static final Type[] VALUES = values();
 

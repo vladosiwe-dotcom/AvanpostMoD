@@ -73,6 +73,40 @@ public final class Projects {
         return OrderResult.OK;
     }
 
+    /**
+     * Заказ без указания места (кнопка «Построить» у совета планировщика или авто-застройка): место выбирается
+     * само по кольцу вокруг форта, входом к форту, по тем же проверкам, что и ручной заказ. Только при загруженном форте.
+     */
+    public static OrderResult orderAuto(ServerLevel level, Outpost o, Project.Type type, long now, boolean auto) {
+        int active = 0;
+        for (Project p : o.projects) if (p.active()) active++;
+        if (active >= MAX_ACTIVE) return OrderResult.TOO_MANY;
+        int inner = Layout.RADIUS[FortBlueprint.MAX_TIER] + Layout.MARGIN + 4;
+        for (int r = inner; r <= inner + EXTENT - 6; r += 3) {
+            for (int a = 0; a < 16; a++) {
+                double ang = (a * 2 * Math.PI) / 16 + (r % 2) * 0.2;
+                int bx = o.center.getX() + (int) Math.round(Math.cos(ang) * r), bz = o.center.getZ() + (int) Math.round(Math.sin(ang) * r);
+                double dx = bx - o.center.getX(), dz = bz - o.center.getZ();
+                // Вход смотрит на форт: «игрок» стоит ближе к центру и смотрит наружу.
+                Direction out = Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? Direction.EAST : Direction.WEST) : (dz > 0 ? Direction.SOUTH : Direction.NORTH);
+                int depth = ProjectDesigner.depth(type);
+                BlockPos at = new BlockPos(bx - out.getStepX() * depth, o.center.getY(), bz - out.getStepZ() * depth);
+                if (!level.hasChunk(bx >> 4, bz >> 4)) continue;
+                int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, bx, bz) - 1;
+                if (Math.abs(y - o.center.getY()) > 6) continue;
+                Project p = new Project(o.projectCounter + 1, type, new BlockPos(bx, y, bz), rotationFor(out));
+                if (check(level, o, p) != OrderResult.OK) continue;
+                o.projectCounter++;
+                p.orderedAt = now;
+                o.projects.add(p);
+                o.log(now, auto ? "lordsoutpost.event.project_auto" : "lordsoutpost.event.project_ordered", type.id);
+                o.dirtyForClients = true;
+                return OrderResult.OK;
+            }
+        }
+        return OrderResult.NO_GROUND;
+    }
+
     static OrderResult check(ServerLevel level, Outpost o, Project p) {
         FortBlueprint bp = o.blueprint();
         Set<BlockPos> taken = new HashSet<>();
@@ -100,12 +134,14 @@ public final class Projects {
      * Возвращает остаток кредита. Нехватку ресурса записывает в stalledOn, если стройка тира не стоит сама.
      */
     public static double pay(Outpost o, double credit) {
+        // Рядом с игроком заказы оплачивает сам строитель — материалом, который он принёс со склада (см. claimPaying).
+        if (o.online) return credit;
         for (Project p : o.projects) {
             if (!p.active()) continue;
             List<Step> steps = p.steps(o);
             while (credit >= 1 && p.paid < steps.size()) {
                 Resource cost = steps.get(p.paid).cost();
-                if (cost != null && (o.available(cost) < 1 || !o.take(cost, 1))) {
+                if (cost != null && !useMaterial(o, cost) && (o.available(cost) < 1 || !o.take(cost, 1))) {
                     if (o.stalledOn == null) o.stalledOn = cost;
                     return credit;
                 }
@@ -160,7 +196,75 @@ public final class Projects {
     }
 
     public static boolean hasWork(Outpost o) {
-        return o.online && next(o, o.buildClock) >= 0;
+        return o.online && (next(o, o.buildClock) >= 0 || unpaid(o) != null);
+    }
+
+    // ---------- Материалы строителей для заказов ----------
+
+    /** Тратит единицу материала, уже принесённого строителями (общий запас заказов). */
+    static boolean useMaterial(Outpost o, Resource r) {
+        double have = o.buildMaterials.getOrDefault(r, 0.0);
+        if (have < 1 - 1e-9) return false;
+        o.buildMaterials.put(r, have - 1);
+        return true;
+    }
+
+    public static void addMaterial(Outpost o, Resource r, double amount) {
+        o.buildMaterials.merge(r, amount, Double::sum);
+    }
+
+    /** Первый ещё не оплаченный шаг активного заказа или null. */
+    @Nullable
+    private static Project unpaid(Outpost o) {
+        for (Project p : o.projects) if (p.active() && p.paid < p.size(o)) return p;
+        return null;
+    }
+
+    /** Какой материал нужен следующему шагу заказа, если принесённого не хватает (null — хватает или шагов нет). */
+    @Nullable
+    public static Resource neededMaterial(Outpost o) {
+        Project p = unpaid(o);
+        if (p == null) return null;
+        List<Step> steps = p.steps(o);
+        int i = p.paid;
+        do {
+            Resource cost = steps.get(i).cost();
+            if (cost != null && o.buildMaterials.getOrDefault(cost, 0.0) < 1 - 1e-9) return cost;
+            i++;
+        } while (i < steps.size() && steps.get(i).chain());
+        return null;
+    }
+
+    /** Сколько единиц ресурса нужно ближайшим неоплаченным шагам заказов (не больше max). */
+    public static int upcoming(Outpost o, Resource r, int max) {
+        int n = 0;
+        for (Project p : o.projects) {
+            if (!p.active()) continue;
+            List<Step> steps = p.steps(o);
+            for (int i = p.paid; i < steps.size() && n < max; i++) if (steps.get(i).cost() == r) n++;
+        }
+        return n;
+    }
+
+    /**
+     * Строитель рядом с игроком берёт следующий шаг заказа и оплачивает его принесённым материалом
+     * (вместе со связанной половиной двери или кровати). -1 — материала не хватает или шагов нет.
+     */
+    public static long claimPaying(Outpost o, long now) {
+        Project p = unpaid(o);
+        if (p == null || neededMaterial(o) != null) return -1;
+        List<Step> steps = p.steps(o);
+        int first = p.paid;
+        do {
+            Resource cost = steps.get(p.paid).cost();
+            if (cost != null) useMaterial(o, cost);
+            p.paid++;
+        } while (p.paid < steps.size() && steps.get(p.paid).chain());
+        if (p.state == Project.State.PLANNED) p.state = Project.State.BUILDING;
+        long k = key(p, first);
+        o.projectClaims.put(k, now + CLAIM_TIME);
+        o.dirtyForClients = true;
+        return k;
     }
 
     public static long claim(Outpost o, long now) {

@@ -78,6 +78,10 @@ public final class OutpostView {
         public final boolean tower, iss, pyroAvailable, pyromancer;
         public final float arcane, work;
         public final List<ProjectInfo> projects = new ArrayList<>();
+        public final boolean autoBuild;
+        /** Советы планировщика: тип постройки -> «жителей/мест/нужно». */
+        public final java.util.Map<String, String> recommended = new java.util.LinkedHashMap<>();
+        public final EnumMap<Resource, Float> materials = new EnumMap<>(Resource.class);
         public final java.util.Map<String, EnumMap<Resource, Integer>> costs = new java.util.HashMap<>();
 
         Manage(CompoundTag m) {
@@ -130,6 +134,14 @@ public final class OutpostView {
                 costs.put(type, c);
             }
             projectLimit = m.getInt("projectLimit");
+            autoBuild = m.getBoolean("autoBuild");
+            CompoundTag rec = m.getCompound("recommended");
+            for (String k : rec.getAllKeys()) recommended.put(k, rec.getString(k));
+            CompoundTag mat = m.getCompound("materials");
+            for (String k : mat.getAllKeys()) {
+                Resource r = Resource.byId(k);
+                if (r != null) materials.put(r, mat.getFloat(k));
+            }
             houses = m.getInt("houses");
         }
 

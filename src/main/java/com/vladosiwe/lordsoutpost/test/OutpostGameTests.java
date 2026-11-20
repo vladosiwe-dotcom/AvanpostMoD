@@ -783,6 +783,45 @@ public final class OutpostGameTests {
         h.succeed();
     }
 
+    /**
+     * Жильё: при нехватке мест планировщик советует дом, но сам его не заказывает, пока Лорд не включит авто-застройку.
+     * Рядом с игроком заказ оплачивается только материалом, который строители принесли со склада.
+     */
+    @GameTest(template = "empty")
+    public static void housingAdviceAndBuilderMaterials(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        Outpost o = virtualOutpost(level, data, FAR.offset(1792, 0, 0), 1, UUID.randomUUID());
+        try {
+            long now = level.getGameTime();
+            while (o.residents.size() < o.populationCap()) OutpostManager.addSettler(o, Role.SHIELDMAN, level.random);
+            o.setStock(Resource.FOOD, 500);
+            com.vladosiwe.lordsoutpost.data.OutpostDirector.tick(level, o, now);
+            h.assertTrue(o.recommended.containsKey(com.vladosiwe.lordsoutpost.outpost.Project.Type.HOUSE), "при полном поселении планировщик советует дом");
+            h.assertTrue(o.projects.isEmpty(), "без авто-застройки планировщик сам ничего не заказывает");
+
+            var p = new com.vladosiwe.lordsoutpost.outpost.Project(++o.projectCounter, com.vladosiwe.lordsoutpost.outpost.Project.Type.WALL,
+                    o.center.offset(60, 0, 0), net.minecraft.world.level.block.Rotation.NONE);
+            o.projects.add(p);
+            o.online = true;
+            o.setStock(Resource.STONE, 500);
+            h.assertTrue(com.vladosiwe.lordsoutpost.data.Projects.pay(o, 10) == 10 && p.paid == 0, "рядом с игроком симуляция не оплачивает заказ сама");
+            h.assertTrue(com.vladosiwe.lordsoutpost.data.Projects.claimPaying(o, now) < 0, "без принесённого материала шаг не берётся");
+            h.assertTrue(com.vladosiwe.lordsoutpost.data.Projects.neededMaterial(o) == Resource.STONE, "нужен камень");
+            com.vladosiwe.lordsoutpost.data.Projects.addMaterial(o, Resource.STONE, 2);
+            h.assertTrue(com.vladosiwe.lordsoutpost.data.Projects.claimPaying(o, now) >= 0 && p.paid == 1, "принесённый камень оплачивает шаг");
+            h.assertTrue(Math.abs(o.buildMaterials.get(Resource.STONE) - 1) < 1e-6 && Math.abs(o.stock(Resource.STONE) - 500) < 1e-6,
+                    "тратится принесённое, а не запас склада");
+            Outpost copy = Outpost.load(o.save(level.registryAccess()), level.registryAccess());
+            h.assertTrue(Math.abs(copy.buildMaterials.get(Resource.STONE) - 1) < 1e-6, "остаток принесённого материала сохраняется");
+        } finally {
+            o.online = false;
+            OutpostManager.abandon(data, o, level.getGameTime());
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
     /** Тир кирки ограничен одновременно развитием форта и личным уровнем шахтёра. */
     @GameTest(template = "empty")
     public static void minerToolTierUsesBothProgressions(GameTestHelper h) {

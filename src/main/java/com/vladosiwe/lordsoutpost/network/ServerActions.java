@@ -204,6 +204,21 @@ public final class ServerActions {
                         result == com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OK ? ChatFormatting.GREEN : ChatFormatting.YELLOW);
             }
             case CANCEL_PROJECT -> com.vladosiwe.lordsoutpost.data.Projects.cancel(o, a.getLong("id"), now);
+            case ORDER_RECOMMENDED -> {
+                var type = com.vladosiwe.lordsoutpost.outpost.Project.Type.byId(a.getString("type"));
+                if (type == null) return;
+                if (!o.online) {
+                    feedback(player, "lordsoutpost.msg.project.not_loaded", ChatFormatting.YELLOW);
+                    return;
+                }
+                var result = com.vladosiwe.lordsoutpost.data.Projects.orderAuto(level, o, type, now, false);
+                feedback(player, "lordsoutpost.msg.project." + result.name().toLowerCase(Locale.ROOT),
+                        result == com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OK ? ChatFormatting.GREEN : ChatFormatting.YELLOW);
+            }
+            case TOGGLE_AUTOBUILD -> {
+                o.autoBuild = !o.autoBuild;
+                o.log(now, o.autoBuild ? "lordsoutpost.event.autobuild_on" : "lordsoutpost.event.autobuild_off");
+            }
             case MAIL_TRIBUTE -> {
                 com.vladosiwe.lordsoutpost.data.Simulation.flushTributeGold(o);
                 if (o.tribute.isEmpty()) {

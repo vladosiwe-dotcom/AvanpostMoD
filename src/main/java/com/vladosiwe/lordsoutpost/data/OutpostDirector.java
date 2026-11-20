@@ -35,6 +35,7 @@ public final class OutpostDirector {
 
     public static void tick(@Nullable ServerLevel level, Outpost o, long now) {
         assess(o);
+        housing(level, o, now);
         smithTasks(level, o, now);
         toolTasks(level, o, now);
         housekeeping(o, now);
@@ -99,6 +100,37 @@ public final class OutpostDirector {
         if (o.scarce == Resource.WOOD) return Role.LUMBERJACK;
         if (o.scarce == Resource.STONE || o.scarce == Resource.IRON) return o.hasZone(WorkZone.MINE) ? Role.MINER : null;
         return null;
+    }
+
+    // ============================== Жильё ==============================
+
+    /** Сколько жителей поселению нужно по его тиру (все профессии и бойцы). */
+    public static int wantedPopulation(Outpost o) {
+        int n = 0;
+        for (Role r : new Role[]{Role.STEWARD, Role.BUILDER, Role.LUMBERJACK, Role.MINER, Role.SKOTOVOD, Role.FARMER,
+                Role.SMITH, Role.CARAVANEER, Role.MAGE, Role.SHIELDMAN}) n += Simulation.desired(o, r);
+        return n;
+    }
+
+    /**
+     * Жилая вместимость. Свободных мест не осталось (или осталось одно), а поселению по его тиру нужно больше жителей —
+     * значит, новые поселенцы не придут: планировщик советует Лорду дом. Решение за Лордом; только если он сам
+     * включил авто-застройку, планировщик заказывает дом сам — через тот же каталог и те же проверки места.
+     */
+    static void housing(@Nullable ServerLevel level, Outpost o, long now) {
+        o.recommended.clear();
+        if (o.state != com.vladosiwe.lordsoutpost.outpost.OutpostState.OWNED) return;
+        int free = o.populationCap() - o.residents.size();
+        int wanted = wantedPopulation(o);
+        boolean building = false;
+        for (var p : o.projects) if (p.active() && p.type == com.vladosiwe.lordsoutpost.outpost.Project.Type.HOUSE) building = true;
+        if (free <= 1 && wanted > o.residents.size() && !building && o.builtProjects(com.vladosiwe.lordsoutpost.outpost.Project.Type.HOUSE) < 8) {
+            o.recommended.put(com.vladosiwe.lordsoutpost.outpost.Project.Type.HOUSE, o.residents.size() + "/" + o.populationCap() + "/" + wanted);
+        }
+        if (o.autoBuild && level != null && o.online && !o.recommended.isEmpty() && !o.foodCritical && now - o.autoBuildTriedAt > 2400) {
+            o.autoBuildTriedAt = now;
+            for (var type : o.recommended.keySet()) Projects.orderAuto(level, o, type, now, true);
+        }
     }
 
     // ============================== Кузнец ==============================

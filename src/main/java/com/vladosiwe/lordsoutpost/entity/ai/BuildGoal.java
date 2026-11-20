@@ -15,6 +15,8 @@ import net.minecraft.world.entity.ai.goal.Goal;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.EnumSet;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 import java.util.List;
 
 /**
@@ -26,6 +28,9 @@ public class BuildGoal extends Goal {
     private int claim = -1;
     /** Шаг заказанной Лордом постройки (ключ из Projects) или -1. План тира важнее: проект берётся, только когда в плане работы нет. */
     private long projectKey = -1;
+    /** Материал, за которым строитель идёт на склад ради заказанной постройки, или null. */
+    @Nullable private com.vladosiwe.lordsoutpost.outpost.Resource fetching;
+    private int fetchTimeout;
     private BlockPos target = BlockPos.ZERO;
     @Nullable private BlockPos workPosition;
     @Nullable private Path workPath;
@@ -54,6 +59,10 @@ public class BuildGoal extends Goal {
     public void tick() {
         Outpost o = mob.outpost();
         if (o == null || !(mob.level() instanceof ServerLevel level)) return;
+        if (fetching != null) {
+            fetchMaterial(level, o);
+            return;
+        }
         if (!hasJob()) {
             if (--cooldown > 0) return;
             claim = ChunkReconciliation.claim(o, level.getGameTime());
@@ -64,6 +73,17 @@ public class BuildGoal extends Goal {
                 return;
             }
             if (claim < 0) projectKey = Projects.claim(o, level.getGameTime());
+            if (claim < 0 && projectKey < 0) {
+                // Следующий шаг заказа оплачивается материалом из ноши строителя.
+                topUp(o);
+                projectKey = Projects.claimPaying(o, level.getGameTime());
+                if (projectKey < 0 && Projects.neededMaterial(o) != null && !hasCarried(Projects.neededMaterial(o))) {
+                    fetching = Projects.neededMaterial(o);
+                    fetchTimeout = 600;
+                    lastResult = "fetch-" + fetching.id;
+                    return;
+                }
+            }
             Step step = jobStep(o);
             if (step == null) {
                 releaseJob(o);
@@ -162,6 +182,85 @@ public class BuildGoal extends Goal {
         lastResult = "placed";
         workPosition = null;
         cooldown = 8;
+    }
+
+    // ---------- Материалы для заказанных построек ----------
+
+    /** Предмет-носитель материала: бревно — дерево, булыжник — камень, слиток — железо. */
+    private static boolean carries(ItemStack st, com.vladosiwe.lordsoutpost.outpost.Resource r) {
+        var v = com.vladosiwe.lordsoutpost.data.ResourceItems.of(st);
+        return v != null && v.resource() == r && st.getComponentsPatch().isEmpty();
+    }
+
+    private boolean hasCarried(com.vladosiwe.lordsoutpost.outpost.Resource r) {
+        for (int i = 0; i < mob.inventory.getContainerSize(); i++) if (carries(mob.inventory.getItem(i), r)) return true;
+        return false;
+    }
+
+    /** Пускает в дело один предмет из ноши, если принесённого материала не хватает на следующий шаг. */
+    private void topUp(Outpost o) {
+        var need = Projects.neededMaterial(o);
+        for (int guard = 0; need != null && guard < 4; guard++) {
+            boolean used = false;
+            for (int i = 0; i < mob.inventory.getContainerSize() && !used; i++) {
+                ItemStack st = mob.inventory.getItem(i);
+                if (!carries(st, need)) continue;
+                var v = com.vladosiwe.lordsoutpost.data.ResourceItems.of(st);
+                Projects.addMaterial(o, need, v.perItem());
+                st.shrink(1);
+                mob.inventory.setChanged();
+                used = true;
+            }
+            if (!used) return;
+            need = Projects.neededMaterial(o);
+        }
+    }
+
+    /** Поход на склад за материалом для заказа: настоящие предметы через логистику, в ношу строителя. */
+    private void fetchMaterial(ServerLevel level, Outpost o) {
+        var r = fetching;
+        long now = level.getGameTime();
+        BlockPos store = o.zone(com.vladosiwe.lordsoutpost.outpost.WorkZone.STOREHOUSE);
+        if (--fetchTimeout <= 0) {
+            fetching = null;
+            cooldown = 200;
+            lastResult = "fetch-timeout";
+            return;
+        }
+        if (!mob.approach(store, 1.0, 1.8, 500)) {
+            lastResult = "fetch-walking";
+            return;
+        }
+        fetching = null;
+        Item item = com.vladosiwe.lordsoutpost.data.Storehouse.findItem(level, o, st -> carries(st, r));
+        var resident = mob.resident();
+        if (item == null || resident == null) {
+            // На складе нечего взять: стройка ждёт (дефицит увидит планировщик).
+            o.stalledOn = o.stalledOn == null ? r : o.stalledOn;
+            cooldown = 400;
+            lastResult = "fetch-none";
+            return;
+        }
+        var v = com.vladosiwe.lordsoutpost.data.ResourceItems.of(new ItemStack(item));
+        int want = (int) Math.ceil(Projects.upcoming(o, r, 64) / v.perItem());
+        int count = Math.max(1, Math.min(Math.min(want, item.getDefaultMaxStackSize()),
+                com.vladosiwe.lordsoutpost.data.Logistics.available(level, o, item, null)));
+        var task = com.vladosiwe.lordsoutpost.data.Logistics.request(level, o, resident,
+                com.vladosiwe.lordsoutpost.outpost.OutpostTask.Type.FETCH_BUILD, java.util.Map.of(item, count), now);
+        if (task == null) {
+            cooldown = 400;
+            lastResult = "fetch-reserve-failed";
+            return;
+        }
+        if (com.vladosiwe.lordsoutpost.data.Logistics.withdraw(level, o, task, mob, now)) {
+            com.vladosiwe.lordsoutpost.data.Logistics.complete(o, task, now);
+            mob.swing(InteractionHand.MAIN_HAND);
+            lastResult = "fetched-" + count;
+        } else {
+            com.vladosiwe.lordsoutpost.data.Logistics.cancel(o, task, "withdraw failed", now);
+            cooldown = 200;
+            lastResult = "fetch-withdraw-failed";
+        }
     }
 
     // ---------- Текущая работа: шаг плана тира или шаг заказанной постройки ----------
@@ -311,6 +410,7 @@ public class BuildGoal extends Goal {
 
     @Override
     public void stop() {
+        fetching = null;
         releaseJob(mob.outpost());
         workPosition = null;
         workPath = null;
