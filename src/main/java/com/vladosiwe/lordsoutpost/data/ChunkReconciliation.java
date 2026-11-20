@@ -351,6 +351,9 @@ public final class ChunkReconciliation {
 
     /** Признаки естественной растительности/мусора, который строитель может расчистить без разрушения построек. */
     public static boolean isNaturalObstruction(BlockState state) {
+        // Вода и лава тоже в теге replaceable, но «убрать» источник нельзя: пруд натечёт обратно, и строитель
+        // будет черпать его вечно. Блок чертежа сам вытесняет жидкость, поэтому жидкость — не помеха.
+        if (!state.getFluidState().isEmpty()) return false;
         return state.is(BlockTags.LOGS) || state.is(BlockTags.LEAVES) || state.is(BlockTags.FLOWERS)
                 || state.is(BlockTags.SAPLINGS) || state.is(BlockTags.REPLACEABLE_BY_TREES)
                 || (state.canBeReplaced() && state.getFluidState().isEmpty() && !state.is(BlockTags.CROPS));
@@ -427,7 +430,7 @@ public final class ChunkReconciliation {
         BlockPos pos = o.world(step.pos());
         BlockState old = level.getBlockState(pos);
         if (old.isAir() || old.equals(step.state()) || level.getBlockEntity(pos) != null || o.placedByPlayer(pos)
-                || !isNaturalObstruction(old, step.state())) return false;
+                || !old.getFluidState().isEmpty() || !isNaturalObstruction(old, step.state())) return false;
         var previous = before == null ? null : before.cells.get(step.pos());
         if (previous != null && previous.state() == old) return false;
         builder.swing(InteractionHand.MAIN_HAND);

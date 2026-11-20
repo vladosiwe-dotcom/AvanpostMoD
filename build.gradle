@@ -25,6 +25,10 @@ neoForge {
             if (project.hasProperty('quickPlay')) {
                 programArguments.addAll('--quickPlayMultiplayer', project.property('quickPlay').toString())
             }
+            // ./gradlew runClient -PquickWorld="New World" сразу открывает одиночный мир (для проверок).
+            if (project.hasProperty('quickWorld')) {
+                programArguments.addAll('--quickPlaySingleplayer', project.property('quickWorld').toString())
+            }
         }
         server {
             server()

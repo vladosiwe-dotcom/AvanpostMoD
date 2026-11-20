@@ -16,8 +16,15 @@ import net.minecraft.client.model.geom.builders.PartDefinition;
  * Благодаря этому одна модель рисуется и текстурой разбойника, и головой жителя (гибрид 50/50).
  */
 public class MarauderModel<T extends OutpostNpc> extends HumanoidModel<T> {
+    /** Длинная куртка разбойника: под нагрудником и поножами её прячут, иначе она мерцает сквозь броню. */
+    public final ModelPart robe;
+    /** Нос торчит сквозь шлем — под шлемом его не рисуют. */
+    public final ModelPart nose;
+
     public MarauderModel(ModelPart root) {
         super(root);
+        robe = body.getChild("robe");
+        nose = head.getChild("nose");
     }
 
     public static LayerDefinition createBodyLayer() {
@@ -26,8 +33,9 @@ public class MarauderModel<T extends OutpostNpc> extends HumanoidModel<T> {
         PartDefinition head = root.addOrReplaceChild("head", CubeListBuilder.create().texOffs(0, 0).addBox(-4f, -10f, -4f, 8f, 10f, 8f), PartPose.ZERO);
         head.addOrReplaceChild("nose", CubeListBuilder.create().texOffs(24, 0).addBox(-1f, -1f, -6f, 2f, 4f, 2f), PartPose.offset(0f, -2f, 0f));
         root.addOrReplaceChild("hat", CubeListBuilder.create(), PartPose.ZERO);
-        root.addOrReplaceChild("body", CubeListBuilder.create()
-                .texOffs(16, 20).addBox(-4f, 0f, -3f, 8f, 12f, 6f)
+        PartDefinition body = root.addOrReplaceChild("body", CubeListBuilder.create()
+                .texOffs(16, 20).addBox(-4f, 0f, -3f, 8f, 12f, 6f), PartPose.ZERO);
+        body.addOrReplaceChild("robe", CubeListBuilder.create()
                 .texOffs(0, 38).addBox(-4f, 0f, -3f, 8f, 20f, 6f, new CubeDeformation(0.5f)), PartPose.ZERO);
         root.addOrReplaceChild("right_arm", CubeListBuilder.create().texOffs(40, 46).addBox(-3f, -2f, -2f, 4f, 12f, 4f), PartPose.offset(-5f, 2f, 0f));
         root.addOrReplaceChild("left_arm", CubeListBuilder.create().texOffs(40, 46).mirror().addBox(-1f, -2f, -2f, 4f, 12f, 4f), PartPose.offset(5f, 2f, 0f));
