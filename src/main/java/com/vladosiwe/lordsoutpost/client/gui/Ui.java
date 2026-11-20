@@ -90,6 +90,27 @@ public final class Ui {
         return net.minecraft.locale.Language.getInstance().getVisualOrder(FormattedText.composite(cut, FormattedText.of("…")));
     }
 
+    /** Текст с переносом строк (не больше maxLines, последняя — с многоточием). Возвращает высоту в пикселях. */
+    public static int wrapped(GuiGraphics g, Font font, Component text, int x, int y, int width, int color, int maxLines) {
+        var lines = font.split(text, width);
+        int n = Math.min(maxLines, lines.size());
+        for (int i = 0; i < n; i++) {
+            if (i == n - 1 && lines.size() > n) {
+                g.drawString(font, fit(font, Component.literal(lineText(lines.get(i)) + " …"), width), x, y + i * 9, color, false);
+            } else g.drawString(font, lines.get(i), x, y + i * 9, color, false);
+        }
+        return n * 9;
+    }
+
+    private static String lineText(FormattedCharSequence seq) {
+        StringBuilder sb = new StringBuilder();
+        seq.accept((index, style, cp) -> {
+            sb.appendCodePoint(cp);
+            return true;
+        });
+        return sb.toString();
+    }
+
     public static void text(GuiGraphics g, Font font, Component text, int x, int y, int width, int color) {
         g.drawString(font, fit(font, text, width), x, y, color, false);
     }

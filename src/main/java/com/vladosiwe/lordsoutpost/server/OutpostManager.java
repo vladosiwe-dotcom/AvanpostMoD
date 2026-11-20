@@ -114,6 +114,8 @@ public final class OutpostManager {
         o.quests.clear();
         o.raid = null;
         o.alarmUntil = 0;
+        // Новое владение: дома при нехватке мест планировщик заказывает сам (Лорд может выключить в «Стройке»).
+        o.autoBuild = true;
         o.squads[Squad.GUARD].order = Squad.Order.POSTS;
         o.squads[Squad.WATCH].order = Squad.Order.PATROL;
         o.squads[Squad.RETINUE].order = Squad.Order.POSTS;

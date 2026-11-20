@@ -128,7 +128,7 @@ public class OutpostScreen extends Screen {
         for (int i = 0; i < TABS.length; i++) {
             int idx = i;
             Component label = Component.translatable("lordsoutpost.ui.tab." + TABS[i]);
-            if (i == TAB_QUESTS && !view.quests.isEmpty()) label = label.copy().append(" (" + view.quests.size() + ")");
+            if (i == TAB_QUESTS && !view.quests.isEmpty()) label = label.copy().append(" " + view.quests.size());
             Ui.button(g, font, hits, left + 8 + i * tw, top + 26, tw - 2, 14, label, !naming, tab == i && !naming, mouseX, mouseY, () -> {
                 tab = idx;
                 scroll = 0;
@@ -217,8 +217,9 @@ public class OutpostScreen extends Screen {
             if (hover) hovered = law;
         }
         Law shown = hovered == null ? view.law : hovered;
-        List<net.minecraft.util.FormattedCharSequence> desc = font.split(shown.description(), 176);
-        for (int i = 0; i < Math.min(3, desc.size()); i++) g.drawString(font, desc.get(i), x, ly + 44 + i * 9, Ui.MUTED, false);
+        // Под описанием — хроника: видна одна строка, полностью — при наведении.
+        Ui.text(g, font, shown.description(), x, ly + 43, 176, Ui.MUTED);
+        hits.add(x, ly + 43, 176, 9, null, shown.description());
 
         // Склад.
         int sx = x + 190, sy = y;
@@ -464,7 +465,7 @@ public class OutpostScreen extends Screen {
         int ty = py + 6;
         g.drawString(font, Component.translatable("lordsoutpost.ui.tasks"), x, ty, Ui.TEXT, false);
         ty += 11;
-        if (m.tasks.isEmpty()) Ui.text(g, font, Component.translatable("lordsoutpost.ui.tasks.empty"), x, ty, colW, Ui.MUTED);
+        if (m.tasks.isEmpty()) Ui.wrapped(g, font, Component.translatable("lordsoutpost.ui.tasks.empty"), x, ty, colW, Ui.MUTED, 3);
         for (OutpostView.TaskInfo t : m.tasks) {
             if (ty > top + H - 44) break;
             Component what = Component.translatable("lordsoutpost.task." + t.type());
@@ -519,8 +520,7 @@ public class OutpostScreen extends Screen {
         g.drawString(font, Component.translatable("lordsoutpost.ui.shop", m.shop.size()), rx, sy, Ui.TEXT, false);
         sy += 10;
         if (m.shop.isEmpty()) {
-            Ui.text(g, font, Component.translatable("lordsoutpost.ui.shop.empty"), rx, sy, 182, Ui.MUTED);
-            sy += 10;
+            sy += Ui.wrapped(g, font, Component.translatable("lordsoutpost.ui.shop.empty"), rx, sy, 182, Ui.MUTED, 2) + 1;
         } else {
             for (int i = 0; i < m.shop.size(); i++) {
                 ItemStack st = m.shop.get(i);
@@ -586,6 +586,17 @@ public class OutpostScreen extends Screen {
             return;
         }
         boolean room = m.activeProjects() < m.projectLimit;
+        // Отстройка тира — главная стройка форта: она идёт сама, заказы — после неё.
+        Component tierLine = view.complete ? Component.translatable("lordsoutpost.ui.tier_done", view.tier)
+                : Component.translatable("lordsoutpost.ui.tier_progress", view.tier, view.tier + 1, Math.round(view.progress * 100));
+        g.drawString(font, tierLine, x, y, Ui.TEXT, false);
+        if (!view.complete) {
+            Ui.bar(g, x + 120, y + 1, W - 136, 7, view.progress, view.stalled != null ? Ui.WARN : Ui.GOOD);
+            Component why = view.stalled != null ? Component.translatable("lordsoutpost.ui.stalled", view.stalled.label())
+                    : Component.translatable("lordsoutpost.ui.steps", view.steps, view.planSize);
+            Ui.text(g, font, why, x, y + 10, W - 16, view.stalled != null ? Ui.WARN : Ui.MUTED);
+        }
+        y += 23;
         // Совет планировщика и авто-застройка: решает Лорд.
         if (!m.recommended.isEmpty()) {
             var e = m.recommended.entrySet().iterator().next();

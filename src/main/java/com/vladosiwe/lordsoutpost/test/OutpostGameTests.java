@@ -942,6 +942,9 @@ public final class OutpostGameTests {
             long now = level.getGameTime();
             while (o.residents.size() < o.populationCap()) OutpostManager.addSettler(o, Role.SHIELDMAN, level.random);
             o.setStock(Resource.FOOD, 500);
+            h.assertTrue(o.autoBuild, "новое владение: авто-застройка домов включена по умолчанию");
+            // Лорд выключил авто-застройку: планировщик только советует.
+            o.autoBuild = false;
             com.vladosiwe.lordsoutpost.data.OutpostDirector.tick(level, o, now);
             h.assertTrue(o.recommended.containsKey(com.vladosiwe.lordsoutpost.outpost.Project.Type.HOUSE), "при полном поселении планировщик советует дом");
             h.assertTrue(o.projects.isEmpty(), "без авто-застройки планировщик сам ничего не заказывает");

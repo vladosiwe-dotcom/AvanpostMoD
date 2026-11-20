@@ -212,7 +212,7 @@
   "lordsoutpost.mail.tribute": "дань владения (%s стопок)",
   "lordsoutpost.mail.tribute_empty": "Новой дани нет: всё уже в Сундуке Дани.",
   "lordsoutpost.mail.caravan_delivered": "караван доставил на склад %s предметов, казна заплатила %s золота",
-  "lordsoutpost.ui.mail.tribute": "Дань ждёт: %s стоп.",
+  "lordsoutpost.ui.mail.tribute": "Дань: %s стоп.",
   "lordsoutpost.ui.mail.send": "Почтой",
   "lordsoutpost.ui.mail.send.tip": "Отправить накопленную дань посылкой: её можно забрать в любом почтомате.",
   "lordsoutpost.hud.tier": "Тир %s · стройка %s%%",

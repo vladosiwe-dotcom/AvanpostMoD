@@ -86,7 +86,8 @@ public final class ALifeSimulationManager {
             o.lastSim = Math.min(o.lastSim, from);
             for (long t = from + CATCH_UP_STEP; t < now; t += CATCH_UP_STEP) Simulation.tick(level, data, o, t);
             Simulation.tick(level, data, o, now);
-            if (o.state == OutpostState.OWNED) {
+            // Короткий перезапуск без перемен — не повод для записи в хронике.
+            if (o.state == OutpostState.OWNED && (days >= 5 || o.tier != tier)) {
                 o.log(now, "lordsoutpost.event.catch_up", days / 10 + "." + days % 10, tier, o.tier);
             }
         }

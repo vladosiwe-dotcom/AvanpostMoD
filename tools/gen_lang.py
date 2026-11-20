@@ -243,7 +243,7 @@ add(P + 'mail.inventory_full', 'Не всё поместилось — оста�
 add(P + 'mail.tribute', 'дань владения (%s стопок)', 'tribute of the domain (%s stacks)')
 add(P + 'mail.tribute_empty', 'Новой дани нет: всё уже в Сундуке Дани.', 'No new tribute: everything is already in the Tribute Chest.')
 add(P + 'mail.caravan_delivered', 'караван доставил на склад %s предметов, казна заплатила %s золота', 'a caravan delivered %s items to the storehouse, the treasury paid %s gold')
-add(P + 'ui.mail.tribute', 'Дань ждёт: %s стоп.', 'Tribute waiting: %s stacks')
+add(P + 'ui.mail.tribute', 'Дань: %s стоп.', 'Tribute: %s stacks')
 add(P + 'ui.mail.send', 'Почтой', 'By mail')
 add(P + 'ui.mail.send.tip', 'Отправить накопленную дань посылкой: её можно забрать в любом почтомате.', 'Send the accumulated tribute as a parcel: collect it at any postbox.')
 # --- HUD владения ---

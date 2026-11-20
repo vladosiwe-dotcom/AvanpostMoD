@@ -212,7 +212,7 @@
   "lordsoutpost.mail.tribute": "tribute of the domain (%s stacks)",
   "lordsoutpost.mail.tribute_empty": "No new tribute: everything is already in the Tribute Chest.",
   "lordsoutpost.mail.caravan_delivered": "a caravan delivered %s items to the storehouse, the treasury paid %s gold",
-  "lordsoutpost.ui.mail.tribute": "Tribute waiting: %s stacks",
+  "lordsoutpost.ui.mail.tribute": "Tribute: %s stacks",
   "lordsoutpost.ui.mail.send": "By mail",
   "lordsoutpost.ui.mail.send.tip": "Send the accumulated tribute as a parcel: collect it at any postbox.",
   "lordsoutpost.hud.tier": "Tier %s · building %s%%",
