@@ -14,7 +14,9 @@ public enum WorkZone {
     FARM("farm", Marker.FARM, Role.FARMER, true),
     SMITHY("smithy", Marker.SMITHY, Role.SMITH, false),
     STOREHOUSE("storehouse", Marker.STORE_INSIDE, null, false),
-    MAGE_TOWER("mage_tower", Marker.MAGE, Role.MAGE, false);
+    MAGE_TOWER("mage_tower", Marker.MAGE, Role.MAGE, false),
+    /** Лавка торговца: по умолчанию у площадки караванов, Лорд может перенести её в любое место двора. */
+    SHOP("shop", Marker.CARAVAN, Role.CARAVANEER, true);
 
     public static final WorkZone[] VALUES = values();
 

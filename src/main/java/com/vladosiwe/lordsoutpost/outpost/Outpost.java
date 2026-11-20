@@ -107,6 +107,8 @@ public final class Outpost {
     public int questCounter;
     /** Дань, которая ещё не легла в сундук (накоплена, пока чанки были выгружены или сундук полон). */
     public final List<ItemStack> tribute = new ArrayList<>();
+    /** Личный инвентарь лавки торговца: настоящий товар, взятый со склада (сохраняется). */
+    public final List<ItemStack> shopStock = new ArrayList<>();
     public double tributeGold;
     public int penAnimals;
     public double arcaneWork;
@@ -534,6 +536,9 @@ public final class Outpost {
         ListTag tr = new ListTag();
         for (ItemStack s : tribute) if (!s.isEmpty()) tr.add(s.save(registries));
         t.put("tribute", tr);
+        ListTag shop = new ListTag();
+        for (ItemStack s : shopStock) if (!s.isEmpty()) shop.add(s.save(registries));
+        t.put("shop", shop);
         t.putDouble("tributeGold", tributeGold);
         t.putInt("pen", penAnimals);
         t.putDouble("arcaneWork", arcaneWork);
@@ -616,6 +621,8 @@ public final class Outpost {
         ListTag tr = t.getList("tribute", Tag.TAG_COMPOUND);
         for (int i = 0; i < tr.size(); i++) ItemStack.parse(registries, tr.getCompound(i)).filter(s -> !s.isEmpty()).ifPresent(o.tribute::add);
         o.tributeGold = t.getDouble("tributeGold");
+        ListTag shop = t.getList("shop", Tag.TAG_COMPOUND);
+        for (int i = 0; i < shop.size(); i++) ItemStack.parse(registries, shop.getCompound(i)).filter(s -> !s.isEmpty()).ifPresent(o.shopStock::add);
         o.penAnimals = Math.max(0, t.getInt("pen"));
         o.arcaneWork = t.getDouble("arcaneWork");
         o.growth = t.getDouble("growth");

@@ -202,6 +202,12 @@ public class WorkGoal extends Goal {
         Resident r = mob.resident();
         if (o == null || r == null || !(mob.level() instanceof ServerLevel level)) return;
         long now = level.getGameTime();
+        // Торговец не уходит и не трогает лавку, пока с ним торгуют: предложения окна должны совпадать с товаром.
+        if (mob.trading()) {
+            mob.getNavigation().stop();
+            if (mob.getTradingPlayer() != null) mob.getLookControl().setLookAt(mob.getTradingPlayer());
+            return;
+        }
         // Лорд перенёс рабочую зону: всё, что житель делал на старом месте, бросается.
         if (zonesVersion != o.zones.version()) {
             if (zonesVersion >= 0) {
@@ -249,6 +255,7 @@ public class WorkGoal extends Goal {
                     case SKOTOVOD -> skotovodHunting ? hunt(level, o, r, now) : herd(level, o, r, now);
                     case FARMER -> farm(level, o, r, now);
                     case SMITH -> smeltFurnace != null ? smelt(level, o, r, now) : smith(level, o, r, now);
+                    case CARAVANEER -> shop(level, o, r, now);
                     default -> true;
                 };
                 if (done) {
@@ -299,7 +306,8 @@ public class WorkGoal extends Goal {
             skotovodHuntNext = (r.id.getLeastSignificantBits() & 1L) != 0L;
             skotovodScheduleInitialized = true;
         }
-        boolean physical = role == Role.LUMBERJACK || role == Role.MINER || role == Role.SKOTOVOD || role == Role.FARMER || role == Role.SMITH;
+        boolean physical = role == Role.LUMBERJACK || role == Role.MINER || role == Role.SKOTOVOD || role == Role.FARMER || role == Role.SMITH
+                || role == Role.CARAVANEER;
         if (physical && now >= noJobUntil) {
             boolean found = switch (role) {
                 case LUMBERJACK -> findVegetation(level, o) || findTree(level, o);
@@ -310,6 +318,7 @@ public class WorkGoal extends Goal {
                 }
                 case FARMER -> findFarmTask(level, o);
                 case SMITH -> findSmithTask(level, o, r, now);
+                case CARAVANEER -> findShopTask(level, o, r, now);
                 case SKOTOVOD -> {
                     boolean huntFirst = skotovodHuntNext;
                     boolean selected = huntFirst ? startHunt() : planHerd(level, o, now);
@@ -1279,7 +1288,7 @@ public class WorkGoal extends Goal {
         boolean targetGone = herdAction == EGGS ? egg == null || !egg.isAlive() : animal == null || !animal.isAlive();
         if (++timer > HERD_PATIENCE) {
             // Не вышло за отведённое время: бросить, закрыть калитку и не возвращаться к этому животному какое-то время.
-            if (animal != null) unreachableAnimals.put(animal.getUUID(), now + 6000);
+            if (animal != null) unreachableAnimals.put(animal.getUUID(), now + 2400);
             holdFeed(false);
             // Калитку закрывает только тот, кто снаружи: запереть самого себя в загоне — значит застрять.
             if (!penBox(o).contains(mob.position())) setGate(level, gate, false);
@@ -1381,8 +1390,9 @@ public class WorkGoal extends Goal {
     }
 
     /**
-     * Приманивание: скотовод держит в руке корм, который ест это животное, и животное идёт за ним, как за игроком
-     * с кормом, — через открытую калитку в дальний угол загона. Корм при этом не тратится.
+     * Перегон: скотовод держит в руке корм, который ест это животное, и оно идёт за ним, как за игроком с кормом,
+     * до калитки; там он открывает калитку и загоняет животное на свободное место в загоне, сам оставаясь снаружи.
+     * Корм при этом не тратится.
      */
     private boolean lure(ServerLevel level, Outpost o, Resident r, BlockPos gate, BlockPos outside, long now) {
         if (animal == null || !animal.isAlive() || feed == null || countCarried(feed) == 0) {
@@ -1393,15 +1403,13 @@ public class WorkGoal extends Goal {
         holdFeed(herdStage < 4);
         boolean inPen = ChunkReconciliation.penAnimals(level, o).contains(animal);
         double dist = animal.distanceTo(mob);
-        if (herdStage < 4 && dist <= 10) {
-            animal.getLookControl().setLookAt(mob, 30f, 30f);
-            // Снаружи животное держится в паре блоков, как за игроком с кормом; в тесном загоне подходит вплотную.
-            double keep = herdStage >= 3 ? 1.2 : 2.5;
-            if (dist > keep && mob.tickCount % 10 == 0) animal.getNavigation().moveTo(mob, 1.1);
-        }
         BlockPos pen = o.zone(WorkZone.PEN);
-        int inner = ChunkReconciliation.penSize(o) - 1;
-        BlockPos far = pen.offset(-Integer.signum(gate.getX() - pen.getX()) * inner, 0, -Integer.signum(gate.getZ() - pen.getZ()) * inner);
+        double gx = gate.getX() + 0.5, gy = gate.getY(), gz = gate.getZ() + 0.5;
+        // Пока животное не у калитки — ведём его кормом в руке, как игрок; у калитки — загоняем внутрь, оставаясь снаружи.
+        if (herdStage < 3 && dist <= 10) {
+            animal.getLookControl().setLookAt(mob, 30f, 30f);
+            if (dist > 2.5 && mob.tickCount % 10 == 0) animal.getNavigation().moveTo(mob, 1.1);
+        }
         switch (herdStage) {
             case 1 -> {
                 // Подойти к животному, чтобы оно заметило корм.
@@ -1409,19 +1417,29 @@ public class WorkGoal extends Goal {
             }
             case 2 -> {
                 if (dist > 12) herdStage = 1;
-                else if (walkTo(outside, 1.3)) {
+                else if (walkTo(outside, 1.3) && animal.distanceToSqr(gx, gy, gz) <= 4.0 * 4.0) {
                     setGate(level, gate, true);
                     herdStage = 3;
                 }
             }
             case 3 -> {
-                // Животное заводится вглубь, а не оставляется в проходе: иначе оно перегородит выход.
-                boolean deep = inPen && animal.distanceToSqr(gate.getX() + 0.5, gate.getY(), gate.getZ() + 0.5) > 1.6 * 1.6;
-                if (dist > 12) herdStage = 2;
-                else if (walkTo(far, 1.2) && deep) herdStage = 4;
+                // Загнать: животное идёт на свободную клетку подальше от калитки, скотовод стоит в проходе снаружи.
+                boolean deep = inPen && animal.distanceToSqr(gx, gy, gz) > 1.6 * 1.6;
+                if (deep) {
+                    herdStage = 4;
+                } else if (animal.distanceToSqr(gx, gy, gz) > 8 * 8) {
+                    herdStage = 1;
+                } else {
+                    walkTo(outside, 1.0);
+                    mob.getLookControl().setLookAt(animal);
+                    if (mob.tickCount % 10 == 0) {
+                        BlockPos spot = freePenCell(level, o, pen, gate);
+                        animal.getNavigation().moveTo(spot.getX() + 0.5, spot.getY(), spot.getZ() + 0.5, 1.0);
+                    }
+                }
             }
             default -> {
-                // Животное в загоне: убрать корм, выйти и закрыть калитку.
+                // Животное в загоне: убрать корм и закрыть калитку (скотовод снаружи).
                 if (walkTo(outside, 1.3)) {
                     setGate(level, gate, false);
                     if (ChunkReconciliation.penAnimals(level, o).contains(animal)) {
@@ -1433,6 +1451,24 @@ public class WorkGoal extends Goal {
             }
         }
         return false;
+    }
+
+    /** Свободная клетка загона, дальняя от калитки (не занятая другими животными). */
+    private static BlockPos freePenCell(ServerLevel level, Outpost o, BlockPos pen, BlockPos gate) {
+        int inner = ChunkReconciliation.penSize(o) - 1;
+        BlockPos best = pen;
+        double bestD = -1;
+        for (int dx = -inner; dx <= inner; dx++)
+            for (int dz = -inner; dz <= inner; dz++) {
+                BlockPos cell = pen.offset(dx, 0, dz);
+                if (!level.getEntitiesOfClass(Animal.class, new AABB(cell)).isEmpty()) continue;
+                double d = cell.distSqr(gate);
+                if (d > bestD) {
+                    bestD = d;
+                    best = cell;
+                }
+            }
+        return best;
     }
 
     @Nullable
@@ -1651,6 +1687,60 @@ public class WorkGoal extends Goal {
             count -= n;
         }
         mob.inventory.setChanged();
+    }
+
+    // ============================== Лавка торговца ==============================
+
+    /**
+     * Торговец сначала возвращает на склад товар, которого поселению сейчас не хватает, потом пополняет лавку
+     * излишками склада (теми же, что годятся для каравана). Всё через логистику, реальными предметами.
+     */
+    private boolean findShopTask(ServerLevel level, Outpost o, Resident r, long now) {
+        if (!com.vladosiwe.lordsoutpost.data.Shop.hasShop(o)) return false;
+        ItemStack back = com.vladosiwe.lordsoutpost.data.Shop.takeBackScarce(o);
+        if (back != null) {
+            ItemStack left = mob.collect(back);
+            if (!left.isEmpty()) com.vladosiwe.lordsoutpost.data.Shop.stock(o, left);
+            OutpostSavedData.get(level).setDirty();
+            // Найденной работы нет: житель с ношей пойдёт её разгружать.
+            return false;
+        }
+        var want = com.vladosiwe.lordsoutpost.data.Shop.restock(level, o);
+        if (want.isEmpty()) return false;
+        task = Logistics.request(level, o, r, OutpostTask.Type.STOCK_SHOP, want, now);
+        if (task == null) return false;
+        task.zone = WorkZone.SHOP;
+        return true;
+    }
+
+    private boolean shop(ServerLevel level, Outpost o, Resident r, long now) {
+        if (task == null || !task.active()) return true;
+        if (task.carried.isEmpty()) {
+            if (!go(o, o.zone(WorkZone.STOREHOUSE), 1.8, 500)) return false;
+            if (!Logistics.withdraw(level, o, task, mob, now)) {
+                Logistics.cancel(o, task, "withdraw failed", now);
+                task = null;
+                return true;
+            }
+            return false;
+        }
+        if (!go(o, o.zone(WorkZone.SHOP), 2.0, 500)) return false;
+        // Выложить в лавку ровно то, что принесено под эту задачу.
+        for (var e : new java.util.ArrayList<>(task.carried.entrySet())) {
+            for (int i = 0; i < mob.inventory.getContainerSize(); i++) {
+                ItemStack st = mob.inventory.getItem(i);
+                if (!st.is(e.getKey())) continue;
+                ItemStack left = com.vladosiwe.lordsoutpost.data.Shop.stock(o, st.copy());
+                mob.inventory.setItem(i, left);
+            }
+        }
+        mob.swing(InteractionHand.MAIN_HAND);
+        level.playSound(null, mob.blockPosition(), SoundEvents.BUNDLE_DROP_CONTENTS, SoundSource.NEUTRAL, 0.6f, 1.0f);
+        Logistics.complete(o, task, now);
+        task = null;
+        r.lastRealWork = now;
+        OutpostSavedData.get(level).setDirty();
+        return true;
     }
 
     // ============================== Переплавка в настоящей печи ==============================
@@ -1980,10 +2070,8 @@ public class WorkGoal extends Goal {
                 case 1 -> o.marker(Marker.BOARD);
                 default -> o.marker(Marker.STORAGE);
             };
-            case CARAVANEER -> {
-                List<BlockPos> yard = o.markers(Marker.YARD);
-                yield yard.isEmpty() ? o.marker(Marker.STORAGE) : yard.get(yard.size() - 1);
-            }
+            // Торговец стоит в своей лавке.
+            case CARAVANEER -> o.zone(WorkZone.SHOP);
             default -> o.marker(Marker.YARD);
         };
     }

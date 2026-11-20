@@ -30,7 +30,7 @@ import net.minecraft.world.level.Level;
 import org.jetbrains.annotations.Nullable;
 
 /** Мирный житель: Управляющий, строитель, охотник, скотовод, шахтёр, лесоруб, кузнец, маг, караванщик. */
-public class WorkerEntity extends OutpostNpc {
+public class WorkerEntity extends OutpostNpc implements net.minecraft.world.item.trading.Merchant {
     /** Ноша жителя: то, что он добыл или подобрал и ещё не донёс до склада. */
     public final net.minecraft.world.SimpleContainer inventory = new net.minecraft.world.SimpleContainer(12);
     public WorkGoal workGoal;
@@ -152,9 +152,111 @@ public class WorkerEntity extends OutpostNpc {
     protected InteractionResult mobInteract(Player player, InteractionHand hand) {
         if (hand == InteractionHand.MAIN_HAND && player instanceof ServerPlayer sp) {
             Outpost o = outpost();
-            if (o != null) Interactions.talk(sp, o, this);
+            if (o != null && role() == Role.CARAVANEER && !sp.isShiftKeyDown()) openShop(sp, o);
+            else if (o != null) Interactions.talk(sp, o, this);
         }
         return InteractionResult.sidedSuccess(level().isClientSide);
+    }
+
+    // ============================== Лавка торговца ==============================
+
+    @Nullable private Player tradingPlayer;
+    private net.minecraft.world.item.trading.MerchantOffers offers = new net.minecraft.world.item.trading.MerchantOffers();
+
+    /** Открывает ванильное окно торговли с товаром лавки (кроме врагов форта). */
+    private void openShop(ServerPlayer player, Outpost o) {
+        var data = com.vladosiwe.lordsoutpost.data.OutpostSavedData.get(player.serverLevel());
+        if (o.state != com.vladosiwe.lordsoutpost.outpost.OutpostState.OWNED
+                || com.vladosiwe.lordsoutpost.protection.Access.level(data, o, player.getUUID()) == com.vladosiwe.lordsoutpost.outpost.AccessLevel.HOSTILE) {
+            Interactions.talk(player, o, this);
+            return;
+        }
+        if (tradingPlayer != null && tradingPlayer != player) return;
+        offers = com.vladosiwe.lordsoutpost.data.Shop.offers(o);
+        if (offers.isEmpty()) {
+            player.displayClientMessage(net.minecraft.network.chat.Component.translatable("lordsoutpost.msg.shop_empty", getName()), true);
+            return;
+        }
+        setTradingPlayer(player);
+        openTradingScreen(player, getName(), 1);
+    }
+
+    @Override
+    public void setTradingPlayer(@Nullable Player player) {
+        tradingPlayer = player;
+    }
+
+    @Nullable
+    @Override
+    public Player getTradingPlayer() {
+        return tradingPlayer;
+    }
+
+    public boolean trading() {
+        return tradingPlayer != null;
+    }
+
+    @Override
+    public net.minecraft.world.item.trading.MerchantOffers getOffers() {
+        return offers;
+    }
+
+    @Override
+    public void overrideOffers(net.minecraft.world.item.trading.MerchantOffers offers) {
+        this.offers = offers;
+    }
+
+    /** Связка куплена: товар уходит из лавки, изумруды — в казну. */
+    @Override
+    public void notifyTrade(net.minecraft.world.item.trading.MerchantOffer offer) {
+        Outpost o = outpost();
+        if (o == null) return;
+        if (!com.vladosiwe.lordsoutpost.data.Shop.sold(o, offer)) {
+            // Товара уже нет (не должно случаться: пока идёт торговля, лавку никто не трогает) — больше не продаём.
+            offer.setToOutOfStock();
+            com.vladosiwe.lordsoutpost.LordsOutpost.LOGGER.warn("Лавка форта #{}: продана связка, которой нет в лавке", Long.toHexString(o.id));
+        }
+        playSound(SoundEvents.VILLAGER_YES, 0.6f, 1f);
+        if (level() instanceof net.minecraft.server.level.ServerLevel sl) com.vladosiwe.lordsoutpost.data.OutpostSavedData.get(sl).setDirty();
+    }
+
+    @Override
+    public void notifyTradeUpdated(ItemStack stack) {
+    }
+
+    @Override
+    public int getVillagerXp() {
+        return 0;
+    }
+
+    @Override
+    public void overrideXp(int xp) {
+    }
+
+    @Override
+    public boolean showProgressBar() {
+        return false;
+    }
+
+    @Override
+    public SoundEvent getNotifyTradeSound() {
+        return SoundEvents.VILLAGER_YES;
+    }
+
+    @Override
+    public boolean isClientSide() {
+        return level().isClientSide;
+    }
+
+    /** Торговец пропал из мира посреди торговли — окно закрывается, сделка не может пройти без лавки. */
+    @Override
+    public void onRemovedFromLevel() {
+        if (tradingPlayer != null) {
+            Player p = tradingPlayer;
+            tradingPlayer = null;
+            if (p.containerMenu instanceof net.minecraft.world.inventory.MerchantMenu) p.closeContainer();
+        }
+        super.onRemovedFromLevel();
     }
 
     @Override

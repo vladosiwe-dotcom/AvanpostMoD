@@ -53,7 +53,9 @@ public final class OutpostTask {
         /** Кузнец берёт сырую руду и топливо для печи кузницы. */
         SMELT_ORE(Role.SMITH, false),
         /** Лесоруб берёт со склада саженец той же породы, чтобы посадить его на месте срубленного дерева. */
-        FETCH_SAPLING(Role.LUMBERJACK, false);
+        FETCH_SAPLING(Role.LUMBERJACK, false),
+        /** Торговец несёт излишки со склада в свою лавку. */
+        STOCK_SHOP(Role.CARAVANEER, false);
 
         public static final Type[] VALUES = values();
 

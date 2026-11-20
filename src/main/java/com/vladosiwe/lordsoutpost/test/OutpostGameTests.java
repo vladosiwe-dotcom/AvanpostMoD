@@ -625,6 +625,36 @@ public final class OutpostGameTests {
         h.succeed();
     }
 
+    /** Лавка торговца продаёт только то, что в ней лежит: продажа списывает товар, изумруды идут в казну, лавка сохраняется. */
+    @GameTest(template = "empty")
+    public static void shopSellsOnlyRealStock(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        Outpost o = virtualOutpost(level, data, FAR.offset(1024, 0, 0), 1, UUID.randomUUID());
+        try {
+            o.shopStock.clear();
+            com.vladosiwe.lordsoutpost.data.Shop.stock(o, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.COBBLESTONE, 64));
+            var offers = com.vladosiwe.lordsoutpost.data.Shop.offers(o);
+            h.assertTrue(offers.size() == 1, "одно предложение на один вид товара");
+            var offer = offers.get(0);
+            int bundle = offer.getResult().getCount(), price = offer.getCostA().getCount();
+            h.assertTrue(offer.getMaxUses() == 64 / bundle, "покупок не больше, чем связок в лавке");
+            double gold = o.stock(Resource.GOLD);
+            h.assertTrue(com.vladosiwe.lordsoutpost.data.Shop.sold(o, offer), "продажа должна пройти");
+            int left = o.shopStock.stream().mapToInt(net.minecraft.world.item.ItemStack::getCount).sum();
+            h.assertTrue(left == 64 - bundle, "товар списан из лавки: осталось " + left);
+            h.assertTrue(Math.abs(o.stock(Resource.GOLD) - gold - price) < 1e-6, "изумруды ушли в казну");
+            Outpost copy = Outpost.load(o.save(level.registryAccess()), level.registryAccess());
+            h.assertTrue(copy.shopStock.stream().mapToInt(net.minecraft.world.item.ItemStack::getCount).sum() == left, "лавка сохраняется");
+            o.shopStock.clear();
+            h.assertFalse(com.vladosiwe.lordsoutpost.data.Shop.sold(o, offer), "без товара продажа не засчитывается");
+        } finally {
+            OutpostManager.abandon(data, o, level.getGameTime());
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
     /** Тир кирки ограничен одновременно развитием форта и личным уровнем шахтёра. */
     @GameTest(template = "empty")
     public static void minerToolTierUsesBothProgressions(GameTestHelper h) {
