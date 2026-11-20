@@ -218,13 +218,9 @@ public class WorkGoal extends Goal {
             zonesVersion = o.zones.version();
         }
         Role role = r.role;
-        if (role == Role.BUILDER && phase == Phase.DECIDE) {
-            // Строителю нечего строить: планировщик решает, какой ресурс он пойдёт добывать руками.
-            Role helper = ChunkReconciliation.hasWork(o) || com.vladosiwe.lordsoutpost.data.Projects.hasWork(o) ? null : OutpostDirector.helperRole(o);
-            acting = helper == null ? Role.BUILDER : helper;
-        } else if (role != Role.BUILDER) {
-            acting = role;
-        }
+        // Каждый занят своим делом: строитель без стройки не уходит в лесорубы и шахтёры,
+        // а прибирает внутри построек (дерево в складе, листва и трава в комнатах).
+        acting = role;
         role = acting;
         if (!level.isNight() && mob.isSleeping()) mob.stopSleeping();
         if (level.isNight() && role != Role.BUILDER && phase != Phase.DEPOSIT) {
@@ -256,6 +252,7 @@ public class WorkGoal extends Goal {
             case JOB -> {
                 boolean done = switch (role) {
                     case LUMBERJACK -> vegetation != null ? clearVegetation(level, o, r, now) : chop(level, o, r, now);
+                    case BUILDER -> clearVegetation(level, o, r, now);
                     case MINER -> sinking ? sink(level, o, r, now) : mine(level, o, r, now);
                     case SKOTOVOD -> skotovodHunting ? hunt(level, o, r, now) : herd(level, o, r, now);
                     case FARMER -> farm(level, o, r, now);
@@ -312,10 +309,11 @@ public class WorkGoal extends Goal {
             skotovodScheduleInitialized = true;
         }
         boolean physical = role == Role.LUMBERJACK || role == Role.MINER || role == Role.SKOTOVOD || role == Role.FARMER || role == Role.SMITH
-                || role == Role.CARAVANEER;
+                || role == Role.CARAVANEER || role == Role.BUILDER;
         if (physical && now >= noJobUntil) {
             boolean found = switch (role) {
                 case LUMBERJACK -> findVegetation(level, o) || findTree(level, o);
+                case BUILDER -> findJunk(level, o);
                 case MINER -> {
                     Outpost.MineSite site = o.mine();
                     if (site.exists() && !site.ready()) {
@@ -500,6 +498,38 @@ public class WorkGoal extends Goal {
         saplingSupplied = false;
         treeLog = level.getBlockState(best).getBlock();
         return true;
+    }
+
+    @Nullable private List<BlockPos> interior;
+    @Nullable private com.vladosiwe.lordsoutpost.blueprint.Design interiorOf;
+
+    /**
+     * Работа строителя без стройки: природный мусор там, где чертёж держит пустоту (внутри комнат, склада, башен,
+     * в проходах) — стволы и листва выросших деревьев, трава, цветы. Блоки игрока и блоки с содержимым не трогает.
+     */
+    private boolean findJunk(ServerLevel level, Outpost o) {
+        var design = o.design();
+        if (interiorOf != design || interior == null) {
+            interior = new ArrayList<>();
+            for (var e : design.cells.entrySet()) if (e.getValue().state().isAir()) interior.add(o.world(e.getKey()));
+            interiorOf = design;
+        }
+        BlockPos best = null;
+        double bestD = Double.MAX_VALUE;
+        for (BlockPos pos : interior) {
+            if (!level.isLoaded(pos)) continue;
+            BlockState state = level.getBlockState(pos);
+            if (state.isAir() || !state.getFluidState().isEmpty() || level.getBlockEntity(pos) != null || o.placedByPlayer(pos)) continue;
+            if (!(state.is(BlockTags.LOGS) || state.is(BlockTags.LEAVES) || ChunkReconciliation.isNaturalObstruction(state))) continue;
+            double d = mob.distanceToSqr(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5);
+            if (d < bestD) {
+                bestD = d;
+                best = pos;
+            }
+        }
+        vegetation = best;
+        timer = 0;
+        return best != null;
     }
 
     /** Ищет естественную растительность внутри стен, которая мешает проходам и рабочим площадкам. */

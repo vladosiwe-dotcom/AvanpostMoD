@@ -172,9 +172,53 @@ public final class ChunkReconciliation {
             o.placed = Math.min(o.steps, plan.size());
         }
         if (o.state == OutpostState.WILD && !o.lootSeeded) seedTreasure(level, o);
+        if (!o.natureCleared) {
+            int removed = clearNature(level, o);
+            o.natureCleared = true;
+            if (removed > 0) com.vladosiwe.lordsoutpost.LordsOutpost.LOGGER.info("Форт #{}: убрано {} блоков деревьев, выросших внутри стен",
+                    Long.toHexString(o.id), removed);
+        }
         Projects.arrive(level, o);
         data.setDirty();
         return true;
+    }
+
+    /**
+     * Генерация мира сажает деревья уже после того, как поставлен форт: они вырастают во дворе, на поле и в домах.
+     * Один раз при первой загрузке форта стволы и природная листва внутри стен убираются. Не трогаются:
+     * блоки чертежа (брёвна стен и построек), всё, что поставил игрок, и деревья из его саженцев.
+     */
+    static int clearNature(ServerLevel level, Outpost o) {
+        int r = o.radius();
+        int removed = 0;
+        BlockPos.MutableBlockPos p = new BlockPos.MutableBlockPos();
+        for (int dx = -r; dx <= r; dx++)
+            for (int dz = -r; dz <= r; dz++) {
+                int x = o.center.getX() + dx, z = o.center.getZ() + dz;
+                if (!o.insideHorizontally(x, z, r - 1) || !level.hasChunk(x >> 4, z >> 4)) continue;
+                for (int y = o.center.getY() + 1; y <= o.center.getY() + 40; y++) {
+                    p.set(x, y, z);
+                    BlockState s = level.getBlockState(p);
+                    boolean log = s.is(BlockTags.LOGS);
+                    boolean leaf = s.getBlock() instanceof net.minecraft.world.level.block.LeavesBlock
+                            && !s.getValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT);
+                    if (!log && !leaf) continue;
+                    if (o.placedByPlayer(p) || o.structural(p, s)) continue;
+                    if (log && plantedNear(o, p)) continue;
+                    level.setBlock(p, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 2);
+                    removed++;
+                }
+            }
+        return removed;
+    }
+
+    /** Ствол дерева, выросшего из саженца игрока (саженец мог стоять в соседней клетке у дерева 2×2). */
+    private static boolean plantedNear(Outpost o, BlockPos log) {
+        if (o.playerPlaced.isEmpty()) return false;
+        for (int dy = 0; dy <= 30; dy++)
+            for (int dx = -1; dx <= 1; dx++)
+                for (int dz = -1; dz <= 1; dz++) if (o.placedByPlayer(log.offset(dx, -dy, dz))) return true;
+        return false;
     }
 
     private static boolean structurePresent(ServerLevel level, Outpost o) {

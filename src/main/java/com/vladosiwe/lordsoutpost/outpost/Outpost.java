@@ -46,6 +46,8 @@ public final class Outpost {
     public final Palette palette;
     public final Rotation rotation;
     public final Difficulty difficulty;
+    /** Природные деревья внутри стен убраны (генерация мира сажает их уже после форта). */
+    public boolean natureCleared;
     /** Версия планировки (1 — первая, 2 — просторная); новые форты берут версию своего мира. */
     public int version = Layout.currentVersion();
     /** Создан командой, а не генерацией мира. */
@@ -552,6 +554,7 @@ public final class Outpost {
         t.putInt("z", center.getZ());
         t.putString("layout", layout.id);
         t.putByte("layoutVersion", (byte) version);
+        t.putBoolean("natureCleared", natureCleared);
         t.putString("palette", palette.id);
         t.putByte("rot", (byte) rotation.ordinal());
         t.putByte("skulls", (byte) difficulty.skulls);
@@ -674,6 +677,7 @@ public final class Outpost {
                 Difficulty.bySkulls(t.getByte("skulls")), t.getBoolean("manual"));
         // Записи до просторной планировки — первой версии.
         o.version = t.contains("layoutVersion") ? Mth.clamp(t.getByte("layoutVersion"), 1, 2) : 1;
+        o.natureCleared = t.getBoolean("natureCleared");
         o.state = OutpostState.VALUES[Mth.clamp(t.getByte("state"), 0, OutpostState.VALUES.length - 1)];
         o.name = t.getString("name");
         o.owner = t.hasUUID("owner") ? t.getUUID("owner") : null;

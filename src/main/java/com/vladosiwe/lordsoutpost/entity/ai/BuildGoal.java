@@ -129,10 +129,19 @@ public class BuildGoal extends Goal {
             workPath = null;
         }
         if (workPosition == null || !validWorkPosition(level, workPosition)) {
-            workPosition = findWorkPosition(level, o, target);
+            // Поиск места — десятки расчётов пути; без места повторяем его раз в секунду, а не каждый тик.
+            workPosition = mob.tickCount >= searchAt ? findWorkPosition(level, o, target) : null;
+            if (workPosition == null && mob.tickCount >= searchAt) searchAt = mob.tickCount + 20;
         }
         if (workPosition == null) {
             lastResult = "no-reachable-work-position";
+            // Путь ищется только в пределах ~32 блоков вокруг строителя: до дальней стены нового тира (в обход
+            // через ворота) его не найти. Тогда строитель сначала идёт к цели по частичному пути, потом ищет место.
+            double fx = target.getX() + 0.5 - mob.getX(), fz = target.getZ() + 0.5 - mob.getZ();
+            if (fx * fx + fz * fz > 25) {
+                mob.pathTo(target.getX() + 0.5, target.getY() + 1, target.getZ() + 0.5, 1.0);
+                lastResult = "approaching";
+            }
             if (--timeout <= 0) defer(o, level.getGameTime());
             return;
         }
@@ -323,7 +332,12 @@ public class BuildGoal extends Goal {
 
     /** Ищет устойчивую соседнюю клетку с воздухом для тела и свободным пространством над головой. */
     @Nullable
+    /** Почему отброшены клетки при последнем поиске места работы (для /outpost workers). */
+    private final int[] rejects = new int[7];
+    private int searchAt;
+
     private BlockPos findWorkPosition(ServerLevel level, Outpost o, BlockPos block) {
+        java.util.Arrays.fill(rejects, 0);
         BlockPos best = null;
         Path bestPath = null;
         workPath = null;
@@ -340,21 +354,21 @@ public class BuildGoal extends Goal {
                     BlockPos feet = new BlockPos(block.getX() + dx, block.getY() + dy, block.getZ() + dz);
                     if (level.isOutsideBuildHeight(feet) || level.isOutsideBuildHeight(feet.above())) continue;
                     if (!level.getBlockState(feet).getFluidState().isEmpty()
-                            || !level.getBlockState(feet.above()).getFluidState().isEmpty()
-                            || !level.getBlockState(feet).getCollisionShape(level, feet).isEmpty()
-                            || !level.getBlockState(feet.above()).getCollisionShape(level, feet.above()).isEmpty()) continue;
+                            || !level.getBlockState(feet.above()).getFluidState().isEmpty()) { rejects[0]++; continue; }
+                    if (!level.getBlockState(feet).getCollisionShape(level, feet).isEmpty()
+                            || !level.getBlockState(feet.above()).getCollisionShape(level, feet.above()).isEmpty()) { rejects[1]++; continue; }
                     BlockPos floor = feet.below();
-                    if (!level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP)) continue;
-                    if (!level.getEntitiesOfClass(WorkerEntity.class, new net.minecraft.world.phys.AABB(feet), other -> other != mob).isEmpty()) continue;
-                    if (reservedByAnotherBuilder(level, o, feet)) continue;
+                    if (!level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP)) { rejects[2]++; continue; }
+                    if (!level.getEntitiesOfClass(WorkerEntity.class, new net.minecraft.world.phys.AABB(feet), other -> other != mob).isEmpty()) { rejects[3]++; continue; }
+                    if (reservedByAnotherBuilder(level, o, feet)) { rejects[4]++; continue; }
 
                     double eyeY = feet.getY() + mob.getEyeHeight();
                     double rx = tx - (feet.getX() + 0.5), ry = ty - eyeY, rz = tz - (feet.getZ() + 0.5);
-                    if (rx * rx + ry * ry + rz * rz > reach * reach) continue;
+                    if (rx * rx + ry * ry + rz * rz > reach * reach) { rejects[5]++; continue; }
                     double distance = mob.distanceToSqr(feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5);
                     if (distance >= bestDistance) continue;
                     Path path = mob.getNavigation().createPath(feet, 0);
-                    if (path == null || !path.canReach()) continue;
+                    if (path == null || !path.canReach()) { rejects[6]++; continue; }
                     bestDistance = distance;
                     best = feet.immutable();
                     bestPath = path;
@@ -371,7 +385,8 @@ public class BuildGoal extends Goal {
                 + ",block=" + mob.level().getBlockState(target)
                 + ",work=" + (workPosition == null ? "-" : workPosition.toShortString())
                 + ",path=" + (workPath == null ? "-" : workPath.getTarget().toShortString() + "/" + workPath.getNodeCount())
-                + ",timeout=" + timeout + ",cooldown=" + cooldown + ",state=" + lastResult + "}";
+                + ",timeout=" + timeout + ",cooldown=" + cooldown + ",state=" + lastResult
+                + ",rej[fluid,blocked,floor,busy,reserved,reach,path]=" + java.util.Arrays.toString(rejects) + "}";
     }
 
     private boolean validWorkPosition(ServerLevel level, BlockPos feet) {

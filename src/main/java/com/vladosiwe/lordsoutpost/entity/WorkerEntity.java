@@ -109,7 +109,9 @@ public class WorkerEntity extends OutpostNpc implements net.minecraft.world.item
                 .add(Attributes.MAX_HEALTH, 20)
                 .add(Attributes.MOVEMENT_SPEED, 0.28)
                 .add(Attributes.ATTACK_DAMAGE, 2)
-                .add(Attributes.FOLLOW_RANGE, 32);
+                // Дальность поиска пути: просторный форт с подступами — до ~70 блоков в поперечнике, а путь к дальней
+                // стене нового тира идёт в обход через ворота. Частые повторные поиски ограничены (OutpostNpc.pathTo).
+                .add(Attributes.FOLLOW_RANGE, 64);
     }
 
     @Override
