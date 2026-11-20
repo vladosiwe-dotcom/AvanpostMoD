@@ -36,6 +36,7 @@ public final class OutpostDirector {
     public static void tick(@Nullable ServerLevel level, Outpost o, long now) {
         assess(o);
         smithTasks(level, o, now);
+        toolTasks(level, o, now);
         housekeeping(o, now);
     }
 
@@ -151,6 +152,56 @@ public final class OutpostDirector {
             if (spare) Logistics.reserve(level, o, t, want, now);
             else o.tasks.set(t, OutpostTask.State.PAUSED, "keeping repair reserve", now);
         }
+    }
+
+    /** Чем владеет поселение: в бочках склада и в ношах его жителей (только пока чанки загружены). */
+    public static int owned(ServerLevel level, Outpost o, Item item) {
+        int n = Storehouse.countItem(level, o, item);
+        for (Resident r : o.residents) {
+            if (r.entity != null && level.getEntity(r.entity) instanceof com.vladosiwe.lordsoutpost.entity.WorkerEntity w) {
+                for (int i = 0; i < w.inventory.getContainerSize(); i++) if (w.inventory.getItem(i).is(item)) n += w.inventory.getItem(i).getCount();
+            }
+        }
+        return n;
+    }
+
+    /**
+     * Инструменты скотовода: ножницы и ведро. Если в поселении их нет, кузнецу ставится заказ из настоящих слитков.
+     * Заказ, ставший ненужным (инструмент нашёлся, его положил игрок), снимается, пока за него не взялись.
+     */
+    static void toolTasks(@Nullable ServerLevel level, Outpost o, long now) {
+        if (level == null || !o.online || o.state != com.vladosiwe.lordsoutpost.outpost.OutpostState.OWNED) return;
+        boolean herders = o.count(Role.SKOTOVOD) > 0, smith = o.count(Role.SMITH) > 0;
+        for (Item product : new Item[]{Items.SHEARS, Items.BUCKET}) {
+            boolean needed = herders && smith && owned(level, o, product) == 0
+                    && (product != Items.BUCKET || Storehouse.countItem(level, o, Items.MILK_BUCKET) < 4);
+            OutpostTask t = null;
+            for (OutpostTask x : o.tasks.all()) if (x.active() && x.type == OutpostTask.Type.FORGE_TOOL && x.product == product) t = x;
+            if (!needed) {
+                if (t != null && t.executor == null) o.tasks.set(t, OutpostTask.State.CANCELLED, "not needed", now);
+                continue;
+            }
+            if (t == null) {
+                t = o.tasks.create(o, OutpostTask.Type.FORGE_TOOL, 45, now);
+                t.product = product;
+                t.zone = WorkZone.SMITHY;
+            }
+            if (t.executor == null && t.reserved.isEmpty()) Logistics.reserve(level, o, t, recipe(product), now);
+        }
+    }
+
+    /** Настоящий рецепт верстака: ведро — 3 слитка, ножницы — 2. */
+    public static Map<Item, Integer> recipe(@Nullable Item product) {
+        Map<Item, Integer> m = new LinkedHashMap<>();
+        if (product == Items.BUCKET) m.put(Items.IRON_INGOT, 3);
+        else if (product == Items.SHEARS) m.put(Items.IRON_INGOT, 2);
+        return m;
+    }
+
+    /** Материалы любой кузнечной задачи. */
+    public static Map<Item, Integer> materials(OutpostTask t, @Nullable Resident target) {
+        if (t.type == OutpostTask.Type.FORGE_TOOL) return recipe(t.product);
+        return target == null ? Map.of() : smithMaterials(t, target);
     }
 
     public static int maxGear(Outpost o) {

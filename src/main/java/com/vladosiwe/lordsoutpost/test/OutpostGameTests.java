@@ -1127,6 +1127,7 @@ public final class OutpostGameTests {
         int[] stage = {0};
         long[] mark = {0};
         int[] maxPenned = {0};
+        List<net.minecraft.world.entity.animal.Animal> testCows = new java.util.ArrayList<>();
         List<BlockPos> treeLogs = new java.util.ArrayList<>();
         List<BlockPos> courtyardTreeLogs = new java.util.ArrayList<>();
         BlockPos[] courtyardTreeBase = {null};
@@ -1197,7 +1198,12 @@ public final class OutpostGameTests {
                         cow.moveTo(cx + 0.5, pen.getY(), cz + 0.5, 0, 0);
                         cow.setPersistenceRequired();
                         level.addFreshEntity(cow);
+                        testCows.add(cow);
                     }
+                    // Корм на складе: коров приманивают настоящей пшеницей, а не поводком.
+                    net.minecraft.world.SimpleContainer wheat = new net.minecraft.world.SimpleContainer(1);
+                    wheat.setItem(0, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.WHEAT, 32));
+                    com.vladosiwe.lordsoutpost.data.Storehouse.deposit(level, o, wheat);
                     // Мусор во дворе.
                     BlockPos yard = o.marker(Marker.YARD);
                     for (int i = 0; i < 3; i++) {
@@ -1218,9 +1224,18 @@ public final class OutpostGameTests {
                     stage[0] = 1;
                 }
                 case 1 -> {
-                    // Фиксируем каждое животное сразу после входа: тест проверяет перегон, а не случайное блуждание стада.
+                    // Фиксируем животное, заведённое вглубь загона: тест проверяет перегон, а не случайное блуждание стада.
+                    // У самой калитки не фиксируем — замершая в проходе корова перегородила бы выход скотоводу.
+                    BlockPos penAt = o.marker(Marker.PEN);
                     for (net.minecraft.world.entity.animal.Animal penned
-                            : com.vladosiwe.lordsoutpost.data.ChunkReconciliation.penAnimals(level, o)) penned.setNoAi(true);
+                            : com.vladosiwe.lordsoutpost.data.ChunkReconciliation.penAnimals(level, o)) {
+                        boolean nearGate = false;
+                        for (BlockPos g : BlockPos.betweenClosed(penAt.offset(-3, 0, -3), penAt.offset(3, 0, 3))) {
+                            if (level.getBlockState(g).getBlock() instanceof net.minecraft.world.level.block.FenceGateBlock
+                                    && penned.distanceToSqr(g.getX() + 0.5, g.getY(), g.getZ() + 0.5) <= 1.6 * 1.6) nearGate = true;
+                        }
+                        if (!nearGate) penned.setNoAi(true);
+                    }
                     int logsLeft = 0;
                     for (BlockPos p : treeLogs) if (level.getBlockState(p).is(net.minecraft.tags.BlockTags.LOGS)) logsLeft++;
                     int courtyardLogsLeft = 0;
@@ -1245,8 +1260,12 @@ public final class OutpostGameTests {
                     boolean minerWorked = level.getEntitiesOfClass(WorkerEntity.class, area,
                             w -> w.outpostId() == o.id && w.role() == Role.MINER && w.resident() != null && w.resident().miningXp > 0).size() > 0;
                     if ((h.getTick() - mark[0]) % 200 == 0) LordsOutpost.LOGGER.info("Работа жителей: в загоне {}, шахтёр добыл блоки {}", penned, minerWorked);
+                    // Хотя бы одну корову, стоящую за калиткой, скотовод должен привести в загон приманиванием.
+                    var inPen = com.vladosiwe.lordsoutpost.data.ChunkReconciliation.penAnimals(level, o);
+                    long luredCows = testCows.stream().filter(inPen::contains).count();
+                    if ((h.getTick() - mark[0]) % 200 == 0) LordsOutpost.LOGGER.info("Работа жителей: приведено коров {}", luredCows);
                     if (logsLeft > 0 || courtyardLogsLeft > 0 || courtyardReplanted || !courtyardPlantCleared
-                            || !replanted || !litterGone || o.depositedItems < 24 + 5 || maxPenned[0] < 3 || !minerWorked) return;
+                            || !replanted || !litterGone || o.depositedItems < 24 + 5 || luredCows < 1 || !minerWorked) return;
                     // Склад: бочки отражают запас.
                     var barrels = com.vladosiwe.lordsoutpost.data.Storehouse.barrels(level, o);
                     h.assertTrue(!barrels.isEmpty(), "у склада нет бочек");

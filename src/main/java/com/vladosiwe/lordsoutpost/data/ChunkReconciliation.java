@@ -272,14 +272,14 @@ public final class ChunkReconciliation {
     }
 
     /**
-     * Строитель не смог добраться до шага: шаг откладывается с растущей паузой (10 с, 20 с … до 5 мин),
+     * Строитель не смог добраться до шага: шаг откладывается с растущей паузой (3 с, 6 с, 12 с … до 5 мин),
      * чтобы остальные шаги шли своим чередом, а невозможная задача не повторялась каждый тик.
      */
     public static void deferStep(Outpost o, int index, long now) {
         if (index < 0) return;
         o.claims.remove(index);
         int fails = o.stepFailures.merge(index, 1, Integer::sum);
-        long delay = 200L << Math.min(5, fails - 1);
+        long delay = 60L << Math.min(6, fails - 1);
         o.deferredSteps.put(index, now + Math.min(6000L, delay));
         if (fails == 6) {
             List<Step> plan = o.nextPlan();

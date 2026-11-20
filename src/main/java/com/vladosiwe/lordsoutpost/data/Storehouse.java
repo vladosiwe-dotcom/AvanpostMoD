@@ -163,35 +163,58 @@ public final class Storehouse {
      * Сначала проверяет весь объём, затем меняет и инвентарь, и числовой запас.
      */
     public static boolean takeItem(ServerLevel level, Outpost o, net.minecraft.world.item.Item item, int count) {
-        if (count <= 0) return true;
+        return takeStacks(level, o, item, count) != null;
+    }
+
+    /**
+     * То же, но возвращает именно вынутые стопки — с их прочностью и прочими данными, чтобы изношенный инструмент
+     * не превратился в новый. null — если столько предметов нет (тогда ничего не меняется).
+     */
+    @org.jetbrains.annotations.Nullable
+    public static List<ItemStack> takeStacks(ServerLevel level, Outpost o, net.minecraft.world.item.Item item, int count) {
+        if (count <= 0) return List.of();
         ResourceItems.Value value = ResourceItems.of(new ItemStack(item));
-        if (value == null || !physical(value.resource())) return false;
-        double amount = count * value.perItem();
-        if (o.stock(value.resource()) + 1e-6 < amount) return false;
+        // Предметы без ресурсной стоимости (вёдра, ножницы, факелы, уголь) лежат в бочках сами по себе и в запас не входят.
+        boolean counted = value != null && physical(value.resource());
+        if (value != null && !counted) return null;
+        double amount = counted ? count * value.perItem() : 0;
+        if (counted && o.stock(value.resource()) + 1e-6 < amount) return null;
         List<Container> barrels = barrels(level, o);
         int available = 0;
         for (Container c : barrels) for (int s = 0; s < c.getContainerSize(); s++) {
             ItemStack st = c.getItem(s);
             if (st.is(item)) available += st.getCount();
         }
-        if (available < count) return false;
+        if (available < count) return null;
+        List<ItemStack> out = new ArrayList<>();
         int left = count;
         for (Container c : barrels) {
             for (int s = 0; s < c.getContainerSize() && left > 0; s++) {
                 ItemStack st = c.getItem(s);
                 if (!st.is(item)) continue;
                 int n = Math.min(left, st.getCount());
-                st.shrink(n);
+                out.add(st.split(n));
                 left -= n;
                 c.setChanged();
             }
             if (left == 0) break;
         }
-        if (left != 0) return false;
-        o.take(value.resource(), amount);
-        o.storeLast.merge(value.resource(), -amount, Double::sum);
+        if (counted) {
+            o.take(value.resource(), amount);
+            o.storeLast.merge(value.resource(), -amount, Double::sum);
+        }
         o.dirtyForClients = true;
-        return true;
+        return out;
+    }
+
+    /** Первый предмет в бочках, подходящий под условие (например, любое бревно), или null. */
+    @org.jetbrains.annotations.Nullable
+    public static net.minecraft.world.item.Item findItem(ServerLevel level, Outpost o, java.util.function.Predicate<ItemStack> test) {
+        for (Container c : barrels(level, o)) for (int s = 0; s < c.getContainerSize(); s++) {
+            ItemStack st = c.getItem(s);
+            if (!st.isEmpty() && test.test(st)) return st.getItem();
+        }
+        return null;
     }
 
     /**

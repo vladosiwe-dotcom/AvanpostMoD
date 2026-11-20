@@ -73,22 +73,26 @@ public final class Logistics {
             task.reason = "cargo full";
             return false;
         }
-        Map<Item, Integer> taken = new LinkedHashMap<>();
+        java.util.List<ItemStack> taken = new java.util.ArrayList<>();
         for (var e : task.reserved.entrySet()) {
-            if (!Storehouse.takeItem(level, o, e.getKey(), e.getValue())) {
+            java.util.List<ItemStack> stacks = Storehouse.takeStacks(level, o, e.getKey(), e.getValue());
+            if (stacks == null) {
                 // Не вышло взять всё: уже взятое возвращается в бочки тем же путём, что и любая ноша.
-                for (var t : taken.entrySet()) restock(level, o, t.getKey(), t.getValue());
+                restock(level, o, taken);
                 o.tasks.set(task, OutpostTask.State.PAUSED, "stock mismatch", now);
                 task.reserved.clear();
                 return false;
             }
-            taken.put(e.getKey(), e.getValue());
+            taken.addAll(stacks);
         }
-        for (var e : taken.entrySet()) {
-            ItemStack left = worker.collect(new ItemStack(e.getKey(), e.getValue()));
-            if (!left.isEmpty()) restock(level, o, left.getItem(), left.getCount());
-            task.carried.merge(e.getKey(), e.getValue() - left.getCount(), Integer::sum);
+        java.util.List<ItemStack> back = new java.util.ArrayList<>();
+        for (ItemStack st : taken) {
+            int count = st.getCount();
+            ItemStack left = worker.collect(st);
+            if (!left.isEmpty()) back.add(left);
+            task.carried.merge(st.getItem(), count - left.getCount(), Integer::sum);
         }
+        restock(level, o, back);
         task.reserved.clear();
         task.executor = worker.residentId();
         o.tasks.set(task, OutpostTask.State.IN_PROGRESS, "", now);
@@ -140,9 +144,10 @@ public final class Logistics {
     }
 
     /** Возвращает предметы в бочки склада (или в дань, если бочки полны); запас пополняется тем же учётом, что и разгрузка. */
-    private static void restock(ServerLevel level, Outpost o, Item item, int count) {
-        net.minecraft.world.SimpleContainer box = new net.minecraft.world.SimpleContainer(Math.max(1, (count + 63) / 64));
-        box.addItem(new ItemStack(item, count));
+    private static void restock(ServerLevel level, Outpost o, java.util.List<ItemStack> stacks) {
+        if (stacks.isEmpty()) return;
+        net.minecraft.world.SimpleContainer box = new net.minecraft.world.SimpleContainer(stacks.size());
+        for (int i = 0; i < stacks.size(); i++) box.setItem(i, stacks.get(i));
         Storehouse.deposit(level, o, box);
     }
 }

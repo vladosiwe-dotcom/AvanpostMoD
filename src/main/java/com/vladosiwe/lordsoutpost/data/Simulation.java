@@ -223,7 +223,8 @@ public final class Simulation {
         boolean helped = o.boosted(Resource.HIDES, now) || o.boosted(Resource.IRON, now);
         o.smithWork = Math.min(8, o.smithWork + smiths * 30 * days * (helped ? boost : 1));
         while (o.smithWork >= 1) {
-            OutpostTask task = o.tasks.nextFor(Role.SMITH);
+            // Инструменты куются только в настоящей кузнице: вдали им негде лечь, кроме бочек склада.
+            OutpostTask task = o.tasks.nextFor(Role.SMITH, t -> t.type != OutpostTask.Type.FORGE_TOOL);
             if (task == null) return;
             Resident target = task.subject == null ? null : o.resident(task.subject);
             if (target == null) {

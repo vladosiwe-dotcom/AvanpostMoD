@@ -173,8 +173,8 @@ public class BuildGoal extends Goal {
         workPath = null;
         double bestDistance = Double.MAX_VALUE;
         double tx = block.getX() + 0.5, ty = block.getY() + 0.5, tz = block.getZ() + 0.5;
-        // После нескольких неудач строитель ищет опору шире: с соседнего яруса лесов, со стены или крыши рядом.
-        boolean wide = ChunkReconciliation.stepFailures(o, claim) >= 3;
+        // После двух неудач строитель ищет опору шире: с соседнего яруса лесов, со стены или крыши рядом.
+        boolean wide = ChunkReconciliation.stepFailures(o, claim) >= 2;
         int span = wide ? 2 : 1, up = wide ? 2 : 1, down = wide ? -6 : -4;
         double reach = reach(o);
         for (int dy = up; dy >= down; dy--) {
@@ -228,7 +228,7 @@ public class BuildGoal extends Goal {
 
     /** Обычная досягаемость руки 4 блока; для трудных клеток — 5, как у игрока. */
     private double reach(Outpost o) {
-        return ChunkReconciliation.stepFailures(o, claim) >= 3 ? 5.0 : 4.0;
+        return ChunkReconciliation.stepFailures(o, claim) >= 2 ? 5.0 : 4.0;
     }
 
     /** Шаг недоступен: откладываем его, а строитель берёт следующий. */

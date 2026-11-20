@@ -62,9 +62,14 @@ public final class TaskBoard {
     /** Свободная задача для профессии с наибольшим приоритетом. */
     @Nullable
     public OutpostTask nextFor(Role role) {
+        return nextFor(role, t -> true);
+    }
+
+    @Nullable
+    public OutpostTask nextFor(Role role, java.util.function.Predicate<OutpostTask> filter) {
         OutpostTask best = null;
         for (OutpostTask t : tasks) {
-            if (!t.active() || t.type.role != role || t.executor != null) continue;
+            if (!t.active() || t.type.role != role || t.executor != null || !filter.test(t)) continue;
             if (t.state != OutpostTask.State.AVAILABLE && t.state != OutpostTask.State.RESERVED && t.state != OutpostTask.State.PAUSED) continue;
             if (best == null || t.priority > best.priority || (t.priority == best.priority && t.id < best.id)) best = t;
         }

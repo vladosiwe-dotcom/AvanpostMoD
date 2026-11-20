@@ -40,8 +40,14 @@ public final class OutpostTask {
         BREED_ANIMALS(Role.SKOTOVOD, false),
         /** Фермер берёт семена со склада для посева. */
         FETCH_SEEDS(Role.FARMER, false),
-        /** Шахтёр берёт на склад факелы или уголь для освещения штрека. */
-        FETCH_TORCHES(Role.MINER, false);
+        /** Шахтёр берёт со склада факелы или уголь с бревном, чтобы сделать факелы для штрека. */
+        FETCH_TORCHES(Role.MINER, false),
+        /** Кузнец куёт инструмент (product) из настоящих слитков. */
+        FORGE_TOOL(Role.SMITH, true),
+        /** Скотовод берёт со склада корм для приманивания и разведения. */
+        FETCH_FEED(Role.SKOTOVOD, false),
+        /** Скотовод берёт со склада инструменты (ножницы, ведро). */
+        FETCH_TOOLS(Role.SKOTOVOD, false);
 
         public static final Type[] VALUES = values();
 
@@ -71,6 +77,8 @@ public final class OutpostTask {
     @Nullable public UUID subject;
     @Nullable public WorkZone zone;
     @Nullable public BlockPos target;
+    /** Что производится (для кузнечных заказов). */
+    @Nullable public Item product;
     /** Предметы, отложенные на складе под эту задачу (ещё лежат в бочках, но другим недоступны). */
     public final Map<Item, Integer> reserved = new LinkedHashMap<>();
     /** Предметы, которые исполнитель уже забрал со склада в ношу под эту задачу. */
@@ -109,6 +117,7 @@ public final class OutpostTask {
         if (subject != null) t.putUUID("subject", subject);
         if (zone != null) t.putString("zone", zone.id);
         if (target != null) t.putLong("target", target.asLong());
+        if (product != null) t.putString("product", BuiltInRegistries.ITEM.getKey(product).toString());
         t.put("reserved", items(reserved));
         t.put("carried", items(carried));
         t.putDouble("progress", progress);
@@ -129,6 +138,11 @@ public final class OutpostTask {
         task.subject = t.hasUUID("subject") ? t.getUUID("subject") : null;
         task.zone = t.contains("zone") ? WorkZone.byId(t.getString("zone")) : null;
         task.target = t.contains("target") ? BlockPos.of(t.getLong("target")) : null;
+        if (t.contains("product")) {
+            ResourceLocation pid = ResourceLocation.tryParse(t.getString("product"));
+            Item item = pid == null ? Items.AIR : BuiltInRegistries.ITEM.get(pid);
+            task.product = item == Items.AIR ? null : item;
+        }
         readItems(t.getList("reserved", Tag.TAG_COMPOUND), task.reserved);
         readItems(t.getList("carried", Tag.TAG_COMPOUND), task.carried);
         task.progress = t.getDouble("progress");
