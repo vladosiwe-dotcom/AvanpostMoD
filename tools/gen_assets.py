@@ -234,9 +234,46 @@ write(os.path.join(DM, 'tags', 'item', 'arcane.json'), {'values': [
     {'id': 'irons_spellbooks:arcane_essence', 'required': False}, {'id': 'irons_spellbooks:common_ink', 'required': False},
     {'id': 'irons_spellbooks:uncommon_ink', 'required': False}, {'id': 'irons_spellbooks:rare_ink', 'required': False}]})
 write(os.path.join(D, 'minecraft', 'tags', 'block', 'mineable', 'pickaxe.json'), {'values': [f'{MOD}:outpost_gate']})
-write(os.path.join(D, 'minecraft', 'tags', 'block', 'mineable', 'axe.json'), {'values': [f'{MOD}:lord_standard', f'{MOD}:quest_board', f'{MOD}:storehouse_door']})
+write(os.path.join(D, 'minecraft', 'tags', 'block', 'mineable', 'axe.json'), {'values': [f'{MOD}:lord_standard', f'{MOD}:quest_board', f'{MOD}:storehouse_door', f'{MOD}:postbox']})
 
-for block in ('outpost_gate', 'lord_standard', 'quest_board'):
+
+# Почтомат: крашеный ящик с прорезью для писем и латунной табличкой.
+def postbox(front):
+    img = Image.new('RGBA', (16, 16))
+    px = img.load()
+    for y in range(16):
+        for x in range(16):
+            px[x, y] = shade(rgb(0xA8322A), 0.88 + 0.16 * noise(x, y, 21))
+    for i in range(16):
+        for t in (0, 15):
+            px[i, t] = shade(rgb(0x5E1A16), 0.9 + 0.1 * noise(i, t, 4))
+            px[t, i] = shade(rgb(0x5E1A16), 0.9 + 0.1 * noise(t, i, 4))
+    if front:
+        for x in range(4, 12):
+            px[x, 5] = rgb(0x1C1412)
+            px[x, 6] = rgb(0x2A1E1A)
+        for x in range(5, 11):
+            for y in range(9, 12):
+                px[x, y] = shade(rgb(0xD8B24C), 0.9 + 0.15 * noise(x, y, 8))
+    return img
+
+
+save(postbox(True), 'block', 'postbox_front.png')
+save(postbox(False), 'block', 'postbox_side.png')
+box = {'from': [3, 0, 3], 'to': [13, 15, 13], 'faces': {
+    'south': {'uv': [3, 1, 13, 16], 'texture': '#front'}, 'north': {'uv': [3, 1, 13, 16], 'texture': '#side'},
+    'east': {'uv': [3, 1, 13, 16], 'texture': '#side'}, 'west': {'uv': [3, 1, 13, 16], 'texture': '#side'},
+    'up': {'uv': [3, 3, 13, 13], 'texture': '#side'}, 'down': {'uv': [3, 3, 13, 13], 'texture': '#side'}}}
+write(os.path.join(A, 'models', 'block', 'postbox.json'), {
+    'parent': 'minecraft:block/block',
+    'textures': {'front': tex('postbox_front'), 'side': tex('postbox_side'), 'particle': tex('postbox_side')},
+    'elements': [box]})
+write(os.path.join(A, 'blockstates', 'postbox.json'), {'variants': {
+    'facing=south': {'model': f'{MOD}:block/postbox'}, 'facing=west': {'model': f'{MOD}:block/postbox', 'y': 90},
+    'facing=north': {'model': f'{MOD}:block/postbox', 'y': 180}, 'facing=east': {'model': f'{MOD}:block/postbox', 'y': 270}}})
+write(os.path.join(A, 'models', 'item', 'postbox.json'), {'parent': f'{MOD}:block/postbox'})
+
+for block in ('outpost_gate', 'lord_standard', 'quest_board', 'postbox'):
     write(os.path.join(DM, 'loot_table', 'blocks', block + '.json'), {
         'type': 'minecraft:block', 'pools': [{'rolls': 1, 'entries': [{'type': 'minecraft:item', 'name': f'{MOD}:{block}'}],
                                              'conditions': [{'condition': 'minecraft:survives_explosion'}]}]})
@@ -323,6 +360,11 @@ write(os.path.join(DM, 'recipe', 'quest_board.json'), {
     'type': 'minecraft:crafting_shaped', 'category': 'misc', 'pattern': ['PPP', 'PBP', 'S S'],
     'key': {'P': {'tag': 'minecraft:planks'}, 'B': {'item': 'minecraft:paper'}, 'S': {'item': 'minecraft:stick'}},
     'result': {'id': f'{MOD}:quest_board', 'count': 1}})
+
+write(os.path.join(DM, 'recipe', 'postbox.json'), {
+    'type': 'minecraft:crafting_shaped', 'category': 'misc', 'pattern': ['PIP', 'PBP', 'PPP'],
+    'key': {'P': {'tag': 'minecraft:planks'}, 'I': {'item': 'minecraft:iron_ingot'}, 'B': {'item': 'minecraft:paper'}},
+    'result': {'id': f'{MOD}:postbox', 'count': 1}})
 
 # Пустой шаблон для игровых тестов (1x1x1 воздуха).
 src = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'empty.nbt')

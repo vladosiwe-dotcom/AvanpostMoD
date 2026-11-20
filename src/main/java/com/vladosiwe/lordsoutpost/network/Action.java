@@ -23,7 +23,9 @@ public enum Action {
     /** Отмена заказа: {id}. */
     CANCEL_PROJECT,
     /** Перенос рабочей зоны к Лорду или назад по чертежу: {zone, here}. */
-    MOVE_ZONE;
+    MOVE_ZONE,
+    /** Накопленную дань — посылкой в почтомат. */
+    MAIL_TRIBUTE;
 
     public static final Action[] VALUES = values();
 }

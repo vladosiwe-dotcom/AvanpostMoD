@@ -18,6 +18,8 @@ import net.minecraft.util.RandomSource;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.EnumMap;
+import java.util.List;
+import net.minecraft.world.item.ItemStack;
 import java.util.Iterator;
 import java.util.UUID;
 
@@ -40,6 +42,7 @@ public final class Caravans {
     public static void tick(ServerLevel level, OutpostSavedData data, Outpost o, long now, double days, boolean steward, RandomSource rnd) {
         for (Iterator<Caravan> it = o.caravans.iterator(); it.hasNext(); ) {
             Caravan c = it.next();
+            upgradeCargo(o, c);
             Resident leader = o.resident(c.leader);
             Outpost target = data.byId(c.target);
             if (leader == null || target == null) {
@@ -91,18 +94,35 @@ public final class Caravans {
     public static boolean arrive(ServerLevel level, OutpostSavedData data, Outpost o, Outpost target, Caravan c, long now) {
         Relation rel = o.relations.computeIfAbsent(target.id, k -> new Relation());
         if (c.phase == Caravan.Phase.OUTBOUND) {
-            double value = 0;
-            for (var e : c.cargo.entrySet()) value += e.getValue() * QuestBoard.goldValue(e.getKey());
-            c.earned = value * (1 + c.length() / 3000.0) * o.law.caravanProfit() * (1 + 0.1 * Math.min(5, rel.caravansDone));
+            upgradeCargo(o, c);
+            double price = value(c) * (1 + c.length() / 3000.0) * o.law.caravanProfit() * (1 + 0.1 * Math.min(5, rel.caravansDone));
+            if (target.state == OutpostState.OWNED) {
+                // Владение игрока: товар реально ложится на его склад, а платит его казна — сколько может.
+                int delivered = 0;
+                for (ItemStack st : c.goods) {
+                    ResourceItems.Value v = ResourceItems.of(st);
+                    if (v != null && Storehouse.physical(v.resource())) target.addPhysical(v.resource(), v.perItem() * st.getCount());
+                    else Simulation.addTribute(target, st.copy());
+                    delivered += st.getCount();
+                }
+                double paid = Math.min(price, target.stock(Resource.GOLD));
+                target.take(Resource.GOLD, paid);
+                c.earned = paid;
+                target.log(now, "lordsoutpost.event.caravan_visit", o.name);
+                target.dirtyForClients = true;
+                if (target.owner != null) {
+                    com.vladosiwe.lordsoutpost.mail.Mail.send(level.getServer(), target.owner, o.name, "lordsoutpost.mail.caravan_delivered",
+                            List.of(), now, delivered, (int) Math.round(paid));
+                }
+            } else {
+                // Дикий форт с договором покупает груз у каравана: товар уходит мародёрам.
+                c.earned = price;
+            }
+            c.goods.clear();
             c.cargo.clear();
             c.phase = Caravan.Phase.TRADING;
             c.phaseUntil = now + TRADE_TIME;
             c.traveled = 0;
-            if (target.state == OutpostState.OWNED) {
-                // Торговля выгодна обеим сторонам.
-                target.add(Resource.GOLD, c.earned * 0.15);
-                target.log(now, "lordsoutpost.event.caravan_visit", o.name);
-            }
             o.dirtyForClients = true;
             return false;
         }
@@ -133,7 +153,10 @@ public final class Caravans {
             o.log(now, "lordsoutpost.event.ambush_won");
             return;
         }
-        c.cargo.replaceAll((res, amount) -> amount * 0.5);
+        // Засада отбирает половину настоящего груза.
+        upgradeCargo(o, c);
+        for (ItemStack st : c.goods) st.setCount(st.getCount() / 2);
+        c.goods.removeIf(ItemStack::isEmpty);
         c.earned *= 0.5;
         if (!c.escort.isEmpty()) {
             Resident victim = o.resident(c.escort.get(rnd.nextInt(c.escort.size())));
@@ -197,6 +220,62 @@ public final class Caravans {
         return out;
     }
 
+    /** Снимает со склада ресурс целыми предметами (его представитель — бревно, булыжник, слиток…) и кладёт в груз. */
+    private static void loadGoods(Outpost o, Caravan c, Resource r, double amount) {
+        ItemStack rep = Storehouse.representative(o, r);
+        ResourceItems.Value v = ResourceItems.of(rep);
+        if (rep.isEmpty() || v == null) return;
+        int n = (int) Math.floor(amount / v.perItem());
+        if (n <= 0 || !o.take(r, n * v.perItem())) return;
+        while (n > 0) {
+            int k = Math.min(n, rep.getMaxStackSize());
+            c.goods.add(rep.copyWithCount(k));
+            n -= k;
+        }
+    }
+
+    /** Старые сохранения: числовой груз становится настоящими предметами (остаток меньше предмета пропадает как раньше). */
+    static void upgradeCargo(Outpost o, Caravan c) {
+        if (c.cargo.isEmpty()) return;
+        for (var e : c.cargo.entrySet()) {
+            ItemStack rep = Storehouse.representative(o, e.getKey());
+            ResourceItems.Value v = ResourceItems.of(rep);
+            if (rep.isEmpty() || v == null) continue;
+            int n = (int) Math.floor(e.getValue() / v.perItem());
+            while (n > 0) {
+                int k = Math.min(n, rep.getMaxStackSize());
+                c.goods.add(rep.copyWithCount(k));
+                n -= k;
+            }
+        }
+        c.cargo.clear();
+    }
+
+    /** Стоимость груза в золоте по ценам Доски. */
+    public static double value(Caravan c) {
+        double value = 0;
+        for (ItemStack st : c.goods) {
+            ResourceItems.Value v = ResourceItems.of(st);
+            if (v != null) value += v.perItem() * st.getCount() * QuestBoard.goldValue(v.resource());
+        }
+        return value;
+    }
+
+    /** Вьючное животное каравана погибло в мире: груз падает на землю — его можно отбить или подобрать. */
+    public static void dropGoods(ServerLevel level, Outpost o, Caravan c, net.minecraft.world.phys.Vec3 at) {
+        upgradeCargo(o, c);
+        for (ItemStack st : c.goods) {
+            if (st.isEmpty()) continue;
+            net.minecraft.world.entity.item.ItemEntity e = new net.minecraft.world.entity.item.ItemEntity(level, at.x, at.y + 0.5, at.z, st.copy());
+            e.setDefaultPickUpDelay();
+            level.addFreshEntity(e);
+        }
+        c.goods.clear();
+        c.earned = 0;
+        o.log(level.getGameTime(), "lordsoutpost.event.caravan_goods_lost");
+        o.dirtyForClients = true;
+    }
+
     public static Result dispatch(OutpostSavedData data, Outpost o, Outpost target, long now) {
         if (o.state != OutpostState.OWNED || target == o || target.state == OutpostState.CONQUERED) return Result.INVALID;
         Relation rel = o.relations.get(target.id);
@@ -210,10 +289,9 @@ public final class Caravans {
         if (value < MIN_CARGO_VALUE) return Result.NO_CARGO;
 
         Caravan c = new Caravan(UUID.randomUUID(), target.id, o.marker(Marker.CARAVAN), target.marker(Marker.CARAVAN), leader.id);
-        for (var e : cargo.entrySet()) {
-            o.take(e.getKey(), e.getValue());
-            c.cargo.put(e.getKey(), e.getValue());
-        }
+        // Груз — настоящие предметы: их снимают со склада (при загруженном форте бочки опустеют при сверке).
+        for (var e : cargo.entrySet()) loadGoods(o, c, e.getKey(), e.getValue());
+        if (c.goods.isEmpty()) return Result.NO_CARGO;
         leader.status = Resident.Status.ON_CARAVAN;
         // Конвой: до трёх бойцов Дозора, а если их нет — Стражи.
         int want = 2 + (o.tier >= 3 ? 1 : 0);

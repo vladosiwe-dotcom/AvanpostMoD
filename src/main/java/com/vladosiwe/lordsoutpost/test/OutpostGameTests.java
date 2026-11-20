@@ -713,6 +713,76 @@ public final class OutpostGameTests {
         h.succeed();
     }
 
+    /**
+     * Почта: письмо с вложениями выдаётся в инвентарь один раз, повторное открытие почтомата ничего не даёт,
+     * письмо переживает сохранение. Караван везёт настоящие предметы: склад отправителя пустеет на их стоимость,
+     * склад владения-покупателя пополняется, его казна платит, его Лорд получает письмо.
+     */
+    @GameTest(template = "empty")
+    @SuppressWarnings("removal")
+    public static void mailAndCaravanGoods(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        long now = level.getGameTime();
+        int before = data.mail().size();
+        UUID recipient = UUID.randomUUID();
+        com.vladosiwe.lordsoutpost.mail.Mail.send(level.getServer(), recipient, "Test", "lordsoutpost.mail.tribute",
+                new java.util.ArrayList<>(List.of(new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.COBBLESTONE, 64),
+                        new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.COBBLESTONE, 6))), now, 2);
+        var letter = data.mail().get(data.mail().size() - 1);
+        var copy = com.vladosiwe.lordsoutpost.mail.Letter.load(letter.save(level.registryAccess()), level.registryAccess());
+        h.assertTrue(copy.id.equals(letter.id) && copy.itemCount() == 70, "письмо сохраняется со своим id и вложениями");
+        // Поддельный игрок есть не везде: Epic Fight шлёт ему свои пакеты и падает на фальшивом соединении.
+        net.minecraft.server.level.ServerPlayer player = null;
+        try {
+            player = h.makeMockServerPlayerInLevel();
+        } catch (RuntimeException e) {
+            LordsOutpost.LOGGER.info("Выдача письма не проверена: поддельный игрок недоступен ({})", e.toString());
+        }
+        if (player != null) {
+            data.mail().remove(letter);
+            com.vladosiwe.lordsoutpost.mail.Mail.send(level.getServer(), player.getUUID(), "Test", "lordsoutpost.mail.tribute",
+                    new java.util.ArrayList<>(List.of(new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.COBBLESTONE, 64),
+                            new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.COBBLESTONE, 6))), now, 2);
+            var mine = data.mail().get(data.mail().size() - 1);
+            com.vladosiwe.lordsoutpost.mail.Mail.claim(player, now);
+            h.assertTrue(player.getInventory().countItem(net.minecraft.world.item.Items.COBBLESTONE) == 70, "вложения в инвентаре");
+            com.vladosiwe.lordsoutpost.mail.Mail.claim(player, now);
+            h.assertTrue(player.getInventory().countItem(net.minecraft.world.item.Items.COBBLESTONE) == 70, "письмо нельзя получить дважды");
+            h.assertFalse(mine.waiting(), "письмо помечено полученным");
+        }
+        data.mail().subList(Math.min(before, data.mail().size()), data.mail().size()).clear();
+
+        Outpost o = virtualOutpost(level, data, FAR.offset(1536, 0, 0), 1, UUID.randomUUID());
+        Outpost other = virtualOutpost(level, data, FAR.offset(1536, 0, 600), 1, UUID.randomUUID());
+        try {
+            o.relations.computeIfAbsent(other.id, k -> new com.vladosiwe.lordsoutpost.outpost.Relation()).pact = Pact.TRADE;
+            OutpostManager.addSettler(o, Role.CARAVANEER, level.random);
+            for (Resource r : Resource.VALUES) o.setStock(r, 0);
+            o.setStock(Resource.WOOD, 590);
+            h.assertTrue(Caravans.dispatch(data, o, other, now) == Caravans.Result.OK, "караван должен выйти");
+            Caravan c = o.caravans.get(o.caravans.size() - 1);
+            int items = c.goods.stream().filter(st -> st.is(net.minecraft.tags.ItemTags.LOGS)).mapToInt(net.minecraft.world.item.ItemStack::getCount).sum();
+            h.assertTrue(items > 0, "груз — настоящие предметы");
+            h.assertTrue(Math.abs(o.stock(Resource.WOOD) - (590 - items * 4)) < 1e-6, "склад отправителя уменьшился ровно на стоимость брёвен");
+            other.setStock(Resource.WOOD, 0);
+            other.setStock(Resource.GOLD, 1000);
+            int mail = data.mail().size();
+            Caravans.arrive(level, data, o, other, c, now);
+            h.assertTrue(Math.abs(other.stock(Resource.WOOD) - items * 4) < 1e-6, "груз лёг на склад покупателя: " + other.stock(Resource.WOOD));
+            h.assertTrue(other.stock(Resource.GOLD) < 1000 && c.earned > 0, "казна покупателя заплатила");
+            h.assertTrue(c.goods.isEmpty(), "груз передан, а не скопирован");
+            h.assertTrue(data.mail().size() == mail + 1, "Лорд-покупатель получил письмо");
+            data.mail().subList(mail, data.mail().size()).clear();
+        } finally {
+            OutpostManager.abandon(data, o, level.getGameTime());
+            OutpostManager.abandon(data, other, level.getGameTime());
+            data.remove(o);
+            data.remove(other);
+        }
+        h.succeed();
+    }
+
     /** Тир кирки ограничен одновременно развитием форта и личным уровнем шахтёра. */
     @GameTest(template = "empty")
     public static void minerToolTierUsesBothProgressions(GameTestHelper h) {

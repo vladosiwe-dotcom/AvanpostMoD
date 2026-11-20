@@ -466,7 +466,7 @@ public class OutpostScreen extends Screen {
         ty += 11;
         if (m.tasks.isEmpty()) Ui.text(g, font, Component.translatable("lordsoutpost.ui.tasks.empty"), x, ty, colW, Ui.MUTED);
         for (OutpostView.TaskInfo t : m.tasks) {
-            if (ty > top + H - 20) break;
+            if (ty > top + H - 44) break;
             Component what = Component.translatable("lordsoutpost.task." + t.type());
             if (!t.product().isEmpty()) {
                 var id = net.minecraft.resources.ResourceLocation.tryParse(t.product());
@@ -484,6 +484,11 @@ public class OutpostScreen extends Screen {
             Ui.text(g, font, state, x + 6, ty + 9, colW - 6, color);
             ty += 20;
         }
+        // Дань почтой: то, что ещё не легло в Сундук Дани (копится, пока форт не загружен).
+        int my = top + H - 22;
+        Ui.text(g, font, Component.translatable("lordsoutpost.ui.mail.tribute", view.tributeStacks), x, my + 2, 110, view.tributeStacks > 0 ? Ui.ACCENT : Ui.MUTED);
+        Ui.button(g, font, hits, x + 112, my, 66, 12, Component.translatable("lordsoutpost.ui.mail.send"), view.tributeStacks > 0, false, mouseX, mouseY,
+                () -> Net.action(view.id, Action.MAIL_TRIBUTE), Component.translatable("lordsoutpost.ui.mail.send.tip"));
         // Рабочие зоны.
         g.drawString(font, Component.translatable("lordsoutpost.ui.zones"), rx, y, Ui.TEXT, false);
         int zy = y + 11;

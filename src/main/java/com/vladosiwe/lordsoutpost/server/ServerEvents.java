@@ -132,6 +132,20 @@ public final class ServerEvents {
     public static void onLivingDeath(net.neoforged.neoforge.event.entity.living.LivingDeathEvent event) {
         if (event.getEntity().level() instanceof net.minecraft.server.level.ServerLevel level) {
             com.vladosiwe.lordsoutpost.compat.Pyromancer.onDeath(level, event.getEntity());
+            var tag = event.getEntity().getPersistentData();
+            if (tag.hasUUID(NpcLifecycle.CARAVAN_TAG)) {
+                // Вьючное животное каравана погибло: его груз падает здесь.
+                java.util.UUID id = tag.getUUID(NpcLifecycle.CARAVAN_TAG);
+                OutpostSavedData data = OutpostSavedData.get(level);
+                for (var o : data.all()) {
+                    var c = NpcLifecycle.caravan(o, id);
+                    if (c != null) {
+                        com.vladosiwe.lordsoutpost.data.Caravans.dropGoods(level, o, c, event.getEntity().position());
+                        data.setDirty();
+                        break;
+                    }
+                }
+            }
         }
     }
 

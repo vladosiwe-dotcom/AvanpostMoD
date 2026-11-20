@@ -31,7 +31,10 @@ public final class Caravan {
     /** Пройдено по текущему плечу, в блоках. */
     public double traveled;
     public long phaseUntil;
+    /** Устаревший числовой груз (старые сохранения); при первом же тике превращается в предметы. */
     public final EnumMap<Resource, Double> cargo = new EnumMap<>(Resource.class);
+    /** Груз — настоящие предметы, снятые со склада. Их можно отбить у засады и их получает склад покупателя. */
+    public final List<net.minecraft.world.item.ItemStack> goods = new ArrayList<>();
     /** Золото, вырученное на месте. */
     public double earned;
     public final UUID leader;
@@ -73,7 +76,7 @@ public final class Caravan {
         return phase == Phase.RETURNING ? from : to;
     }
 
-    public CompoundTag save() {
+    public CompoundTag save(net.minecraft.core.HolderLookup.Provider registries) {
         CompoundTag t = new CompoundTag();
         t.putUUID("id", id);
         t.putLong("target", target);
@@ -93,10 +96,13 @@ public final class Caravan {
         t.putDouble("road", roadBlocks);
         t.putDouble("sampled", sampledBlocks);
         t.putBoolean("ambushed", ambushed);
+        ListTag g = new ListTag();
+        for (var st : goods) if (!st.isEmpty()) g.add(st.save(registries));
+        t.put("goods", g);
         return t;
     }
 
-    public static Caravan load(CompoundTag t) {
+    public static Caravan load(CompoundTag t, net.minecraft.core.HolderLookup.Provider registries) {
         BlockPos from = NbtUtils.readBlockPos(t, "from").orElse(BlockPos.ZERO);
         BlockPos to = NbtUtils.readBlockPos(t, "to").orElse(BlockPos.ZERO);
         Caravan c = new Caravan(t.getUUID("id"), t.getLong("target"), from, to, t.getUUID("leader"));
@@ -111,6 +117,8 @@ public final class Caravan {
         c.roadBlocks = t.getDouble("road");
         c.sampledBlocks = t.getDouble("sampled");
         c.ambushed = t.getBoolean("ambushed");
+        ListTag g = t.getList("goods", Tag.TAG_COMPOUND);
+        for (int i = 0; i < g.size(); i++) net.minecraft.world.item.ItemStack.parse(registries, g.getCompound(i)).filter(s -> !s.isEmpty()).ifPresent(c.goods::add);
         return c;
     }
 }

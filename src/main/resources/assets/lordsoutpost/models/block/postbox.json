@@ -1,0 +1,78 @@
+{
+  "parent": "minecraft:block/block",
+  "textures": {
+    "front": "lordsoutpost:block/postbox_front",
+    "side": "lordsoutpost:block/postbox_side",
+    "particle": "lordsoutpost:block/postbox_side"
+  },
+  "elements": [
+    {
+      "from": [
+        3,
+        0,
+        3
+      ],
+      "to": [
+        13,
+        15,
+        13
+      ],
+      "faces": {
+        "south": {
+          "uv": [
+            3,
+            1,
+            13,
+            16
+          ],
+          "texture": "#front"
+        },
+        "north": {
+          "uv": [
+            3,
+            1,
+            13,
+            16
+          ],
+          "texture": "#side"
+        },
+        "east": {
+          "uv": [
+            3,
+            1,
+            13,
+            16
+          ],
+          "texture": "#side"
+        },
+        "west": {
+          "uv": [
+            3,
+            1,
+            13,
+            16
+          ],
+          "texture": "#side"
+        },
+        "up": {
+          "uv": [
+            3,
+            3,
+            13,
+            13
+          ],
+          "texture": "#side"
+        },
+        "down": {
+          "uv": [
+            3,
+            3,
+            13,
+            13
+          ],
+          "texture": "#side"
+        }
+      }
+    }
+  ]
+}

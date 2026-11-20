@@ -34,5 +34,9 @@ public final class ModBlocks {
     public static final DeferredBlock<QuestBoardBlock> QUEST_BOARD = BLOCKS.registerBlock("quest_board", QuestBoardBlock::new,
             BlockBehaviour.Properties.of().mapColor(MapColor.WOOD).strength(2.0f, 6.0f).sound(SoundType.WOOD).noOcclusion());
 
+    public static final DeferredBlock<com.vladosiwe.lordsoutpost.block.PostboxBlock> POSTBOX = BLOCKS.registerBlock("postbox",
+            com.vladosiwe.lordsoutpost.block.PostboxBlock::new,
+            BlockBehaviour.Properties.of().mapColor(MapColor.COLOR_RED).strength(2.5f, 6.0f).sound(SoundType.WOOD).noOcclusion());
+
     private ModBlocks() {}
 }

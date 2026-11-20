@@ -177,6 +177,7 @@ add(P + 'event.pyromancer_died', 'Пиромант пал. Новый придё
 add(P + 'event.project_ordered', 'Лорд заказал постройку: %s.', 'The Lord ordered a building: %s.')
 add(P + 'event.project_done', 'Достроено: %s.', 'Completed: %s.')
 add(P + 'event.project_cancelled', 'Заказ отменён: %s.', 'Order cancelled: %s.')
+add(P + 'event.caravan_goods_lost', 'Вьючное животное каравана пало — груз остался на дороге.', 'The caravan\'s pack animal fell — its cargo lies on the road.')
 add(P + 'event.zone_moved', 'Рабочая зона «%s» перенесена в %s.', 'Work zone "%s" moved to %s.')
 add(P + 'event.zone_reset', 'Рабочая зона «%s» возвращена на место по чертежу.', 'Work zone "%s" returned to its blueprint place.')
 add(P + 'event.ambush_lost', 'Засада: караван потерял половину груза.', 'Ambush: the caravan lost half its cargo.')
@@ -230,6 +231,19 @@ for k, ru, en in [('overview', 'Обзор', 'Overview'), ('garrison', 'Гарн
                   ('quests', 'Задания', 'Quests'), ('diplomacy', 'Договоры', 'Pacts'), ('economy', 'Хозяйство', 'Economy'),
                   ('build', 'Стройка', 'Build')]:
     add(P + 'ui.tab.' + k, ru, en)
+# --- Почта ---
+add('block.lordsoutpost.postbox', 'Почтомат', 'Postbox')
+add(P + 'mail.arrived', 'Вам письмо от «%s» — заберите его в любом почтомате.', 'You have mail from "%s" — collect it at any postbox.')
+add(P + 'mail.read', 'Письмо от «%s»: %s', 'Letter from "%s": %s')
+add(P + 'mail.none', 'Писем нет.', 'No mail.')
+add(P + 'mail.claimed', 'Получено писем: %s', 'Letters collected: %s')
+add(P + 'mail.inventory_full', 'Не всё поместилось — остаток ждёт в почтомате.', 'Not everything fit — the rest waits in the postbox.')
+add(P + 'mail.tribute', 'дань владения (%s стопок)', 'tribute of the domain (%s stacks)')
+add(P + 'mail.tribute_empty', 'Новой дани нет: всё уже в Сундуке Дани.', 'No new tribute: everything is already in the Tribute Chest.')
+add(P + 'mail.caravan_delivered', 'караван доставил на склад %s предметов, казна заплатила %s золота', 'a caravan delivered %s items to the storehouse, the treasury paid %s gold')
+add(P + 'ui.mail.tribute', 'Дань ждёт: %s стоп.', 'Tribute waiting: %s stacks')
+add(P + 'ui.mail.send', 'Почтой', 'By mail')
+add(P + 'ui.mail.send.tip', 'Отправить накопленную дань посылкой: её можно забрать в любом почтомате.', 'Send the accumulated tribute as a parcel: collect it at any postbox.')
 # --- HUD владения ---
 add(P + 'hud.tier', 'Тир %s · стройка %s%%', 'Tier %s · building %s%%')
 add(P + 'hud.tier_done', 'Тир %s · крепость достроена', 'Tier %s · fortress complete')

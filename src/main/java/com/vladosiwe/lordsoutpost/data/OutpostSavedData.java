@@ -59,6 +59,13 @@ public final class OutpostSavedData extends SavedData {
         return worldId;
     }
 
+    /** Письма и посылки игрокам (почтоматы). */
+    private final List<com.vladosiwe.lordsoutpost.mail.Letter> mail = new ArrayList<>();
+
+    public List<com.vladosiwe.lordsoutpost.mail.Letter> mail() {
+        return mail;
+    }
+
     public static final Factory<OutpostSavedData> FACTORY = new Factory<>(OutpostSavedData::new, OutpostSavedData::load);
 
     public static OutpostSavedData get(MinecraftServer server) {
@@ -213,6 +220,9 @@ public final class OutpostSavedData extends SavedData {
         tag.putLongArray("emptyRegions", emptyRegions.toLongArray());
         tag.putLong("manualCounter", manualCounter);
         tag.putUUID("worldId", worldId);
+        ListTag letters = new ListTag();
+        for (var l : mail) letters.add(l.save(registries));
+        tag.put("mail", letters);
         tag.putLong("savedAtMillis", System.currentTimeMillis());
         return tag;
     }
@@ -242,6 +252,14 @@ public final class OutpostSavedData extends SavedData {
         data.manualCounter = tag.getLong("manualCounter");
         if (tag.hasUUID("worldId")) data.worldId = tag.getUUID("worldId");
         else data.setDirty();
+        ListTag letters = tag.getList("mail", Tag.TAG_COMPOUND);
+        for (int i = 0; i < letters.size(); i++) {
+            try {
+                data.mail.add(com.vladosiwe.lordsoutpost.mail.Letter.load(letters.getCompound(i), registries));
+            } catch (RuntimeException e) {
+                com.vladosiwe.lordsoutpost.LordsOutpost.LOGGER.error("Не удалось прочитать письмо #{}, запись пропущена", i, e);
+            }
+        }
         long savedAt = tag.getLong("savedAtMillis");
         data.awayMillis = savedAt > 0 ? Math.max(0, System.currentTimeMillis() - savedAt) : 0;
         return data;

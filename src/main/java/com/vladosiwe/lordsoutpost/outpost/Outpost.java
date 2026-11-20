@@ -543,7 +543,7 @@ public final class Outpost {
         }
         t.put("relations", rel);
         ListTag car = new ListTag();
-        for (Caravan c : caravans) car.add(c.save());
+        for (Caravan c : caravans) car.add(c.save(registries));
         t.put("caravans", car);
         t.putBoolean("autoCaravans", autoCaravans);
         ListTag qs = new ListTag();
@@ -634,7 +634,7 @@ public final class Outpost {
         ListTag rel = t.getList("relations", Tag.TAG_COMPOUND);
         for (int i = 0; i < rel.size(); i++) o.relations.put(rel.getCompound(i).getLong("id"), Relation.load(rel.getCompound(i)));
         ListTag car = t.getList("caravans", Tag.TAG_COMPOUND);
-        for (int i = 0; i < car.size(); i++) o.caravans.add(Caravan.load(car.getCompound(i)));
+        for (int i = 0; i < car.size(); i++) o.caravans.add(Caravan.load(car.getCompound(i), registries));
         o.autoCaravans = !t.contains("autoCaravans") || t.getBoolean("autoCaravans");
         ListTag qs = t.getList("quests", Tag.TAG_COMPOUND);
         for (int i = 0; i < qs.size(); i++) o.quests.add(Quest.load(qs.getCompound(i)));

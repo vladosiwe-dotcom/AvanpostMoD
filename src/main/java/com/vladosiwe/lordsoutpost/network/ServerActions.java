@@ -204,6 +204,17 @@ public final class ServerActions {
                         result == com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OK ? ChatFormatting.GREEN : ChatFormatting.YELLOW);
             }
             case CANCEL_PROJECT -> com.vladosiwe.lordsoutpost.data.Projects.cancel(o, a.getLong("id"), now);
+            case MAIL_TRIBUTE -> {
+                com.vladosiwe.lordsoutpost.data.Simulation.flushTributeGold(o);
+                if (o.tribute.isEmpty()) {
+                    feedback(player, "lordsoutpost.mail.tribute_empty", ChatFormatting.YELLOW);
+                    return;
+                }
+                // Посылка забирает накопленные стопки целиком: в Сундук Дани они уже не лягут.
+                List<ItemStack> parcel = new ArrayList<>(o.tribute);
+                o.tribute.clear();
+                com.vladosiwe.lordsoutpost.mail.Mail.send(player.server, player.getUUID(), o.name, "lordsoutpost.mail.tribute", parcel, now, parcel.size());
+            }
             case MOVE_ZONE -> {
                 var zone = com.vladosiwe.lordsoutpost.outpost.WorkZone.byId(a.getString("zone"));
                 if (zone == null) return;
