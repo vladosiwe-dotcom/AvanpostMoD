@@ -9,3 +9,4 @@ runs/
 bin/
 logs/
 javac.*.args
+/lordsoutpost-*.zip
