@@ -178,9 +178,53 @@ public final class ChunkReconciliation {
             if (removed > 0) com.vladosiwe.lordsoutpost.LordsOutpost.LOGGER.info("Форт #{}: убрано {} блоков деревьев, выросших внутри стен",
                     Long.toHexString(o.id), removed);
         }
+        reworkField(level, o);
         Projects.arrive(level, o);
         data.setDirty();
         return true;
+    }
+
+    /** Однократно разобрать старую ограду поля, когда чанки поля загружены. */
+    private static void reworkField(ServerLevel level, Outpost o) {
+        if (o.version < 2 || o.fieldReworked) return;
+        int removed = dropOldFieldFence(level, o);
+        o.fieldReworked = removed >= 0;
+        if (removed > 0) com.vladosiwe.lordsoutpost.LordsOutpost.LOGGER.info("Форт #{}: разобрана старая ограда поля ({} блоков)",
+                Long.toHexString(o.id), removed);
+    }
+
+    /**
+     * Поле нового образца — без ограды. В фортах, построенных раньше, ограда (с калиткой и фонарями на ней) стоит
+     * кольцом на два блока дальше нового края поля; её разбирают один раз, дерево возвращается на склад.
+     * Блоки игрока и блоки текущего чертежа не трогаются.
+     */
+    static int dropOldFieldFence(ServerLevel level, Outpost o) {
+        var farms = o.design().markers(com.vladosiwe.lordsoutpost.blueprint.Marker.FARM);
+        if (farms.isEmpty()) return 0;
+        BlockPos f = o.world(farms.get(0));
+        int ring = com.vladosiwe.lordsoutpost.blueprint.FortDesigner.FIELD_HALF + 2;
+        // Чанки поля ещё не загружены — попробуем при следующем прибытии.
+        if (!level.isLoaded(f.offset(-ring, 0, -ring)) || !level.isLoaded(f.offset(ring, 0, ring))
+                || !level.isLoaded(f.offset(-ring, 0, ring)) || !level.isLoaded(f.offset(ring, 0, -ring))) return -1;
+        int removed = 0, wood = 0;
+        for (int dx = -ring; dx <= ring; dx++)
+            for (int dz = -ring; dz <= ring; dz++) {
+                if (Math.max(Math.abs(dx), Math.abs(dz)) != ring) continue;
+                for (int dy = 1; dy >= 0; dy--) {
+                    BlockPos p = f.offset(dx, dy, dz);
+                    BlockState s = level.getBlockState(p);
+                    boolean fence = s.getBlock() instanceof net.minecraft.world.level.block.FenceBlock
+                            || s.getBlock() instanceof net.minecraft.world.level.block.FenceGateBlock;
+                    boolean lantern = s.getBlock() instanceof net.minecraft.world.level.block.LanternBlock;
+                    if (!fence && !lantern) continue;
+                    if (o.placedByPlayer(p) || o.structural(p, s)) continue;
+                    level.setBlock(p, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+                    removed++;
+                    if (fence) wood++;
+                }
+            }
+        if (wood > 0) o.add(Resource.WOOD, wood);
+        return removed;
     }
 
     /**
@@ -260,6 +304,7 @@ public final class ChunkReconciliation {
     // ============================== Пока игрок рядом ==============================
 
     private static void online(ServerLevel level, OutpostSavedData data, Outpost o, long now) {
+        if (now % 100 == 0) reworkField(level, o);
         if (o.placedTier <= o.tier) {
             // Тир завершился прямо сейчас (последний блок ещё не стоял) — доводим до конца.
             arrive(level, data, o, now);

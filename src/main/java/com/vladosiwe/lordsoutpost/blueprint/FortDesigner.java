@@ -47,8 +47,8 @@ public final class FortDesigner {
     private final int version;
     /** Центр поля (версия 2) в канонических координатах; null — поле не нашло места (старая лужа с грунтом). */
     @org.jetbrains.annotations.Nullable private final int[] field;
-    /** Половина стороны поля: 9×9 вспаханной земли, вокруг ограда. */
-    public static final int FIELD_HALF = 4;
+    /** Половина стороны поля: 7×7 вспаханной земли без ограды, фонари по углам. */
+    public static final int FIELD_HALF = 3;
 
     private FortDesigner(Layout layout, Palette palette, int tier, int version, @org.jetbrains.annotations.Nullable int[] field) {
         this.layout = layout;
@@ -101,7 +101,7 @@ public final class FortDesigner {
         return out;
     }
 
-    /** Поле: земля под пашню, вода в центре (увлажняет все 9×9), ограда от скота, калитка на юг. */
+    /** Поле: земля под пашню 7×7, вода в центре (увлажняет всё поле), без ограды; по углам — фонари на столбиках. */
     private void field(int fx, int fz) {
         c.stage(ST_WORKS);
         int h = FIELD_HALF;
@@ -114,22 +114,12 @@ public final class FortDesigner {
         c.set(fx, 0, fz, Blocks.WATER);
         c.set(fx, 1, fz, Blocks.LILY_PAD);
         int s = h + 1;
-        for (int i = -s; i <= s; i++) {
-            c.set(fx + i, 1, fz - s, p.fence);
-            c.set(fx + i, 1, fz + s, p.fence);
-            c.set(fx - s, 1, fz + i, p.fence);
-            c.set(fx + s, 1, fz + i, p.fence);
-        }
-        if (layout == Layout.SQUARE) {
-            c.set(fx, 1, fz + s, facing(p.fenceGate, Direction.SOUTH));
-            c.set(fx + 1, 1, fz + s + 1, Blocks.COMPOSTER);
-        } else {
-            // В восьмиугольном форте поле лежит между донжоном и северной стеной: калитка — на запад.
-            c.set(fx - s, 1, fz, facing(p.fenceGate, Direction.WEST));
-            c.set(fx - s - 1, 1, fz + 1, Blocks.COMPOSTER);
-        }
-        c.set(fx - s, 2, fz - s, Blocks.LANTERN);
-        c.set(fx + s, 2, fz - s, Blocks.LANTERN);
+        for (int sx = -1; sx <= 1; sx += 2)
+            for (int sz = -1; sz <= 1; sz += 2) {
+                c.set(fx + sx * s, 1, fz + sz * s, p.fence);
+                c.set(fx + sx * s, 2, fz + sz * s, Blocks.LANTERN);
+            }
+        c.set(fx + 1, 1, fz + s, Blocks.COMPOSTER);
         c.mark(Marker.FARM, fx, 1, fz);
     }
 

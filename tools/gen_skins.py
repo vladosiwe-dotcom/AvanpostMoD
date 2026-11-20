@@ -136,8 +136,135 @@ def skin(name, tabard, trim, seed, hostile):
     img.save(OUT + name + '.png')
 
 
+def bandit(name, seed):
+    """Разбойник: серый капюшон с тканевой маской, кожаная куртка, красная перевязь через грудь, обмотки и сапоги."""
+    rnd = random.Random(seed)
+    img = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
+    hood = (88, 84, 80)
+    hood_dark = (58, 55, 52)
+    skin_c = (150, 108, 80)
+    mask = (110, 30, 28)
+    leather = (105, 70, 42)
+    shirt = (52, 46, 42)
+    sash = (150, 36, 30)
+    belt = (40, 27, 18)
+    pants = (78, 62, 46)
+    wraps = (130, 118, 96)
+    boots = (45, 32, 24)
+
+    def hood_fill(img, x0, y0, x1, y1):
+        fill(img, x0, y0, x1, y1, hood, noise=0.1, rnd=rnd)
+
+    def face(img, x0, y0, x1, y1):
+        fill(img, x0, y0, x1, y1, hood, noise=0.1, rnd=rnd)
+        # Проём капюшона: тень, глаза, маска на нижней половине лица.
+        for x in range(x0 + 1, x1 - 1):
+            for y in range(y0 + 2, y1):
+                img.putpixel((x, y), shade(skin_c, rnd.uniform(0.9, 1.0)))
+        for x in range(x0 + 1, x1 - 1):
+            img.putpixel((x, y0 + 2), shade(hood_dark, 0.8))
+            img.putpixel((x, y0 + 3), shade(skin_c, 0.7))
+        for dx in (2, 5):
+            img.putpixel((x0 + dx, y0 + 4), (235, 230, 220, 255))
+        img.putpixel((x0 + 3, y0 + 4), (60, 40, 30, 255))
+        img.putpixel((x0 + 4, y0 + 4), (60, 40, 30, 255))
+        img.putpixel((x0 + 1, y0 + 4), shade(skin_c, 0.75))
+        img.putpixel((x0 + 6, y0 + 4), shade(skin_c, 0.75))
+        for x in range(x0 + 1, x1 - 1):
+            for y in range(y0 + 5, y1):
+                img.putpixel((x, y), shade(mask, rnd.uniform(0.85, 1.05)))
+        for x in range(x0 + 1, x1 - 1):
+            img.putpixel((x, y0 + 5), shade(mask, 1.15))
+
+    box(img, 0, 0, 8, 8, 8, {'top': hood_fill, 'bottom': hood_dark, 'side': hood_fill, 'front': face}, rnd)
+
+    # Внешний слой головы: края капюшона чуть шире головы (на лице — только рамка).
+    def hood_frame(img, x0, y0, x1, y1):
+        for x in range(x0, x1):
+            img.putpixel((x, y0), shade(hood, rnd.uniform(0.9, 1.05)))
+        for y in range(y0, y1):
+            img.putpixel((x0, y), shade(hood_dark, rnd.uniform(0.9, 1.05)))
+            img.putpixel((x1 - 1, y), shade(hood_dark, rnd.uniform(0.9, 1.05)))
+
+    def hood_back(img, x0, y0, x1, y1):
+        fill(img, x0, y0, x1, y1, hood_dark, noise=0.12, rnd=rnd)
+
+    box(img, 32, 0, 8, 8, 8, {'top': hood_back, 'side': hood_back, 'front': hood_frame, 'bottom': None}, rnd)
+
+    def torso_front(img, x0, y0, x1, y1):
+        fill(img, x0, y0, x1, y1, leather, noise=0.1, rnd=rnd)
+        # Рубаха в разрезе куртки.
+        for y in range(y0, y0 + 7):
+            for x in (x0 + 3, x0 + 4):
+                img.putpixel((x, y), shade(shirt, rnd.uniform(0.9, 1.05)))
+        # Перевязь с левого плеча на правый бок.
+        for i in range(10):
+            x = x0 + 7 - (i * 7) // 9
+            for dx in (0, -1):
+                if x0 <= x + dx < x1:
+                    img.putpixel((x + dx, y0 + i), shade(sash, rnd.uniform(0.9, 1.08)))
+        for x in range(x0, x1):
+            img.putpixel((x, y0 + 8), shade(belt, 1))
+            img.putpixel((x, y0 + 9), shade(belt, 0.85))
+        img.putpixel((x0 + 3, y0 + 8), (190, 160, 80, 255))
+        img.putpixel((x0 + 4, y0 + 8), (190, 160, 80, 255))
+        # Подол куртки и кошель на поясе.
+        for x in range(x0, x1):
+            img.putpixel((x, y1 - 1), shade(leather, 0.75))
+        img.putpixel((x0 + 6, y0 + 10), shade(sash, 0.8))
+        img.putpixel((x0 + 6, y0 + 11), shade(sash, 0.7))
+
+    def torso_back(img, x0, y0, x1, y1):
+        fill(img, x0, y0, x1, y1, leather, noise=0.1, rnd=rnd)
+        for y in range(y0, y0 + 3):
+            for x in range(x0 + 1, x1 - 1):
+                img.putpixel((x, y), shade(hood_dark, rnd.uniform(0.9, 1.05)))
+        for i in range(10):
+            x = x0 + (i * 7) // 9
+            if x0 <= x < x1:
+                img.putpixel((x, y0 + i), shade(sash, 0.95))
+        for x in range(x0, x1):
+            img.putpixel((x, y0 + 8), shade(belt, 1))
+            img.putpixel((x, y0 + 9), shade(belt, 0.85))
+
+    def torso_side(img, x0, y0, x1, y1):
+        fill(img, x0, y0, x1, y1, leather, noise=0.1, rnd=rnd)
+        for x in range(x0, x1):
+            img.putpixel((x, y0 + 8), shade(belt, 1))
+            img.putpixel((x, y0 + 9), shade(belt, 0.85))
+
+    box(img, 16, 16, 8, 12, 4, {'top': leather, 'bottom': leather, 'side': torso_side, 'front': torso_front, 'back': torso_back}, rnd)
+
+    def sleeve(img, x0, y0, x1, y1):
+        fill(img, x0, y0, x1, y1, shirt, noise=0.1, rnd=rnd)
+        for x in range(x0, x1):
+            for y in range(y0, y0 + 3):
+                img.putpixel((x, y), shade(leather, rnd.uniform(0.9, 1.05)))
+            for y in range(y0 + 6, y1 - 2):
+                img.putpixel((x, y), shade(leather, rnd.uniform(0.75, 0.9)))
+            for y in range(y1 - 2, y1):
+                img.putpixel((x, y), shade(boots, rnd.uniform(0.95, 1.1)))
+
+    arm = {'top': leather, 'bottom': boots, 'side': sleeve}
+    box(img, 40, 16, 4, 12, 4, arm, rnd)
+    box(img, 32, 48, 4, 12, 4, arm, rnd)
+
+    def leg(img, x0, y0, x1, y1):
+        fill(img, x0, y0, x1, y1, pants, noise=0.1, rnd=rnd)
+        for x in range(x0, x1):
+            for y in range(y1 - 7, y1 - 3):
+                img.putpixel((x, y), shade(wraps, 0.85 if (y + x) % 2 else 1.0))
+            for y in range(y1 - 3, y1):
+                img.putpixel((x, y), shade(boots, rnd.uniform(0.9, 1.05)))
+
+    lg = {'top': pants, 'bottom': boots, 'side': leg}
+    box(img, 0, 16, 4, 12, 4, lg, rnd)
+    box(img, 16, 48, 4, 12, 4, lg, rnd)
+    img.save(OUT + name + '.png')
+
+
 if __name__ == '__main__':
     skin('guard', (40, 70, 140), (215, 185, 90), 7, False)
     skin('guard_captain', (120, 30, 35), (220, 200, 120), 11, False)
-    skin('marauder', (45, 40, 40), (150, 40, 35), 13, True)
+    bandit('marauder', 13)
     print('ok')

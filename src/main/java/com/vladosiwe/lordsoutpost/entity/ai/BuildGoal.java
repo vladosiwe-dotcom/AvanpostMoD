@@ -88,7 +88,8 @@ public class BuildGoal extends Goal {
         if (!hasJob()) {
             // Заказы Лорда не ждут конца всего тира: один строитель (или единственный) берёт сначала заказ,
             // остальные — сначала план тира. Так идут обе стройки сразу.
-            boolean ordersFirst = Projects.hasWork(o) && (o.activeCount(com.vladosiwe.lordsoutpost.outpost.Role.BUILDER) <= 1
+            boolean ordersFirst = Projects.hasWork(o) && level.getGameTime() >= ordersPauseUntil
+                    && (o.activeCount(com.vladosiwe.lordsoutpost.outpost.Role.BUILDER) <= 1
                     || (mob.getUUID().getLeastSignificantBits() & 1L) == 0);
             if (ordersFirst) {
                 projectKey = Projects.claim(o, level.getGameTime());
@@ -271,7 +272,8 @@ public class BuildGoal extends Goal {
         BlockPos store = com.vladosiwe.lordsoutpost.data.Storehouse.storePos(level, o);
         if (--fetchTimeout <= 0) {
             fetching = null;
-            cooldown = 200;
+            cooldown = 20;
+            ordersPauseUntil = now + 1200;
             lastResult = "fetch-timeout";
             return;
         }
@@ -285,7 +287,9 @@ public class BuildGoal extends Goal {
         if (item == null || resident == null) {
             // На складе нечего взять: стройка ждёт (дефицит увидит планировщик).
             o.stalledOn = o.stalledOn == null ? r : o.stalledOn;
-            cooldown = 400;
+            // Материала для заказа на складе нет: заказ ждёт, а строитель пока работает на тир, а не стоит.
+            cooldown = 20;
+            ordersPauseUntil = now + 1200;
             lastResult = "fetch-none";
             return;
         }
@@ -395,6 +399,8 @@ public class BuildGoal extends Goal {
     /** Почему отброшены клетки при последнем поиске места работы (для /outpost workers). */
     private final int[] rejects = new int[7];
     private int searchAt;
+    /** Материала для заказов нет — до этого времени строитель берёт сначала план тира. */
+    private long ordersPauseUntil;
 
     private BlockPos findWorkPosition(ServerLevel level, Outpost o, BlockPos block) {
         java.util.Arrays.fill(rejects, 0);

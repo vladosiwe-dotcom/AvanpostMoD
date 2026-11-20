@@ -390,17 +390,7 @@ public abstract class OutpostNpc extends PathfinderMob implements OutpostMember 
         if (target.getY() - getY() < 1.5) return false;
         double tx = target.getX() + 0.5, tz = target.getZ() + 0.5;
         if (Math.hypot(tx - getX(), tz - getZ()) > 5) return false;
-        BlockPos ladder = null;
-        double best = Double.MAX_VALUE;
-        int y0 = Mth.floor(getY()) - 1;
-        for (BlockPos p : BlockPos.betweenClosed(target.getX() - 3, y0, target.getZ() - 3, target.getX() + 3, target.getY(), target.getZ() + 3)) {
-            if (!level().getBlockState(p).is(net.minecraft.tags.BlockTags.CLIMBABLE)) continue;
-            double d = p.distToCenterSqr(getX(), getY(), getZ());
-            if (d < best) {
-                best = d;
-                ladder = p.immutable();
-            }
-        }
+        BlockPos ladder = ladderNear(target);
         if (ladder == null) return false;
         double lx = ladder.getX() + 0.5, lz = ladder.getZ() + 0.5;
         if (onClimbable()) {
@@ -424,12 +414,59 @@ public abstract class OutpostNpc extends PathfinderMob implements OutpostMember 
         return true;
     }
 
+    @Nullable private BlockPos ladderTarget, ladderFound;
+    private int ladderAt;
+
+    /**
+     * Лестница у поста. Поиск — перебор сотен блоков, поэтому результат (и отсутствие лестницы) кэшируется на секунду
+     * для той же цели: раньше скотовод, стоя у высокой цели (тюк сена на крыше, животное на холме), перебирал их каждый тик.
+     */
+    @Nullable
+    private BlockPos ladderNear(BlockPos target) {
+        if (target.equals(ladderTarget) && tickCount < ladderAt
+                && (ladderFound == null || level().getBlockState(ladderFound).is(net.minecraft.tags.BlockTags.CLIMBABLE)))
+            return ladderFound;
+        BlockPos ladder = null;
+        double best = Double.MAX_VALUE;
+        int y0 = Mth.floor(getY()) - 1;
+        for (BlockPos p : BlockPos.betweenClosed(target.getX() - 3, y0, target.getZ() - 3, target.getX() + 3, target.getY(), target.getZ() + 3)) {
+            if (!level().getBlockState(p).is(net.minecraft.tags.BlockTags.CLIMBABLE)) continue;
+            double d = p.distToCenterSqr(getX(), getY(), getZ());
+            if (d < best) {
+                best = d;
+                ladder = p.immutable();
+            }
+        }
+        ladderTarget = target.immutable();
+        ladderFound = ladder;
+        ladderAt = tickCount + (ladder == null ? 40 : 20);
+        return ladder;
+    }
+
+    @Nullable private BlockPos progressGoal;
+    private double progressBest;
+
+    /**
+     * Идёт к точке ногами. Перенос — только крайняя мера: если житель {@code patience} тиков не приближается
+     * к цели (пути нет, упёрся, застрял в яме). Пока он идёт и расстояние сокращается, терпение не тратится —
+     * раньше счётчик рос каждый тик, и любой долгий, но нормальный переход заканчивался телепортом.
+     */
     public boolean approach(BlockPos pos, double speed, double reach, int patience) {
         double dist = distanceToSqr(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5);
         if (dist <= reach * reach) {
             stuckTicks = 0;
+            progressGoal = null;
             if (!getNavigation().isDone()) getNavigation().stop();
             return true;
+        }
+        double d = Math.sqrt(dist);
+        if (!pos.equals(progressGoal)) {
+            progressGoal = pos.immutable();
+            progressBest = d;
+            stuckTicks = 0;
+        } else if (d < progressBest - 0.3) {
+            progressBest = d;
+            stuckTicks = Math.max(0, stuckTicks - 10);
         }
         if (!level().isClientSide && climbTo(pos)) {
             stuckTicks = Math.max(0, stuckTicks - 1);
@@ -441,11 +478,17 @@ public abstract class OutpostNpc extends PathfinderMob implements OutpostMember 
             // Штраф за неудачу — только за новый поиск, а не за каждый тик ожидания.
             if (!ok && repathAt != before) stuckTicks += 20;
         }
-        stuckTicks++;
+        // Застрял: сперва попробовать выбраться самому (прыжок, новый путь), перенос — после полного терпения.
+        if (++stuckTicks % 60 == 0 && onGround()) {
+            getJumpControl().jump();
+            repathNow();
+        }
         if (stuckTicks > patience) {
             stuckTicks = 0;
+            progressBest = d;
             BlockPos safe = safeSpotNear(pos);
             if (safe == null) return false;
+            com.vladosiwe.lordsoutpost.LordsOutpost.LOGGER.debug("{} застрял по пути к {} — перенос", getName().getString(), pos.toShortString());
             getNavigation().stop();
             teleportTo(safe.getX() + 0.5, safe.getY(), safe.getZ() + 0.5);
             return true;

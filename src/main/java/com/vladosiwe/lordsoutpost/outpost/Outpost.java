@@ -52,6 +52,8 @@ public final class Outpost {
     public transient long storeKey, storeSyncedKey = Long.MIN_VALUE;
     /** Природные деревья внутри стен убраны (генерация мира сажает их уже после форта). */
     public boolean natureCleared;
+    /** Старая ограда поля (форты до переделки поля) уже разобрана. */
+    public boolean fieldReworked;
     /** Версия планировки (1 — первая, 2 — просторная); новые форты берут версию своего мира. */
     public int version = Layout.currentVersion();
     /** Создан командой, а не генерацией мира. */
@@ -567,6 +569,7 @@ public final class Outpost {
         t.putString("layout", layout.id);
         t.putByte("layoutVersion", (byte) version);
         t.putBoolean("natureCleared", natureCleared);
+        t.putBoolean("fieldReworked2", fieldReworked);
         t.putString("palette", palette.id);
         t.putByte("rot", (byte) rotation.ordinal());
         t.putByte("skulls", (byte) difficulty.skulls);
@@ -690,6 +693,7 @@ public final class Outpost {
         // Записи до просторной планировки — первой версии.
         o.version = t.contains("layoutVersion") ? Mth.clamp(t.getByte("layoutVersion"), 1, 2) : 1;
         o.natureCleared = t.getBoolean("natureCleared");
+        o.fieldReworked = t.getBoolean("fieldReworked2");
         o.state = OutpostState.VALUES[Mth.clamp(t.getByte("state"), 0, OutpostState.VALUES.length - 1)];
         o.name = t.getString("name");
         o.owner = t.hasUUID("owner") ? t.getUUID("owner") : null;

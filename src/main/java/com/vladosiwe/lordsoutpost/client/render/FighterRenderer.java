@@ -32,8 +32,12 @@ public class FighterRenderer extends HumanoidMobRenderer<FighterEntity, Marauder
     public FighterRenderer(EntityRendererProvider.Context ctx) {
         super(ctx, new MarauderModel<>(ctx.bakeLayer(LAYER)), 0.5f);
         // Ванильный слой брони Epic Fight подменяет на WearableItemLayer по своему biped-скелету.
-        addLayer(new HumanoidArmorLayer<>(this, new TallHeadArmorModel(ctx.bakeLayer(ModelLayers.PLAYER_INNER_ARMOR)),
-                new TallHeadArmorModel(ctx.bakeLayer(ModelLayers.PLAYER_OUTER_ARMOR)), ctx.getModelManager()));
+        // С Epic Fight голова скелета обычная (8 px) — шлем не растягивается; без него — под голову разбойника (10 px).
+        addLayer(EPIC_FIGHT
+                ? new HumanoidArmorLayer<>(this, new HumanoidModel<>(ctx.bakeLayer(ModelLayers.PLAYER_INNER_ARMOR)),
+                        new HumanoidModel<>(ctx.bakeLayer(ModelLayers.PLAYER_OUTER_ARMOR)), ctx.getModelManager())
+                : new HumanoidArmorLayer<>(this, new TallHeadArmorModel(ctx.bakeLayer(ModelLayers.PLAYER_INNER_ARMOR)),
+                        new TallHeadArmorModel(ctx.bakeLayer(ModelLayers.PLAYER_OUTER_ARMOR)), ctx.getModelManager()));
         addLayer(new VillagerHeadLayer(this));
     }
 

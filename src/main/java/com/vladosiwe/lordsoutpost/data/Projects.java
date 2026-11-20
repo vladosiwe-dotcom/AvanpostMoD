@@ -240,8 +240,11 @@ public final class Projects {
         for (Step s : p.steps(o)) {
             BlockPos pos = o.world(s.pos());
             if (!o.insideHorizontally(pos.getX(), pos.getZ(), limit) || level.isOutsideBuildHeight(pos)) return OrderResult.NOT_HERE;
-            for (int t = o.tier; t <= FortBlueprint.MAX_TIER; t++) {
-                if (bp.design(t).cells.containsKey(s.pos())) return OrderResult.OVERLAPS_FORT;
+            // Мешает только то, что форт уже поставил или поставит в ближайшем тире (не пустые клетки);
+            // дальние тиры на заказ не влияют: место под дома Лорда есть и во дворе.
+            for (int t = o.tier; t <= Math.min(FortBlueprint.MAX_TIER, o.tier + 1); t++) {
+                var cell = bp.design(t).cells.get(s.pos());
+                if (cell != null && !cell.state().isAir()) return OrderResult.OVERLAPS_FORT;
             }
             if (taken.contains(s.pos())) return OrderResult.OCCUPIED;
             if (!level.isLoaded(pos)) return OrderResult.OCCUPIED;

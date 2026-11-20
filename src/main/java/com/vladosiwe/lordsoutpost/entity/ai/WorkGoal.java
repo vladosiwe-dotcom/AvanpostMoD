@@ -1533,8 +1533,22 @@ public class WorkGoal extends Goal {
     private enum Supply { READY, BUSY, NONE }
 
     @Nullable
+    private static BlockPos gateCache;
+    private static long gateCacheOutpost, gateCacheAt = Long.MIN_VALUE;
+
+    /** Калитка загона; перебор периметра — не чаще раза в секунду на форт (скотовод спрашивает каждый тик). */
     private static BlockPos penGate(ServerLevel level, Outpost o) {
         if (!o.hasZone(WorkZone.PEN)) return null;
+        long t = level.getGameTime();
+        if (gateCacheOutpost == o.id && t >= gateCacheAt && t < gateCacheAt + 20
+                && (gateCache == null || level.getBlockState(gateCache).getBlock() instanceof FenceGateBlock)) return gateCache;
+        gateCache = findPenGate(level, o);
+        gateCacheOutpost = o.id;
+        gateCacheAt = t;
+        return gateCache;
+    }
+
+    private static BlockPos findPenGate(ServerLevel level, Outpost o) {
         BlockPos pen = o.zone(WorkZone.PEN);
         int size = ChunkReconciliation.penSize(o);
         for (BlockPos p : BlockPos.betweenClosed(pen.offset(-size, 0, -size), pen.offset(size, 0, size))) {
@@ -1567,7 +1581,10 @@ public class WorkGoal extends Goal {
         for (Item f : FEEDS) {
             if (!a.isFood(new ItemStack(f))) continue;
             int carried = countCarried(f);
-            if (carried >= count || Logistics.available(level, o, f, null) - feedReserve(f) >= count - carried) return f;
+            if (carried >= count) return f;
+            int avail = stockMemo != null ? stockMemo.computeIfAbsent(f, k -> Logistics.available(level, o, k, null))
+                    : Logistics.available(level, o, f, null);
+            if (avail - feedReserve(f) >= count - carried) return f;
         }
         return null;
     }
@@ -1620,7 +1637,22 @@ public class WorkGoal extends Goal {
         else if (!mob.getMainHandItem().is(Items.BOW)) mob.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, new ItemStack(Items.BOW));
     }
 
+    /**
+     * Запас склада по предметам на время одного планирования скотовода: раньше склад пересчитывался заново
+     * для каждого животного-кандидата (до сотни в радиусе 64), отсюда рывки сервера.
+     */
+    @Nullable private java.util.Map<Item, Integer> stockMemo;
+
     private boolean planHerd(ServerLevel level, Outpost o, long now) {
+        stockMemo = new java.util.HashMap<>();
+        try {
+            return planHerdImpl(level, o, now);
+        } finally {
+            stockMemo = null;
+        }
+    }
+
+    private boolean planHerdImpl(ServerLevel level, Outpost o, long now) {
         animal = null;
         breedingPartner = null;
         egg = null;
@@ -1950,7 +1982,8 @@ public class WorkGoal extends Goal {
             if (kills >= 2 || mob.cargoReadyToDeposit()) return true;
         }
         if (prey == null) {
-            prey = findPrey(o);
+            // Поиск дичи (запрос сущностей + проверка загона) — раз в полсекунды, а не каждый тик.
+            if (mob.tickCount % 10 == 0) prey = findPrey(o);
             if (prey == null) {
                 if (huntPoint < 0) huntPoint = mob.getRandom().nextInt(points.size());
                 BlockPos p = points.get(huntPoint % points.size());
