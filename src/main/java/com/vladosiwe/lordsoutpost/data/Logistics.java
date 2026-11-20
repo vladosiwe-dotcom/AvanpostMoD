@@ -64,11 +64,17 @@ public final class Logistics {
      * Если в ноше нет места или бочки разошлись с записью, ничего не берётся и задача остаётся в резерве.
      */
     public static boolean withdraw(ServerLevel level, Outpost o, OutpostTask task, WorkerEntity worker, long now) {
+        return withdraw(level, o, task, worker.inventory, worker.residentId(), now);
+    }
+
+    /** То же для любой ноши: например, сумки придворного мага, которая хранится в записи аванпоста. */
+    public static boolean withdraw(ServerLevel level, Outpost o, OutpostTask task, net.minecraft.world.Container cargo,
+                                   @org.jetbrains.annotations.Nullable java.util.UUID executor, long now) {
         if (task.reserved.isEmpty()) return task.state == OutpostTask.State.IN_PROGRESS;
         int slots = 0;
         for (var e : task.reserved.entrySet()) slots += (int) Math.ceil(e.getValue() / (double) new ItemStack(e.getKey()).getMaxStackSize());
         int free = 0;
-        for (int i = 0; i < worker.inventory.getContainerSize(); i++) if (worker.inventory.getItem(i).isEmpty()) free++;
+        for (int i = 0; i < cargo.getContainerSize(); i++) if (cargo.getItem(i).isEmpty()) free++;
         if (free < slots) {
             task.reason = "cargo full";
             return false;
@@ -88,16 +94,36 @@ public final class Logistics {
         java.util.List<ItemStack> back = new java.util.ArrayList<>();
         for (ItemStack st : taken) {
             int count = st.getCount();
-            ItemStack left = worker.collect(st);
+            ItemStack left = addTo(cargo, st);
             if (!left.isEmpty()) back.add(left);
             task.carried.merge(st.getItem(), count - left.getCount(), Integer::sum);
         }
         restock(level, o, back);
         task.reserved.clear();
-        task.executor = worker.residentId();
+        task.executor = executor;
         o.tasks.set(task, OutpostTask.State.IN_PROGRESS, "", now);
         OutpostSavedData.get(level).setDirty();
         return true;
+    }
+
+    /** Кладёт стопку в контейнер (слияние, затем пустые слоты); возвращает остаток. */
+    public static ItemStack addTo(net.minecraft.world.Container c, ItemStack stack) {
+        ItemStack left = stack.copy();
+        for (int i = 0; i < c.getContainerSize() && !left.isEmpty(); i++) {
+            ItemStack have = c.getItem(i);
+            if (!have.isEmpty() && ItemStack.isSameItemSameComponents(have, left) && have.getCount() < have.getMaxStackSize()) {
+                int n = Math.min(left.getCount(), have.getMaxStackSize() - have.getCount());
+                have.grow(n);
+                left.shrink(n);
+            }
+        }
+        for (int i = 0; i < c.getContainerSize() && !left.isEmpty(); i++) {
+            if (c.getItem(i).isEmpty()) {
+                c.setItem(i, left.split(Math.min(left.getCount(), left.getMaxStackSize())));
+            }
+        }
+        c.setChanged();
+        return left;
     }
 
     /** Расходует предмет задачи из ноши работника. Возвращает false, если предмета в ноше нет. */

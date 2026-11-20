@@ -75,7 +75,12 @@ public final class OutpostView {
         public final List<ZoneInfo> zones = new ArrayList<>();
         public final List<net.minecraft.world.item.ItemStack> shop = new ArrayList<>();
         public final int mages, pyroRejoin, projectLimit, houses;
-        public final boolean tower, iss, pyroAvailable, pyromancer;
+        public final boolean tower, iss, pyroAvailable, pyromancer, forge;
+        /** Полка придворного мага и цены в изумрудах. */
+        public final List<net.minecraft.world.item.ItemStack> shelf = new ArrayList<>();
+        public final List<Integer> shelfPrices = new ArrayList<>();
+        public final int satchel;
+        public final String nextCraft;
         public final float arcane, work;
         public final List<ProjectInfo> projects = new ArrayList<>();
         public final boolean autoBuild;
@@ -118,6 +123,21 @@ public final class OutpostView {
             pyroAvailable = mg.getBoolean("pyroAvailable");
             pyromancer = mg.getBoolean("pyromancer");
             pyroRejoin = mg.getInt("pyroRejoin");
+            forge = mg.getBoolean("forge");
+            satchel = mg.getInt("satchel");
+            nextCraft = mg.getString("next");
+            var mc = net.minecraft.client.Minecraft.getInstance();
+            if (mc.level != null) {
+                ListTag shelfTag = mg.getList("shelf", Tag.TAG_COMPOUND);
+                for (int i = 0; i < shelfTag.size(); i++) {
+                    CompoundTag it = shelfTag.getCompound(i);
+                    int price = it.getInt("price");
+                    net.minecraft.world.item.ItemStack.parse(mc.level.registryAccess(), it.getCompound("stack")).ifPresent(st -> {
+                        shelf.add(st);
+                        shelfPrices.add(price);
+                    });
+                }
+            }
             ListTag ps = m.getList("projects", Tag.TAG_COMPOUND);
             for (int i = 0; i < ps.size(); i++) {
                 CompoundTag p = ps.getCompound(i);
@@ -258,7 +278,7 @@ public final class OutpostView {
 
     private static String pretty(String arg) {
         for (String prefix : new String[]{"lordsoutpost.role.", "lordsoutpost.law.", "lordsoutpost.pact.", "lordsoutpost.resource.", "lordsoutpost.questkind.",
-                "lordsoutpost.project.", "lordsoutpost.zone."}) {
+                "lordsoutpost.project.", "lordsoutpost.zone.", "lordsoutpost.craft."}) {
             if (arg.matches("[a-z_]+") && I18n.exists(prefix + arg)) return I18n.get(prefix + arg);
         }
         return arg;

@@ -163,7 +163,8 @@ add(P + 'event.raid_lost', 'Набег не отбит: склады разгр�
 add(P + 'event.wounded', '%s ранен и отправлен в лазарет.', '%s is wounded and sent to the infirmary.')
 add(P + 'event.died', '%s (%s) погиб.', '%s (%s) has died.')
 add(P + 'event.quest_done', 'Лорд помог: %s (%s).', 'The Lord helped: %s (%s).')
-add(P + 'event.mage_work', 'Придворный Маг закончил работу: плоды в Сундуке Дани.', 'The Court Mage finished a work: see the Tribute Chest.')
+add(P + 'event.mage_work', 'Придворный маг закончил работу: готовое на складе.', 'The Court Mage finished a work: it is in the storehouse.')
+add(P + 'event.mage_crafted', 'Придворный маг изготовил: %s.', 'The Court Mage crafted: %s.')
 add(P + 'event.pact', 'Заключён %s: %s.', 'Sealed a %s: %s.')
 add(P + 'event.pact_broken', 'Договор расторгнут: %s.', 'Pact broken: %s.')
 add(P + 'event.caravan_sent', 'Караван вышел: %s.', 'Caravan set out: %s.')
@@ -276,10 +277,32 @@ add(P + 'ui.shop.empty', 'Пусто: торговец принесёт изли
 add(P + 'ui.magic', 'Магия', 'Magic')
 add(P + 'ui.magic.no_tower', 'Нужна башня мага (тир 3).', 'Needs the mage tower (tier 3).')
 add(P + 'ui.magic.mages', 'Придворных магов: %s · эссенции: %s', 'Court mages: %s · essence: %s')
-add(P + 'ui.magic.work.tip', 'Работа мага: когда полоса заполнится и эссенции хватит (20), в Сундуке Дани появится свиток или реагенты.', 'The mage\'s work: when the bar fills and there is enough essence (20), a scroll or reagents appear in the Tribute Chest.')
+add(P + 'ui.magic.work.tip', 'Рядом с вами маг работает руками: свитки огня в кузне свитков (бумага, чернила, стержень ифрита), чернила, эссенция. Вдали — тратит накопленную эссенцию (20 за работу). Всё готовое — на складе.', 'Near you the mage works by hand: fire scrolls at the scroll forge (paper, ink, blaze rod), inks, essence. Far away he spends stored essence (20 per work). Everything goes to the storehouse.')
 add(P + 'ui.magic.pyro_none', 'Пиромант: нужен мод Iron\'s Spells \'n Spellbooks', 'Pyromancer: needs Iron\'s Spells \'n Spellbooks')
 add(P + 'ui.magic.pyro_here', 'Пиромант охраняет башню', 'The pyromancer guards the tower')
 add(P + 'ui.magic.pyro_wait', 'Пиромант придёт через ~%s мин.', 'The pyromancer arrives in ~%s min.')
+add(P + 'ui.magic.next', 'Маг готовит: %s', 'The mage is preparing: %s')
+add(P + 'ui.magic.idle', 'Маг ждёт ингредиентов на складе', 'The mage waits for ingredients in the storehouse')
+add(P + 'ui.magic.recipes.tip', 'Рецепты мага (всё со склада, через резерв): свиток огня — бумага + чернила + стержень ифрита у кузни свитков; чернила — пузырёк + 2 угля; чернила выше — 4 чернила + медь/железо/золото/аметист; эссенция — 3 лазурита + аметист. Без Iron\'s Spells — зачарованная книга из книги и 3 лазуритов.', 'Mage recipes (all from the storehouse, reserved): fire scroll — paper + ink + blaze rod at the scroll forge; ink — bottle + 2 coal; better ink — 4 inks + copper/iron/gold/amethyst; essence — 3 lapis + amethyst. Without Iron\'s Spells — an enchanted book from a book and 3 lapis.')
+add(P + 'ui.magic.no_forge', 'Для свитков поставьте кузню свитков у башни мага.', 'Place a scroll forge by the mage tower for scrolls.')
+add(P + 'ui.shelf', 'Полка мага: %s/%s', 'Mage shelf: %s/%s')
+add(P + 'ui.shelf.tip', 'Маг сам приносит со склада готовые магические товары и продаёт их у башни (ПКМ по магу). Выручка — в казну.', 'The mage brings finished magic goods from the storehouse and sells them by the tower (right-click him). Proceeds go to the treasury.')
+add(P + 'ui.shelf.empty', 'Пусто: продаётся только то, что реально сделано или сдано на склад.', 'Empty: only goods really made or stored are sold.')
+add(P + 'ui.shelf.price', '%s изумр.', '%s emeralds')
+add(P + 'ui.shelf.title', '%s — магические товары', '%s — magic goods')
+add(P + 'msg.shelf_empty', '%s: на полке пока пусто — товар появится, когда маг его изготовит.', '%s: the shelf is empty for now — goods appear once the mage makes them.')
+add(P + 'msg.mage_refuses', '%s не торгует с вами.', '%s will not trade with you.')
+add(P + 'task.mage_craft', 'Работа мага', 'Mage work')
+for rid, ru, en in [('fire_scroll_common', 'свиток огня (обычные чернила)', 'fire scroll (common ink)'),
+                    ('fire_scroll_uncommon', 'свиток огня (необычные чернила)', 'fire scroll (uncommon ink)'),
+                    ('fire_scroll_rare', 'свиток огня (редкие чернила)', 'fire scroll (rare ink)'),
+                    ('fire_scroll_epic', 'свиток огня (эпические чернила)', 'fire scroll (epic ink)'),
+                    ('fire_scroll_legendary', 'свиток огня (легендарные чернила)', 'fire scroll (legendary ink)'),
+                    ('ink_common', 'обычные чернила', 'common ink'), ('ink_uncommon', 'необычные чернила', 'uncommon ink'),
+                    ('ink_rare', 'редкие чернила', 'rare ink'), ('ink_epic', 'эпические чернила', 'epic ink'),
+                    ('ink_legendary', 'легендарные чернила', 'legendary ink'), ('arcane_essence', 'магическая эссенция', 'arcane essence'),
+                    ('enchanted_book', 'зачарованная книга', 'enchanted book')]:
+    add(P + 'craft.' + rid, ru, en)
 add(P + 'ui.build.advice', 'Совет: %s — жителей %s, мест %s, нужно %s', 'Advice: %s — residents %s, places %s, needed %s')
 add(P + 'ui.build.advice.go', 'Построить', 'Build')
 add(P + 'ui.build.advice.go.tip', 'Место выберется само: вокруг форта, входом к нему, без захвата места будущих тиров.', 'The spot is chosen automatically: around the fort, entrance facing it, without taking space of future tiers.')

@@ -351,6 +351,26 @@ write(os.path.join(DM, 'loot_table', 'compat', 'irons', 'captain_treasure.json')
         {'rolls': {'type': 'minecraft:uniform', 'min': 1, 'max': 3}, 'entries': [GOOD_SCROLL]},
         {'rolls': 1, 'entries': [tag('irons_reagents', 4, 2, 6)] + RUNES}]})
 
+# Свитки огня придворного мага (кузня свитков): уровень заклинания — случайный внутри диапазона редкости чернил.
+for i, rarity in enumerate(('common', 'uncommon', 'rare', 'epic', 'legendary')):
+    write(os.path.join(DM, 'loot_table', 'compat', 'irons', 'fire_scroll_' + rarity + '.json'), {
+        'neoforge:conditions': IRONS, 'type': 'minecraft:gift', 'pools': [{'rolls': 1, 'entries': [{
+            'type': 'minecraft:item', 'name': 'irons_spellbooks:scroll', 'functions': [{
+                'function': 'irons_spellbooks:randomize_spell',
+                'quality': {'type': 'minecraft:uniform', 'min': round(i * 0.2, 2), 'max': round(i * 0.2 + 0.2, 2)},
+                'spell_filter': {'school': 'irons_spellbooks:fire'}}]}]}]})
+# Запасной вариант без Iron's Spells: зачарованная книга со случайной силой зачарования.
+write(os.path.join(DM, 'loot_table', 'gameplay', 'mage_book.json'), {
+    'type': 'minecraft:gift', 'pools': [{'rolls': 1, 'entries': [{'type': 'minecraft:item', 'name': 'minecraft:book', 'functions': [
+        {'function': 'minecraft:enchant_with_levels', 'levels': {'type': 'minecraft:uniform', 'min': 5, 'max': 20}}]}]}]})
+# Магические товары лавки: что можно продавать за изумруды (цена — по редкости предмета). Расширяется датапаком.
+write(os.path.join(DM, 'tags', 'item', 'shop_magic.json'), {'values': [
+    'minecraft:enchanted_book', 'minecraft:experience_bottle', 'minecraft:potion', 'minecraft:splash_potion', 'minecraft:lingering_potion'] + [
+    {'id': 'irons_spellbooks:' + n, 'required': False} for n in (
+        'scroll', 'arcane_essence', 'common_ink', 'uncommon_ink', 'rare_ink', 'epic_ink', 'legendary_ink',
+        'evasion_elixir', 'greater_evasion_elixir', 'invisibility_elixir', 'greater_invisibility_elixir',
+        'oakskin_elixir', 'greater_oakskin_elixir', 'greater_healing_potion')]})
+
 # Рецепты: решётку и доску можно сделать самому, Штандарт — только трофей.
 write(os.path.join(DM, 'recipe', 'outpost_gate.json'), {
     'type': 'minecraft:crafting_shaped', 'category': 'building', 'pattern': ['BIB', 'BIB', 'BIB'],

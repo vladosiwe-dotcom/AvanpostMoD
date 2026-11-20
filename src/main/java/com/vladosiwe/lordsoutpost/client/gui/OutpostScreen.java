@@ -548,6 +548,33 @@ public class OutpostScreen extends Screen {
                 : m.pyromancer ? Component.translatable("lordsoutpost.ui.magic.pyro_here")
                 : Component.translatable("lordsoutpost.ui.magic.pyro_wait", Math.max(1, m.pyroRejoin / 60));
         Ui.text(g, font, pyro, rx, sy, 182, m.pyromancer ? Ui.GOOD : Ui.MUTED);
+        sy += 10;
+        // Чем занят маг и чего ему не хватает.
+        Component doing = !m.nextCraft.isEmpty() ? Component.translatable("lordsoutpost.ui.magic.next", Component.translatable("lordsoutpost.craft." + m.nextCraft))
+                : Component.translatable("lordsoutpost.ui.magic.idle");
+        Ui.text(g, font, doing, rx, sy, 182, m.nextCraft.isEmpty() ? Ui.MUTED : Ui.TEXT);
+        hits.add(rx, sy, 182, 9, null, Component.translatable("lordsoutpost.ui.magic.recipes.tip"));
+        sy += 10;
+        if (m.iss && !m.forge) {
+            Ui.text(g, font, Component.translatable("lordsoutpost.ui.magic.no_forge"), rx, sy, 182, Ui.MUTED);
+            sy += 10;
+        }
+        // Полка мага: настоящий товар, который продаёт придворный маг.
+        g.drawString(font, Component.translatable("lordsoutpost.ui.shelf", m.shelf.size(), com.vladosiwe.lordsoutpost.data.Shop.SHELF), rx, sy, Ui.TEXT, false);
+        hits.add(rx, sy, 120, 9, null, Component.translatable("lordsoutpost.ui.shelf.tip"));
+        sy += 10;
+        if (m.shelf.isEmpty()) {
+            Ui.text(g, font, Component.translatable("lordsoutpost.ui.shelf.empty"), rx, sy, 182, Ui.MUTED);
+            return;
+        }
+        for (int i = 0; i < m.shelf.size(); i++) {
+            net.minecraft.world.item.ItemStack st = m.shelf.get(i);
+            int ix = rx + i * 19;
+            g.renderItem(st, ix, sy);
+            g.renderItemDecorations(font, st, ix, sy);
+            hits.add(ix, sy, 16, 16, null, st.getHoverName().copy().append(" ×" + st.getCount() + " — ")
+                    .append(Component.translatable("lordsoutpost.ui.shelf.price", m.shelfPrices.get(i))));
+        }
     }
 
     // ---------- Стройка по заказу Лорда ----------

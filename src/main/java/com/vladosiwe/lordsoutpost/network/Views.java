@@ -313,6 +313,25 @@ public final class Views {
         magic.putBoolean("pyroAvailable", com.vladosiwe.lordsoutpost.compat.Pyromancer.available());
         magic.putBoolean("pyromancer", o.pyromancer != null);
         magic.putInt("pyroRejoin", (int) Math.max(0, (o.pyromancerRejoinAt - now) / 20));
+        // Полка мага: полные предметы (с зачарованиями и заклинаниями) и цены, как в окне торговли.
+        ListTag shelf = new ListTag();
+        for (net.minecraft.world.item.ItemStack st : o.magicShelf) {
+            if (st.isEmpty()) continue;
+            CompoundTag it = new CompoundTag();
+            it.put("stack", st.save(level.registryAccess()));
+            it.putInt("price", com.vladosiwe.lordsoutpost.data.Shop.magicPrice(st));
+            shelf.add(it);
+        }
+        magic.put("shelf", shelf);
+        int satchel = 0;
+        for (int i = 0; i < o.mageSatchel.getContainerSize(); i++) satchel += o.mageSatchel.getItem(i).getCount();
+        magic.putInt("satchel", satchel);
+        if (o.tier >= 3 && o.hasZone(com.vladosiwe.lordsoutpost.outpost.WorkZone.MAGE_TOWER) && o.online) {
+            boolean forge = com.vladosiwe.lordsoutpost.data.MageCraft.forge(level, o.zone(com.vladosiwe.lordsoutpost.outpost.WorkZone.MAGE_TOWER)) != null;
+            magic.putBoolean("forge", forge);
+            var next = com.vladosiwe.lordsoutpost.data.MageCraft.next(level, o, forge);
+            if (next != null) magic.putString("next", next.id());
+        }
         m.put("magic", magic);
 
         ListTag projects = new ListTag();

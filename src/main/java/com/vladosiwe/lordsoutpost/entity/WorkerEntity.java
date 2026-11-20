@@ -119,6 +119,9 @@ public class WorkerEntity extends OutpostNpc implements net.minecraft.world.item
         goalSelector.addGoal(1, new ShelterGoal(this));
         goalSelector.addGoal(2, new CaravanGoal(this));
         goalSelector.addGoal(3, new BuildGoal(this));
+        // Придворный маг без Iron's Spells работает в этом теле теми же рецептами (запасной вариант).
+        goalSelector.addGoal(3, new com.vladosiwe.lordsoutpost.entity.ai.MageWorkGoal(this,
+                () -> role() == Role.MAGE && !level().isClientSide ? outpost() : null));
         workGoal = new WorkGoal(this);
         goalSelector.addGoal(4, workGoal);
         goalSelector.addGoal(8, new LookAtPlayerGoal(this, Player.class, 6f));
@@ -153,7 +156,9 @@ public class WorkerEntity extends OutpostNpc implements net.minecraft.world.item
         if (hand == InteractionHand.MAIN_HAND && player instanceof ServerPlayer sp) {
             Outpost o = outpost();
             if (o != null && role() == Role.CARAVANEER && !sp.isShiftKeyDown()) openShop(sp, o);
-            else if (o != null) Interactions.talk(sp, o, this);
+            else if (o != null && role() == Role.MAGE && !sp.isShiftKeyDown() && MageShelf.open(sp, this, o)) {
+                // Придворный маг без Iron's Spells: торговля с его полки.
+            } else if (o != null) Interactions.talk(sp, o, this);
         }
         return InteractionResult.sidedSuccess(level().isClientSide);
     }

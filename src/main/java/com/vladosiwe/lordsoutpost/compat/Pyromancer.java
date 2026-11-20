@@ -51,6 +51,17 @@ public final class Pyromancer {
         return type() != null;
     }
 
+    /** Придворный маг этого форта живёт в теле пироманта (мод есть, форт третьего тира, башня стоит). */
+    public static boolean mode(Outpost o) {
+        return o.tier >= 3 && o.hasZone(WorkZone.MAGE_TOWER) && available();
+    }
+
+    @Nullable
+    private static com.vladosiwe.lordsoutpost.outpost.Resident mage(Outpost o) {
+        for (var r : o.residents) if (r.role == com.vladosiwe.lordsoutpost.outpost.Role.MAGE && r.active()) return r;
+        return null;
+    }
+
     /** Пиромант этого аванпоста. */
     public static boolean ofOutpost(Entity e, long outpostId) {
         return e.getPersistentData().contains(TAG) && e.getPersistentData().getLong(TAG) == outpostId;
@@ -58,9 +69,10 @@ public final class Pyromancer {
 
     /** Раз в секунду, пока чанки форта загружены. */
     public static void tick(ServerLevel level, Outpost o, long now) {
-        if (o.state != OutpostState.OWNED || o.tier < 3 || !o.hasZone(WorkZone.MAGE_TOWER)) return;
+        if (o.state != OutpostState.OWNED || !mode(o)) return;
         EntityType<?> type = type();
         if (type == null) return;
+        var mage = mage(o);
         BlockPos tower = o.zone(WorkZone.MAGE_TOWER);
         Entity e = o.pyromancer == null ? null : level.getEntity(o.pyromancer);
         if (e != null && !e.isAlive()) e = null;
@@ -79,9 +91,19 @@ public final class Pyromancer {
                 return;
             }
         }
+        if (mage == null) {
+            // Старое сохранение: пиромант есть, а записи мага нет — он и становится придворным магом.
+            if (e == null) return;
+            mage = com.vladosiwe.lordsoutpost.server.OutpostManager.addSettler(o, com.vladosiwe.lordsoutpost.outpost.Role.MAGE, level.random);
+        }
+        if (e != null) mage.health = Math.max(0.05f, ((LivingEntity) e).getHealth() / Math.max(1f, ((LivingEntity) e).getMaxHealth()));
         if (e == null) {
             if (now < o.pyromancerRejoinAt || !level.isLoaded(tower)) return;
             Mob spawned = spawn(level, o, type, tower);
+            if (spawned != null) {
+                spawned.setCustomName(Component.literal(mage.name + " ").append(Component.literal("[")
+                        .append(com.vladosiwe.lordsoutpost.outpost.Role.MAGE.label()).append("]").withStyle(net.minecraft.ChatFormatting.LIGHT_PURPLE)));
+            }
             if (spawned == null) return;
             o.pyromancer = spawned.getUUID();
             o.log(now, "lordsoutpost.event.pyromancer_joined");
@@ -147,6 +169,9 @@ public final class Pyromancer {
         long now = level.getGameTime();
         o.pyromancer = null;
         o.pyromancerRejoinAt = now + REJOIN;
+        // Пиромант — тело придворного мага: маг погиб, новый придёт через срок.
+        var mage = mage(o);
+        if (mage != null) o.residents.remove(mage);
         o.log(now, "lordsoutpost.event.pyromancer_died");
         Notify.lord(level.getServer(), o, Component.translatable("lordsoutpost.event.pyromancer_died"));
         data.setDirty();

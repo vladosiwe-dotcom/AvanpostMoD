@@ -677,7 +677,10 @@ public final class ChunkReconciliation {
     private static void syncResidents(ServerLevel level, OutpostSavedData data, Outpost o, long now) {
         ServerPlayer lord = o.state == OutpostState.OWNED ? NpcLifecycle.lord(level, o) : null;
         boolean retinueOut = lord != null && lord.level() == level && o.squads[Squad.RETINUE].order == Squad.Order.RETINUE;
+        boolean pyromancerBody = com.vladosiwe.lordsoutpost.compat.Pyromancer.mode(o);
         for (Resident r : o.residents) {
+            // Придворный маг с Iron's Spells живёт в теле пироманта мода (им управляет Pyromancer.tick).
+            if (pyromancerBody && r.role == Role.MAGE) continue;
             Entity entity = r.entity == null ? null : level.getEntity(r.entity);
             boolean present = entity instanceof OutpostNpc npc && npc.isAlive();
             if (!present) r.entity = null;
@@ -693,7 +696,8 @@ public final class ChunkReconciliation {
         int r = o.reach() + 40;
         AABB box = new AABB(o.center).inflate(r, 48, r);
         for (OutpostNpc npc : level.getEntitiesOfClass(OutpostNpc.class, box, n -> n.outpostId() == o.id && n.raidTarget == 0)) {
-            if (npc.residentId() == null || o.resident(npc.residentId()) == null) {
+            boolean oldMageBody = pyromancerBody && npc.role() == Role.MAGE;
+            if (npc.residentId() == null || o.resident(npc.residentId()) == null || oldMageBody) {
                 level.sendParticles(ParticleTypes.POOF, npc.getX(), npc.getY() + 1, npc.getZ(), 8, 0.3, 0.5, 0.3, 0.02);
                 npc.discard();
             }

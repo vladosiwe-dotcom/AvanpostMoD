@@ -255,16 +255,22 @@ public final class Simulation {
         }
     }
 
+    /**
+     * Придворный маг вдали от игрока. Эссенция больше не берётся из ничего: маг тратит только ту, что поселение
+     * получило по-настоящему (вклады по заданиям Доски), и кладёт сделанное на склад (выложится в бочки при возвращении).
+     * Рядом с игроком маг работает руками (MageWorkGoal), и здесь его выработка не считается.
+     */
     private static void mage(ServerLevel level, Outpost o, long now, double days, double boost, RandomSource rnd) {
         int mages = o.tier >= 3 ? o.activeCount(Role.MAGE) : 0;
         if (mages == 0) return;
+        boolean physical = o.online && (o.pyromancer != null || virtualWorkers(o, Role.MAGE, now) == 0);
+        if (physical) return;
         double mult = o.law.magic() * (o.boosted(Resource.ARCANE, now) ? boost : 1);
-        o.add(Resource.ARCANE, mages * 10 * days * mult);
         o.arcaneWork += mages * 1.2 * days * mult;
         while (o.arcaneWork >= 1 && o.stock(Resource.ARCANE) >= 20) {
             o.arcaneWork -= 1;
             o.take(Resource.ARCANE, 20);
-            for (ItemStack stack : MagicLoot.mageProduct(level, rnd)) addTribute(o, stack);
+            for (ItemStack stack : MagicLoot.mageProduct(level, rnd)) if (!stack.isEmpty()) o.storeItems.add(stack);
             o.log(now, "lordsoutpost.event.mage_work");
         }
         o.arcaneWork = Math.min(o.arcaneWork, 3);
@@ -369,7 +375,8 @@ public final class Simulation {
             case FARMER -> 1;
             case SMITH -> t >= 2 ? 1 : 0;
             case CARAVANEER -> t - 1;
-            case MAGE -> t >= 3 ? 1 : 0;
+            // Погибший маг сменяется не сразу: новый придёт к башне после срока.
+            case MAGE -> t >= 3 && o.lastSim >= o.pyromancerRejoinAt ? 1 : 0;
             case SHIELDMAN -> (int) Math.round((t == 1 ? 3 : t == 2 ? 6 : 10) * o.law.guardShare());
             default -> 0;
         };

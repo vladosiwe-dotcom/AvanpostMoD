@@ -59,7 +59,9 @@ public final class OutpostTask {
         /** Строитель берёт со склада материал для заказанной Лордом постройки. */
         FETCH_BUILD(Role.BUILDER, false),
         /** Шахтёр берёт лестницы (или брёвна на них) для проходки нового ствола. */
-        FETCH_LADDERS(Role.MINER, false);
+        FETCH_LADDERS(Role.MINER, false),
+        /** Придворный маг берёт ингредиенты для свитка, чернил, эссенции или книги. */
+        MAGE_CRAFT(Role.MAGE, false);
 
         public static final Type[] VALUES = values();
 

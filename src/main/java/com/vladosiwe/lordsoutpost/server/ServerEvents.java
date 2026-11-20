@@ -160,6 +160,34 @@ public final class ServerEvents {
                 && com.vladosiwe.lordsoutpost.compat.Pyromancer.ofOutpost(target, npc.outpostId())) event.setCanceled(true);
     }
 
+    /** Пироманту форта (тело придворного мага) добавляется рабочая цель мага: производство после боя. */
+    @SubscribeEvent
+    public static void onMageBodyJoin(EntityJoinLevelEvent event) {
+        if (event.getLevel().isClientSide() || !(event.getEntity() instanceof net.minecraft.world.entity.PathfinderMob mob)) return;
+        if (!mob.getPersistentData().contains(com.vladosiwe.lordsoutpost.compat.Pyromancer.TAG)) return;
+        long id = mob.getPersistentData().getLong(com.vladosiwe.lordsoutpost.compat.Pyromancer.TAG);
+        var server = mob.getServer();
+        if (server == null) return;
+        mob.goalSelector.addGoal(3, new com.vladosiwe.lordsoutpost.entity.ai.MageWorkGoal(mob, () -> OutpostSavedData.get(server).byId(id)));
+    }
+
+    /**
+     * Тело придворного мага (пиромант Iron's Spells) торгует только тем, что лежит на его полке: собственные сделки
+     * пироманта создают товар из ничего, поэтому они перехватываются и открывается полка мага.
+     */
+    @SubscribeEvent
+    public static void onMageInteract(net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.EntityInteract event) {
+        if (!(event.getTarget() instanceof net.minecraft.world.entity.LivingEntity body)) return;
+        if (!body.getPersistentData().contains(com.vladosiwe.lordsoutpost.compat.Pyromancer.TAG)) return;
+        event.setCanceled(true);
+        event.setCancellationResult(net.minecraft.world.InteractionResult.SUCCESS);
+        if (event.getHand() != net.minecraft.world.InteractionHand.MAIN_HAND || !(event.getEntity() instanceof net.minecraft.server.level.ServerPlayer sp)) return;
+        var o = OutpostSavedData.get(sp.serverLevel()).byId(body.getPersistentData().getLong(com.vladosiwe.lordsoutpost.compat.Pyromancer.TAG));
+        if (o == null || !com.vladosiwe.lordsoutpost.entity.MageShelf.open(sp, body, o)) {
+            sp.displayClientMessage(net.minecraft.network.chat.Component.translatable("lordsoutpost.msg.mage_refuses", body.getName()), true);
+        }
+    }
+
     /** Вьючное животное каравана, сохранившееся в чанке, не должно появиться второй раз: караван воссоздаётся из записи. */
     @SubscribeEvent
     public static void onEntityJoin(EntityJoinLevelEvent event) {

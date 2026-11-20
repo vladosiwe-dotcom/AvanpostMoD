@@ -124,8 +124,17 @@ public final class Outpost {
     public transient final Map<Long, Long> projectClaims = new HashMap<>();
     public transient final Map<Long, Long> projectDeferred = new HashMap<>();
     public transient final Map<Long, Integer> projectFailures = new HashMap<>();
+    /**
+     * Предметы, которые уже принадлежат складу, но ещё не лежат в бочках (произведены, пока форт не загружен,
+     * или бочки были полны). При ближайшей сверке склада они выкладываются в бочки. Сохраняются.
+     */
+    public final List<ItemStack> storeItems = new ArrayList<>();
+    /** Сумка придворного мага: его ноша хранится в записи, поэтому не пропадает при выгрузке тела. */
+    public final net.minecraft.world.SimpleContainer mageSatchel = new net.minecraft.world.SimpleContainer(9);
     /** Личный инвентарь лавки торговца: настоящий товар, взятый со склада (сохраняется). */
     public final List<ItemStack> shopStock = new ArrayList<>();
+    /** Полка придворного мага: магические товары, которые он сам принёс со склада и продаёт у башни (сохраняется). */
+    public final List<ItemStack> magicShelf = new ArrayList<>();
     public double tributeGold;
     public int penAnimals;
     public double arcaneWork;
@@ -586,9 +595,18 @@ public final class Outpost {
         ListTag tr = new ListTag();
         for (ItemStack s : tribute) if (!s.isEmpty()) tr.add(s.save(registries));
         t.put("tribute", tr);
+        ListTag store = new ListTag();
+        for (ItemStack s : storeItems) if (!s.isEmpty()) store.add(s.save(registries));
+        t.put("storeItems", store);
+        ListTag satchel = new ListTag();
+        for (int i = 0; i < mageSatchel.getContainerSize(); i++) if (!mageSatchel.getItem(i).isEmpty()) satchel.add(mageSatchel.getItem(i).save(registries));
+        t.put("mageSatchel", satchel);
         ListTag shop = new ListTag();
         for (ItemStack s : shopStock) if (!s.isEmpty()) shop.add(s.save(registries));
         t.put("shop", shop);
+        ListTag shelf = new ListTag();
+        for (ItemStack s : magicShelf) if (!s.isEmpty()) shelf.add(s.save(registries));
+        t.put("magicShelf", shelf);
         ListTag pr = new ListTag();
         for (Project p : projects) pr.add(p.save());
         t.put("projects", pr);
@@ -679,8 +697,17 @@ public final class Outpost {
         ListTag tr = t.getList("tribute", Tag.TAG_COMPOUND);
         for (int i = 0; i < tr.size(); i++) ItemStack.parse(registries, tr.getCompound(i)).filter(s -> !s.isEmpty()).ifPresent(o.tribute::add);
         o.tributeGold = t.getDouble("tributeGold");
+        ListTag store = t.getList("storeItems", Tag.TAG_COMPOUND);
+        for (int i = 0; i < store.size(); i++) ItemStack.parse(registries, store.getCompound(i)).filter(s -> !s.isEmpty()).ifPresent(o.storeItems::add);
+        ListTag satchel = t.getList("mageSatchel", Tag.TAG_COMPOUND);
+        for (int i = 0; i < Math.min(satchel.size(), o.mageSatchel.getContainerSize()); i++) {
+            int slot = i;
+            ItemStack.parse(registries, satchel.getCompound(i)).filter(s -> !s.isEmpty()).ifPresent(s -> o.mageSatchel.setItem(slot, s));
+        }
         ListTag shop = t.getList("shop", Tag.TAG_COMPOUND);
         for (int i = 0; i < shop.size(); i++) ItemStack.parse(registries, shop.getCompound(i)).filter(s -> !s.isEmpty()).ifPresent(o.shopStock::add);
+        ListTag shelf = t.getList("magicShelf", Tag.TAG_COMPOUND);
+        for (int i = 0; i < shelf.size(); i++) ItemStack.parse(registries, shelf.getCompound(i)).filter(s -> !s.isEmpty()).ifPresent(o.magicShelf::add);
         ListTag pr = t.getList("projects", Tag.TAG_COMPOUND);
         for (int i = 0; i < pr.size(); i++) {
             Project p = Project.load(pr.getCompound(i));

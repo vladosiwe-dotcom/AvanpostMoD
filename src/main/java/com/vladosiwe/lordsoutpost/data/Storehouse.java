@@ -79,6 +79,13 @@ public final class Storehouse {
         if (o.state != OutpostState.OWNED) return;
         List<Container> barrels = barrels(level, o);
         if (barrels.isEmpty()) return;
+        // Произведённое вдали (свитки, чернила, книги) выкладывается в бочки; что не влезло — ждёт.
+        for (java.util.Iterator<ItemStack> it = o.storeItems.iterator(); it.hasNext(); ) {
+            ItemStack st = it.next();
+            int put = insert(barrels, st.copyWithCount(1), st.getCount());
+            st.shrink(put);
+            if (st.isEmpty()) it.remove();
+        }
         EnumMap<Resource, Double> have = measure(barrels);
         if (o.storeLast.isEmpty()) o.storeLast.putAll(have);
         for (Resource r : PHYSICAL) {

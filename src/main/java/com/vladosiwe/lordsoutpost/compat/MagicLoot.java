@@ -48,6 +48,52 @@ public final class MagicLoot {
         return ironsLoaded() ? roll(level, TREASURE_IRONS, rnd) : new ArrayList<>();
     }
 
+    /**
+     * Уровень заклинания на свитке Iron's Spells (без зависимости от API мода): компоненты предмета из пространства
+     * имён мода кодируются в NBT и берётся наибольшее поле "level". Для прочих предметов — 0.
+     */
+    public static int scrollLevel(ItemStack st) {
+        if (!ironsLoaded() || st.isEmpty()) return 0;
+        int best = 0;
+        for (var typed : st.getComponents()) {
+            var key = net.minecraft.core.registries.BuiltInRegistries.DATA_COMPONENT_TYPE.getKey(typed.type());
+            if (key == null || !IRONS.equals(key.getNamespace())) continue;
+            try {
+                var tag = typed.encodeValue(net.minecraft.nbt.NbtOps.INSTANCE).result().orElse(null);
+                if (tag != null) best = Math.max(best, maxLevel(tag));
+            } catch (RuntimeException ignored) {
+                // Чужой компонент не закодировался — цена просто без надбавки.
+            }
+        }
+        return Math.min(10, best);
+    }
+
+    private static int maxLevel(net.minecraft.nbt.Tag tag) {
+        int best = 0;
+        if (tag instanceof net.minecraft.nbt.CompoundTag c) {
+            for (String k : c.getAllKeys()) {
+                net.minecraft.nbt.Tag v = c.get(k);
+                if (k.equals("level") && v instanceof net.minecraft.nbt.NumericTag n) best = Math.max(best, n.getAsInt());
+                else if (v != null) best = Math.max(best, maxLevel(v));
+            }
+        } else if (tag instanceof net.minecraft.nbt.ListTag l) {
+            for (net.minecraft.nbt.Tag v : l) best = Math.max(best, maxLevel(v));
+        }
+        return best;
+    }
+
+    public static final String[] INK_RARITIES = {"common", "uncommon", "rare", "epic", "legendary"};
+
+    /** Свиток огня: уровень заклинания случайный внутри диапазона редкости чернил (0 — обычные … 4 — легендарные). */
+    public static List<ItemStack> fireScroll(ServerLevel level, int rarity, RandomSource rnd) {
+        return roll(level, table("compat/irons/fire_scroll_" + INK_RARITIES[Math.max(0, Math.min(4, rarity))]), rnd);
+    }
+
+    /** Без Iron's Spells: зачарованная книга со случайной силой зачарования. */
+    public static List<ItemStack> mageBook(ServerLevel level, RandomSource rnd) {
+        return roll(level, table("gameplay/mage_book"), rnd);
+    }
+
     private static List<ItemStack> roll(ServerLevel level, ResourceKey<LootTable> key, RandomSource rnd) {
         List<ItemStack> out = new ArrayList<>();
         try {

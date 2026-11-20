@@ -30,6 +30,8 @@ import com.vladosiwe.lordsoutpost.outpost.OutpostState;
 import com.vladosiwe.lordsoutpost.outpost.Pact;
 import com.vladosiwe.lordsoutpost.outpost.Quest;
 import com.vladosiwe.lordsoutpost.outpost.Resident;
+import com.vladosiwe.lordsoutpost.data.Storehouse;
+import com.vladosiwe.lordsoutpost.data.Logistics;
 import com.vladosiwe.lordsoutpost.outpost.Resource;
 import com.vladosiwe.lordsoutpost.outpost.Role;
 import com.vladosiwe.lordsoutpost.outpost.Squad;
@@ -600,6 +602,8 @@ public final class OutpostGameTests {
             o.tier = 3;
             o.online = true;
             o.onlineSince = level.getGameTime() - 1000;
+            o.residents.removeIf(r -> r.role == Role.MAGE);
+            OutpostManager.addSettler(o, Role.MAGE, level.random);
             BlockPos tower = o.zone(com.vladosiwe.lordsoutpost.outpost.WorkZone.MAGE_TOWER);
             level.getChunk(tower);
             com.vladosiwe.lordsoutpost.compat.Pyromancer.tick(level, o, level.getGameTime());
@@ -615,10 +619,96 @@ public final class OutpostGameTests {
                 h.assertTrue(count == 1, "пиромант должен быть один, найдено " + count);
                 com.vladosiwe.lordsoutpost.compat.Pyromancer.onDeath(level, mob);
                 h.assertTrue(o.pyromancer == null && o.pyromancerRejoinAt > level.getGameTime(), "после гибели новый пиромант придёт через срок");
+                h.assertTrue(o.count(Role.MAGE) == 0, "пиромант — тело придворного мага: маг погиб вместе с ним");
+                h.assertTrue(com.vladosiwe.lordsoutpost.data.Simulation.desired(o, Role.MAGE) == 0, "новый маг не приходит до срока");
                 mob.discard();
             }
         } finally {
             o.online = false;
+            OutpostManager.abandon(data, o, level.getGameTime());
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
+    /**
+     * Придворный маг работает только с настоящими предметами склада: рецепт резервирует ингредиенты (второй раз их
+     * не отложить), маг забирает их в сумку, списывает при работе, готовое ложится в бочки. Потом маг выносит товар
+     * на полку, а продажа с полки списывает предмет и платит в казну ровно один раз. Полка и сумка сохраняются.
+     */
+    @GameTest(template = "empty")
+    public static void mageCraftsAndSellsRealGoods(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        Outpost o = virtualOutpost(level, data, FAR.offset(2048, 0, 0), 1, UUID.randomUUID());
+        o.tier = 3;
+        List<BlockPos> barrels = o.markers(com.vladosiwe.lordsoutpost.blueprint.Marker.STOCKPILE);
+        try {
+            long now = level.getGameTime();
+            o.residents.removeIf(r -> r.role == Role.MAGE);
+            Resident mage = OutpostManager.addSettler(o, Role.MAGE, level.random);
+            for (BlockPos b : barrels) {
+                level.getChunk(b);
+                level.setBlockAndUpdate(b, net.minecraft.world.level.block.Blocks.BARREL.defaultBlockState());
+            }
+            h.assertTrue(!Storehouse.barrels(level, o).isEmpty(), "у склада должны быть бочки");
+            boolean iss = com.vladosiwe.lordsoutpost.compat.MagicLoot.ironsLoaded();
+            var box = new net.minecraft.world.SimpleContainer(4);
+            if (iss) {
+                box.setItem(0, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.LAPIS_LAZULI, 3));
+                box.setItem(1, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.AMETHYST_SHARD, 1));
+            } else {
+                box.setItem(0, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.BOOK, 1));
+                box.setItem(1, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.LAPIS_LAZULI, 3));
+            }
+            Storehouse.deposit(level, o, box);
+            var recipe = com.vladosiwe.lordsoutpost.data.MageCraft.next(level, o, false);
+            h.assertTrue(recipe != null && recipe.id().equals(iss ? "arcane_essence" : "enchanted_book"), "рецепт по ингредиентам склада: " + recipe);
+            var task = Logistics.request(level, o, mage, com.vladosiwe.lordsoutpost.outpost.OutpostTask.Type.MAGE_CRAFT, recipe.inputs(), now);
+            h.assertTrue(task != null, "ингредиенты должны зарезервироваться");
+            h.assertTrue(com.vladosiwe.lordsoutpost.data.MageCraft.next(level, o, false) == null, "отложенное нельзя потратить второй раз");
+            h.assertTrue(Logistics.withdraw(level, o, task, o.mageSatchel, mage.id, now), "маг забирает ингредиенты в сумку");
+            h.assertTrue(Storehouse.countItem(level, o, net.minecraft.world.item.Items.LAPIS_LAZULI) == 0, "ингредиенты ушли из бочек");
+            Outpost reloaded = Outpost.load(o.save(level.registryAccess()), level.registryAccess());
+            h.assertTrue(reloaded.mageSatchel.countItem(net.minecraft.world.item.Items.LAPIS_LAZULI) == 3, "сумка мага сохраняется");
+            h.assertTrue(com.vladosiwe.lordsoutpost.data.MageCraft.resumable(level, o, false) != null, "прерванная работа продолжается по сумке");
+            for (var e : recipe.inputs().entrySet()) {
+                int left = e.getValue();
+                for (int i = 0; i < o.mageSatchel.getContainerSize() && left > 0; i++) {
+                    var st = o.mageSatchel.getItem(i);
+                    if (!st.is(e.getKey())) continue;
+                    int n = Math.min(left, st.getCount());
+                    st.shrink(n);
+                    left -= n;
+                }
+            }
+            var made = com.vladosiwe.lordsoutpost.data.MageCraft.craft(level, recipe, level.random);
+            h.assertTrue(!made.isEmpty(), "работа даёт предмет");
+            for (var st : made) Logistics.addTo(o.mageSatchel, st);
+            Logistics.complete(o, task, now);
+            Storehouse.deposit(level, o, o.mageSatchel);
+            h.assertTrue(o.mageSatchel.isEmpty(), "готовое отнесено на склад");
+            var product = made.get(0).getItem();
+            h.assertTrue(Storehouse.countItem(level, o, product) >= 1, "готовое лежит в бочках");
+
+            var want = com.vladosiwe.lordsoutpost.data.Shop.restockShelf(level, o);
+            h.assertTrue(want.getOrDefault(product, 0) >= 1, "маг выносит на полку готовый товар: " + want);
+            var stock = Logistics.request(level, o, mage, com.vladosiwe.lordsoutpost.outpost.OutpostTask.Type.STOCK_SHOP, want, now);
+            h.assertTrue(stock != null && Logistics.withdraw(level, o, stock, o.mageSatchel, mage.id, now), "товар взят со склада");
+            for (int i = 0; i < o.mageSatchel.getContainerSize(); i++) {
+                o.mageSatchel.setItem(i, com.vladosiwe.lordsoutpost.data.Shop.shelve(o, o.mageSatchel.getItem(i).copy()));
+            }
+            h.assertTrue(Storehouse.countItem(level, o, product) == 0 && o.mageSatchel.isEmpty(), "товар переехал на полку, а не скопирован");
+            var offers = com.vladosiwe.lordsoutpost.data.Shop.shelfOffers(o);
+            h.assertTrue(offers.size() == 1 && offers.get(0).getMaxUses() == 1, "одно предложение на один реальный предмет");
+            var copy = Outpost.load(o.save(level.registryAccess()), level.registryAccess());
+            h.assertTrue(copy.magicShelf.size() == 1, "полка сохраняется");
+            double gold = o.stock(Resource.GOLD);
+            h.assertTrue(com.vladosiwe.lordsoutpost.data.Shop.soldFromShelf(o, offers.get(0)), "продажа проходит");
+            h.assertTrue(o.stock(Resource.GOLD) > gold && o.magicShelf.isEmpty(), "предмет ушёл с полки, изумруды — в казну");
+            h.assertFalse(com.vladosiwe.lordsoutpost.data.Shop.soldFromShelf(o, offers.get(0)), "проданное второй раз не продаётся");
+        } finally {
+            for (BlockPos b : barrels) level.setBlockAndUpdate(b, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
             OutpostManager.abandon(data, o, level.getGameTime());
             data.remove(o);
         }
