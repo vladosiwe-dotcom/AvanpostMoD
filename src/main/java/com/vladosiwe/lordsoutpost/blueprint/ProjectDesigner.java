@@ -37,6 +37,9 @@ public final class ProjectDesigner {
             case HOUSE -> house(out, p);
             case WATCHTOWER -> tower(out, p);
             case WALL -> wall(out, p);
+            case PEN -> pen(out, p);
+            case SMITHY -> smithy(out, p);
+            case MINE -> mine(out, p);
         }
         // Снизу вверх, чтобы ничего не висело в воздухе; связанные половины (дверь, кровать) остаются рядом.
         List<List<Cell>> groups = new ArrayList<>();
@@ -130,6 +133,66 @@ public final class ProjectDesigner {
         }
     }
 
+    /** Загон 7×7: изгородь, калитка на юг, внутри расчищено (5×5 для скота). */
+    private static void pen(List<Cell> out, Palette p) {
+        for (int x = -3; x <= 3; x++)
+            for (int z = -3; z <= 3; z++) {
+                boolean ring = Math.abs(x) == 3 || Math.abs(z) == 3;
+                if (!ring) {
+                    put(out, x, 1, z, Blocks.AIR.defaultBlockState());
+                    put(out, x, 2, z, Blocks.AIR.defaultBlockState());
+                } else if (x == 0 && z == 3) {
+                    put(out, x, 1, z, p.fenceGate.defaultBlockState().setValue(net.minecraft.world.level.block.FenceGateBlock.FACING, Direction.SOUTH));
+                } else {
+                    put(out, x, 1, z, p.fence.defaultBlockState());
+                }
+            }
+    }
+
+    /** Открытая кузница 5×5: каменный пол, столбы, навес; доменная печь, печь, наковальня, кузнечный стол. */
+    private static void smithy(List<Cell> out, Palette p) {
+        for (int x = -2; x <= 2; x++) for (int z = -2; z <= 2; z++) put(out, x, 0, z, p.stone.defaultBlockState());
+        for (int y = 1; y <= 3; y++)
+            for (int x = -2; x <= 2; x++)
+                for (int z = -2; z <= 2; z++) {
+                    if (Math.abs(x) == 2 && Math.abs(z) == 2) put(out, x, y, z, log(p));
+                    else put(out, x, y, z, Blocks.AIR.defaultBlockState());
+                }
+        for (int x = -2; x <= 2; x++) for (int z = -2; z <= 2; z++) put(out, x, 4, z, p.slab.defaultBlockState());
+        put(out, -1, 1, -1, Blocks.BLAST_FURNACE.defaultBlockState().setValue(net.minecraft.world.level.block.AbstractFurnaceBlock.FACING, Direction.SOUTH));
+        put(out, 0, 1, -1, Blocks.FURNACE.defaultBlockState().setValue(net.minecraft.world.level.block.AbstractFurnaceBlock.FACING, Direction.SOUTH));
+        put(out, 1, 1, 1, Blocks.ANVIL.defaultBlockState().setValue(net.minecraft.world.level.block.AnvilBlock.FACING, Direction.EAST));
+        put(out, -1, 1, 1, Blocks.SMITHING_TABLE.defaultBlockState());
+        put(out, 1, 2, -2, Blocks.WALL_TORCH.defaultBlockState().setValue(WallTorchBlock.FACING, Direction.SOUTH));
+    }
+
+    /**
+     * Шахтный копёр: каменный оголовок 3×3 вокруг устья, столбы и навес. Сам ствол вниз (6 блоков) с лестницами
+     * прокапывает шахтёр: это его работа, а не строителя.
+     */
+    private static void mine(List<Cell> out, Palette p) {
+        for (int x = -1; x <= 1; x++)
+            for (int z = -1; z <= 1; z++) {
+                if (x == 0 && z == 0) put(out, 0, 0, 0, Blocks.AIR.defaultBlockState());
+                else put(out, x, 0, z, p.stone.defaultBlockState());
+            }
+        for (int y = 1; y <= 2; y++)
+            for (int x = -1; x <= 1; x++)
+                for (int z = -1; z <= 1; z++) {
+                    if (Math.abs(x) == 1 && Math.abs(z) == 1) put(out, x, y, z, log(p));
+                    else put(out, x, y, z, Blocks.AIR.defaultBlockState());
+                }
+        for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++) put(out, x, 3, z, p.slab.defaultBlockState());
+    }
+
+    /** Якорь зоны в каноне: центр загона, место кузнеца, точка входа в шахту (у оголовка со стороны входа). */
+    public static BlockPos anchor(Project.Type type) {
+        return switch (type) {
+            case MINE -> new BlockPos(0, 1, 2);
+            default -> new BlockPos(0, 1, 0);
+        };
+    }
+
     /** Точка, где стоит дозорный на башне (в каноне). */
     public static BlockPos towerPost() {
         return new BlockPos(1, 7, 1);
@@ -141,6 +204,9 @@ public final class ProjectDesigner {
             case HOUSE -> 4;
             case WATCHTOWER -> 4;
             case WALL -> 3;
+            case PEN -> 5;
+            case SMITHY -> 4;
+            case MINE -> 3;
         };
     }
 }

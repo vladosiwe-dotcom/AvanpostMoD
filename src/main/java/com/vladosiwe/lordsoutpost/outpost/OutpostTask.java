@@ -57,7 +57,9 @@ public final class OutpostTask {
         /** Торговец несёт излишки со склада в свою лавку. */
         STOCK_SHOP(Role.CARAVANEER, false),
         /** Строитель берёт со склада материал для заказанной Лордом постройки. */
-        FETCH_BUILD(Role.BUILDER, false);
+        FETCH_BUILD(Role.BUILDER, false),
+        /** Шахтёр берёт лестницы (или брёвна на них) для проходки нового ствола. */
+        FETCH_LADDERS(Role.MINER, false);
 
         public static final Type[] VALUES = values();
 

@@ -299,6 +299,29 @@ public final class Outpost {
         return moved != null ? moved : marker(zone.marker);
     }
 
+    /**
+     * Шахта: вход (где шахтёр стоит наверху), устье, дно ствола, точка направления штрека, уровень земли.
+     * По чертежу форта или в построенном по заказу копре; ready = ствол прокопан до дна.
+     */
+    public record MineSite(BlockPos entry, BlockPos top, BlockPos bottom, BlockPos dir, int groundY, boolean ready, boolean exists) {}
+
+    public MineSite mine() {
+        Long link = zones.link(WorkZone.MINE);
+        if (link != null) {
+            for (Project p : projects) {
+                if (p.id != link) continue;
+                BlockPos top = p.origin;
+                BlockPos bottom = top.below(WorkZones.MINE_DEPTH);
+                return new MineSite(p.zoneAnchor(), top, bottom, bottom.offset(p.mineDir()), top.getY(),
+                        zones.mineDepth >= WorkZones.MINE_DEPTH, true);
+            }
+        }
+        boolean exists = !design().markers(Marker.MINE_SHAFT).isEmpty();
+        BlockPos bottom = marker(Marker.MINE_SHAFT);
+        return new MineSite(marker(Marker.MINE), new BlockPos(bottom.getX(), center.getY(), bottom.getZ()), bottom,
+                marker(Marker.MINE_DIR), center.getY(), true, exists);
+    }
+
     /** Зона существует: перенесена Лордом или есть в чертеже текущего тира. */
     public boolean hasZone(WorkZone zone) {
         return zones.override(zone) != null || !design().markers(zone.marker).isEmpty();

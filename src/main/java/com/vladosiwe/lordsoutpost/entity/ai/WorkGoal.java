@@ -194,6 +194,7 @@ public class WorkGoal extends Goal {
         task = null;
         item = null;
         smeltFurnace = null;
+        sinking = false;
     }
 
     @Override
@@ -255,7 +256,7 @@ public class WorkGoal extends Goal {
             case JOB -> {
                 boolean done = switch (role) {
                     case LUMBERJACK -> vegetation != null ? clearVegetation(level, o, r, now) : chop(level, o, r, now);
-                    case MINER -> mine(level, o, r, now);
+                    case MINER -> sinking ? sink(level, o, r, now) : mine(level, o, r, now);
                     case SKOTOVOD -> skotovodHunting ? hunt(level, o, r, now) : herd(level, o, r, now);
                     case FARMER -> farm(level, o, r, now);
                     case SMITH -> smeltFurnace != null ? smelt(level, o, r, now) : smith(level, o, r, now);
@@ -316,6 +317,13 @@ public class WorkGoal extends Goal {
             boolean found = switch (role) {
                 case LUMBERJACK -> findVegetation(level, o) || findTree(level, o);
                 case MINER -> {
+                    Outpost.MineSite site = o.mine();
+                    if (site.exists() && !site.ready()) {
+                        // Шахту перенесли: сначала прокопать новый ствол.
+                        sinking = true;
+                        timer = -1;
+                        yield true;
+                    }
                     boolean col = claimColumn(level, o);
                     if (col && countCarried(Items.TORCH) == 0 && now >= torchRetryAt) needTorches = true;
                     yield col;
@@ -405,10 +413,12 @@ public class WorkGoal extends Goal {
      */
     private boolean go(Outpost o, BlockPos target, double reach, int patience) {
         if (acting == Role.MINER && shaftUsable(o, mob.level().getMinBuildHeight())) {
-            BlockPos bottom = o.marker(Marker.MINE_SHAFT);
-            int floor = o.center.getY() + 1;
-            boolean under = mob.getY() < o.center.getY() - 0.5;
-            boolean targetUnder = target.getY() < o.center.getY();
+            Outpost.MineSite site = o.mine();
+            BlockPos bottom = site.bottom();
+            int ground = site.groundY();
+            int floor = ground + 1;
+            boolean under = mob.getY() < ground - 0.5;
+            boolean targetUnder = target.getY() < ground;
             double sx = bottom.getX() + 0.5, sz = bottom.getZ() + 0.5;
             double hd = Math.hypot(mob.getX() - sx, mob.getZ() - sz);
             if (under != targetUnder || (under && hd < 0.7 && mob.getY() > bottom.getY() + 0.5)) {
@@ -425,9 +435,9 @@ public class WorkGoal extends Goal {
                 }
                 mob.getNavigation().stop();
                 if (up) {
-                    if (mob.getY() >= o.center.getY() + 0.2) {
+                    if (mob.getY() >= ground + 0.2) {
                         // Наверху: выбраться из ствола к выходу.
-                        BlockPos exit = o.marker(Marker.MINE);
+                        BlockPos exit = site.entry();
                         Vec3 out = new Vec3(exit.getX() + 0.5 - sx, 0, exit.getZ() + 0.5 - sz).normalize();
                         mob.setDeltaMovement(out.x * 0.3, 0.3, out.z * 0.3);
                     } else {
@@ -439,7 +449,7 @@ public class WorkGoal extends Goal {
                     if (mob.getY() > bottom.getY() + 0.2) mob.setDeltaMovement(0, -0.15, 0);
                     else {
                         // Внизу: шагнуть в штрек.
-                        BlockPos dir = o.marker(Marker.MINE_DIR);
+                        BlockPos dir = site.dir();
                         mob.setDeltaMovement((dir.getX() - bottom.getX()) * 0.25, 0, (dir.getZ() - bottom.getZ()) * 0.25);
                     }
                 }
@@ -730,7 +740,8 @@ public class WorkGoal extends Goal {
     public static List<Column> tunnel(Outpost o, int minY) {
         List<Column> out = new ArrayList<>();
         if (!shaftUsable(o, minY)) return out;
-        BlockPos shaft = o.marker(Marker.MINE_SHAFT), dirPos = o.marker(Marker.MINE_DIR);
+        Outpost.MineSite site = o.mine();
+        BlockPos shaft = site.bottom(), dirPos = site.dir();
         int dx = Integer.signum(dirPos.getX() - shaft.getX()), dz = Integer.signum(dirPos.getZ() - shaft.getZ());
         int lx = -dz, lz = dx;
         BlockPos prev = shaft;
@@ -761,22 +772,27 @@ public class WorkGoal extends Goal {
 
     /** Ствол есть в чертеже и его дно с полом штрека стоит над дном мира. */
     public static boolean shaftUsable(Outpost o, int minY) {
-        if (o.design().markers(Marker.MINE_SHAFT).isEmpty()) return false;
-        return minY == Integer.MIN_VALUE || o.marker(Marker.MINE_SHAFT).getY() - 1 > minY;
+        Outpost.MineSite site = o.mine();
+        if (!site.exists() || !site.ready()) return false;
+        return minY == Integer.MIN_VALUE || site.bottom().getY() - 1 > minY;
     }
 
     private int redigColumn = -1, redigTries;
     private List<Column> cachedMinePlan = List.of();
     @Nullable private Outpost cachedMineOutpost;
     private int cachedMineMinY = Integer.MIN_VALUE;
+    private int cachedMineKey = Integer.MIN_VALUE;
 
     /** План штрека неизменен для одного дизайна форта; не пересоздаём сотни колонн каждый тик. */
     private List<Column> minePlan(ServerLevel level, Outpost o) {
         int minY = level.getMinBuildHeight();
-        if (cachedMineOutpost != o || cachedMineMinY != minY) {
+        // Шахту перенесли (или прокопали новый ствол): штрек строится заново от нового дна.
+        int key = o.zones.version() * 31 + o.zones.mineDepth;
+        if (cachedMineOutpost != o || cachedMineMinY != minY || cachedMineKey != key) {
             cachedMinePlan = tunnel(o, minY);
             cachedMineOutpost = o;
             cachedMineMinY = minY;
+            cachedMineKey = key;
         }
         return cachedMinePlan;
     }
@@ -988,6 +1004,165 @@ public class WorkGoal extends Goal {
         mob.inventory.setChanged();
         r.miningXp = Math.min(500, r.miningXp + 1);
         r.lastRealWork = now;
+    }
+
+    // ---------- Проходка нового ствола (шахта перенесена в новый копёр) ----------
+
+    private boolean sinking;
+
+    /** Лестницы для ствола: готовые со склада или сделанные у склада из брёвен (1 бревно → 8 палок → 3 лестницы + палка). */
+    private Supply ladders(ServerLevel level, Outpost o, Resident r, int need, long now) {
+        if (countCarried(Items.LADDER) >= need) return Supply.READY;
+        if (task == null) {
+            int missing = need - countCarried(Items.LADDER);
+            int ready = Logistics.available(level, o, Items.LADDER, null);
+            if (ready >= missing) {
+                task = Logistics.request(level, o, r, OutpostTask.Type.FETCH_LADDERS, java.util.Map.of(Items.LADDER, missing), now);
+            } else {
+                Item log = Storehouse.findItem(level, o, st -> st.is(net.minecraft.tags.ItemTags.LOGS));
+                int logs = (int) Math.ceil(missing / 3.0);
+                if (log == null || Logistics.available(level, o, log, null) < logs) return Supply.NONE;
+                task = Logistics.request(level, o, r, OutpostTask.Type.FETCH_LADDERS, java.util.Map.of(log, logs), now);
+            }
+            if (task == null) return Supply.NONE;
+        }
+        if (!go(o, o.zone(WorkZone.STOREHOUSE), 1.8, 500)) return Supply.BUSY;
+        OutpostTask t = task;
+        task = null;
+        if (!Logistics.withdraw(level, o, t, mob, now)) {
+            Logistics.cancel(o, t, "withdraw failed", now);
+            return Supply.NONE;
+        }
+        for (Item i : new java.util.ArrayList<>(t.carried.keySet())) {
+            if (!new ItemStack(i).is(net.minecraft.tags.ItemTags.LOGS)) continue;
+            int logs = countCarried(i);
+            removeCarried(i, logs);
+            for (ItemStack made : new ItemStack[]{new ItemStack(Items.LADDER, 3 * logs), new ItemStack(Items.STICK, logs)}) {
+                ItemStack left = mob.collect(made);
+                if (!left.isEmpty()) mob.spawnAtLocation(left);
+            }
+            mob.swing(InteractionHand.MAIN_HAND);
+        }
+        Logistics.complete(o, t, now);
+        return countCarried(Items.LADDER) >= need ? Supply.READY : Supply.NONE;
+    }
+
+    /**
+     * Шахтёр прокапывает ствол нового копра вниз на 6 блоков: копает блок киркой, ставит лестницу у стены,
+     * спускается по ней; воду и лаву вокруг заделывает камнем из ноши. На дне начинается новый штрек.
+     */
+    private boolean sink(ServerLevel level, Outpost o, Resident r, long now) {
+        Outpost.MineSite site = o.mine();
+        if (!site.exists() || site.ready()) {
+            sinking = false;
+            return true;
+        }
+        int depth = o.zones.mineDepth;
+        if (site.top().getY() - com.vladosiwe.lordsoutpost.outpost.WorkZones.MINE_DEPTH - 1 <= level.getMinBuildHeight()) {
+            o.zones.report(WorkZone.MINE, "too close to bedrock");
+            noJobUntil = now + 6000;
+            return true;
+        }
+        if (timer < 0) {
+            Supply tool = pickaxe(level, o, r, now);
+            if (tool == Supply.BUSY) return false;
+            if (tool == Supply.NONE) {
+                o.zones.report(WorkZone.MINE, "no pickaxe");
+                noJobUntil = now + 1200;
+                return true;
+            }
+            Supply lad = ladders(level, o, r, com.vladosiwe.lordsoutpost.outpost.WorkZones.MINE_DEPTH - depth + (depth == 0 ? 1 : 0), now);
+            if (lad == Supply.BUSY) return false;
+            if (lad == Supply.NONE) {
+                o.zones.report(WorkZone.MINE, "no ladders");
+                noJobUntil = now + 1200;
+                return true;
+            }
+            if (depth == 0 && !go(o, site.entry(), 1.6, 500)) return false;
+            timer = 30;
+        }
+        ItemStack pick = carriedPickaxe(WorkerEntity.minerToolTier(o, r));
+        if (pick == null) {
+            timer = -1;
+            return false;
+        }
+        showPickaxe(pick);
+        BlockPos top = site.top();
+        BlockPos dir = site.dir().subtract(site.bottom());
+        Direction facing = Direction.getNearest(dir.getX(), 0, dir.getZ());
+        BlockPos cell = top.below(depth + 1);
+        mob.getLookControl().setLookAt(cell.getX() + 0.5, cell.getY() + 0.5, cell.getZ() + 0.5);
+        if (--timer > 0) {
+            if (timer % 5 == 0) {
+                mob.swing(InteractionHand.MAIN_HAND);
+                level.playSound(null, cell, SoundEvents.STONE_HIT, SoundSource.BLOCKS, 0.6f, 0.9f);
+            }
+            return false;
+        }
+        timer = 30;
+        if (depth == 0) placeLadder(level, top, facing);
+        // Вода и лава вокруг новой клетки — заделать до того, как вскрыть.
+        List<BlockPos> leaks = new ArrayList<>();
+        for (Direction d : Direction.values()) {
+            BlockPos n = cell.relative(d);
+            if (n.equals(cell.above())) continue;
+            if (!level.getFluidState(n).isEmpty()) leaks.add(n);
+        }
+        if (leaks.size() > sealsCarried()) {
+            o.zones.report(WorkZone.MINE, "water in the shaft");
+            noJobUntil = now + 1200;
+            return true;
+        }
+        for (BlockPos n : leaks) {
+            BlockState seal = takeSealBlock();
+            if (seal != null) level.setBlockAndUpdate(n, seal);
+        }
+        BlockState st = level.getBlockState(cell);
+        if (st.getDestroySpeed(level, cell) < 0) {
+            o.zones.report(WorkZone.MINE, "bedrock");
+            noJobUntil = now + 6000;
+            return true;
+        }
+        if (!st.isAir()) dig(level, r, cell, st, pick, now);
+        // Опора для лестницы — стена напротив штрека; если её нет, кладётся камень из ноши.
+        BlockPos wall = cell.relative(facing.getOpposite());
+        if (!level.getBlockState(wall).isFaceSturdy(level, wall, facing)) {
+            BlockState seal = takeSealBlock();
+            if (seal == null) {
+                o.zones.report(WorkZone.MINE, "no stone for the shaft wall");
+                noJobUntil = now + 1200;
+                return true;
+            }
+            level.setBlockAndUpdate(wall, seal);
+        }
+        placeLadder(level, cell, facing);
+        // Спуск по только что поставленной лестнице.
+        mob.getNavigation().stop();
+        mob.setPos(cell.getX() + 0.5, cell.getY(), cell.getZ() + 0.5);
+        o.zones.mineDepth = depth + 1;
+        OutpostSavedData.get(level).setDirty();
+        if (o.zones.mineDepth >= com.vladosiwe.lordsoutpost.outpost.WorkZones.MINE_DEPTH) {
+            BlockPos floor = cell.below();
+            if (!level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP)) {
+                BlockState seal = takeSealBlock();
+                if (seal != null) level.setBlockAndUpdate(floor, seal);
+            }
+            o.mineCursor = 0;
+            o.zones.clearProblem(WorkZone.MINE);
+            o.log(now, "lordsoutpost.event.mine_ready");
+            sinking = false;
+            return true;
+        }
+        return false;
+    }
+
+    private void placeLadder(ServerLevel level, BlockPos at, Direction facing) {
+        if (level.getBlockState(at).is(Blocks.LADDER) || countCarried(Items.LADDER) == 0) return;
+        BlockState ladder = Blocks.LADDER.defaultBlockState().setValue(net.minecraft.world.level.block.LadderBlock.FACING, facing);
+        if (!ladder.canSurvive(level, at)) return;
+        removeCarried(Items.LADDER, 1);
+        level.setBlockAndUpdate(at, ladder);
+        level.playSound(null, at, SoundEvents.LADDER_PLACE, SoundSource.BLOCKS, 0.7f, 1f);
     }
 
     private boolean mine(ServerLevel level, Outpost o, Resident r, long now) {
@@ -1265,11 +1440,19 @@ public class WorkGoal extends Goal {
             BlockPos pen = o.zone(WorkZone.PEN);
             Animal best = null;
             double bestD = Double.MAX_VALUE;
-            for (Animal a : level.getEntitiesOfClass(Animal.class, new AABB(pen).inflate(32, 8, 32))) {
+            // После переноса загона сначала переводится скот из старого загона.
+            BlockPos oldPen = o.zones.previous(WorkZone.PEN);
+            List<Animal> candidates = new ArrayList<>(level.getEntitiesOfClass(Animal.class, new AABB(pen).inflate(32, 8, 32)));
+            if (oldPen != null) {
+                List<Animal> left = level.getEntitiesOfClass(Animal.class, new AABB(oldPen).inflate(3, 2, 3));
+                if (left.isEmpty() && level.isLoaded(oldPen)) o.zones.forgetPrevious(WorkZone.PEN);
+                for (Animal a : left) if (!candidates.contains(a)) candidates.add(0, a);
+            }
+            for (Animal a : candidates) {
                 if (!(a instanceof Cow || a instanceof Sheep || a instanceof Pig || a instanceof Chicken) || a.isBaby() || a.isLeashed()
                         || a.hasCustomName() || inside.contains(a) || unreachableAnimals.containsKey(a.getUUID())
                         || a.getPersistentData().contains(NpcLifecycle.CARAVAN_TAG)) continue;
-                double d = a.distanceToSqr(mob);
+                double d = a.distanceToSqr(mob) - (oldPen != null && a.distanceToSqr(oldPen.getX() + 0.5, oldPen.getY(), oldPen.getZ() + 0.5) < 16 ? 1e6 : 0);
                 if (d < bestD && feedFor(level, o, a, 1) != null) {
                     bestD = d;
                     best = a;
@@ -1416,6 +1599,24 @@ public class WorkGoal extends Goal {
         }
         switch (herdStage) {
             case 1 -> {
+                // Животное заперто в старом загоне: открыть там калитку (старый загон больше не используется).
+                BlockPos oldPen = o.zones.previous(WorkZone.PEN);
+                if (oldPen != null && animal.distanceToSqr(oldPen.getX() + 0.5, oldPen.getY(), oldPen.getZ() + 0.5) < 16) {
+                    BlockPos oldGate = null;
+                    for (BlockPos q : BlockPos.betweenClosed(oldPen.offset(-3, -1, -3), oldPen.offset(3, 1, 3))) {
+                        if (level.getBlockState(q).getBlock() instanceof FenceGateBlock) {
+                            oldGate = q.immutable();
+                            break;
+                        }
+                    }
+                    if (oldGate != null && !level.getBlockState(oldGate).getValue(FenceGateBlock.OPEN)) {
+                        int gdx = Integer.signum(oldGate.getX() - oldPen.getX()), gdz = Integer.signum(oldGate.getZ() - oldPen.getZ());
+                        BlockPos front = Math.abs(oldGate.getX() - oldPen.getX()) >= Math.abs(oldGate.getZ() - oldPen.getZ())
+                                ? oldGate.offset(gdx, 0, 0) : oldGate.offset(0, 0, gdz);
+                        if (walkTo(front, 1.4)) setGate(level, oldGate, true);
+                        return false;
+                    }
+                }
                 // Подойти к животному, чтобы оно заметило корм.
                 if (walkTo(animal.blockPosition(), 4.0)) herdStage = 2;
             }
@@ -1553,10 +1754,10 @@ public class WorkGoal extends Goal {
         // даже если загон оказался за пределами основного периметра форта.
         Set<Animal> penned = new HashSet<>();
         AABB livestockArea = null;
-        if (!o.design().markers(Marker.PEN).isEmpty()) {
+        if (o.hasZone(WorkZone.PEN)) {
             penned.addAll(ChunkReconciliation.penAnimals((ServerLevel) mob.level(), o));
             // Животные в радиусе сбора скота (32 блока от загона) зарезервированы для скотовода.
-            livestockArea = new AABB(o.marker(Marker.PEN)).inflate(32, 8, 32);
+            livestockArea = new AABB(o.zone(WorkZone.PEN)).inflate(32, 8, 32);
         }
         for (Animal a : mob.level().getEntitiesOfClass(Animal.class, mob.getBoundingBox().inflate(20, 6, 20))) {
             if (!a.isAlive() || a.isBaby() || o.insideWalls(a.blockPosition()) || penned.contains(a)
@@ -1753,6 +1954,8 @@ public class WorkGoal extends Goal {
     private static final Item[] FUELS = {Items.COAL, Items.CHARCOAL};
     @Nullable private BlockPos smeltFurnace;
     private boolean smeltCollect;
+    /** Забрать из печи всё (старая кузница после переноса), а не только готовые слитки. */
+    private boolean smeltEmptyAll;
 
     /** Печь кузницы: сначала доменная (руда плавится вдвое быстрее), потом обычная. */
     @Nullable
@@ -1761,9 +1964,11 @@ public class WorkGoal extends Goal {
     }
 
     private static List<BlockPos> smithyFurnaces(ServerLevel level, Outpost o) {
+        return o.hasZone(WorkZone.SMITHY) ? furnacesAround(level, o.zone(WorkZone.SMITHY)) : new ArrayList<>();
+    }
+
+    private static List<BlockPos> furnacesAround(ServerLevel level, BlockPos at) {
         List<BlockPos> out = new ArrayList<>();
-        if (!o.hasZone(WorkZone.SMITHY)) return out;
-        BlockPos at = o.zone(WorkZone.SMITHY);
         for (BlockPos p : BlockPos.betweenClosed(at.offset(-3, -1, -3), at.offset(3, 2, 3))) {
             if (level.getBlockEntity(p) instanceof net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity) out.add(p.immutable());
         }
@@ -1777,6 +1982,25 @@ public class WorkGoal extends Goal {
      */
     private boolean smeltPlan(ServerLevel level, Outpost o, Resident r, long now) {
         smeltFurnace = null;
+        smeltEmptyAll = false;
+        // Кузницу перенесли: всё, что осталось в печах старой кузницы (сырьё, топливо, слитки), уносится на склад.
+        BlockPos old = o.zones.previous(WorkZone.SMITHY);
+        if (old != null && level.isLoaded(old)) {
+            boolean any = false;
+            for (BlockPos p : furnacesAround(level, old)) {
+                var f = furnaceAt(level, p);
+                if (f == null) continue;
+                for (int slot = 0; slot < 3; slot++) {
+                    if (!f.getItem(slot).isEmpty()) {
+                        smeltFurnace = p;
+                        smeltCollect = true;
+                        smeltEmptyAll = true;
+                        return true;
+                    }
+                }
+            }
+            if (!any) o.zones.forgetPrevious(WorkZone.SMITHY);
+        }
         for (BlockPos p : smithyFurnaces(level, o)) {
             var f = furnaceAt(level, p);
             if (f != null && !f.getItem(2).isEmpty()) {
@@ -1810,11 +2034,12 @@ public class WorkGoal extends Goal {
         }
         if (smeltCollect) {
             if (!go(o, smeltFurnace, 2.2, 500)) return false;
-            ItemStack out = f.getItem(2);
-            if (!out.isEmpty()) {
+            for (int slot = smeltEmptyAll ? 0 : 2; slot <= 2; slot++) {
+                ItemStack out = f.getItem(slot);
+                if (out.isEmpty()) continue;
                 mob.swing(InteractionHand.MAIN_HAND);
                 ItemStack left = mob.collect(out.copy());
-                f.setItem(2, left);
+                f.setItem(slot, left);
                 f.setChanged();
                 level.playSound(null, smeltFurnace, SoundEvents.FURNACE_FIRE_CRACKLE, SoundSource.BLOCKS, 0.6f, 1.0f);
                 r.lastRealWork = now;
@@ -2071,10 +2296,10 @@ public class WorkGoal extends Goal {
         return switch (role) {
             case LUMBERJACK -> o.zone(WorkZone.WOODYARD);
             case FARMER -> o.zone(WorkZone.FARM).offset(1, 0, 0);
-            case MINER -> o.marker(Marker.MINE);
+            case MINER -> o.mine().entry();
             case SMITH -> o.design().markers(Marker.SMITHY).isEmpty() ? o.marker(Marker.STORAGE) : o.marker(Marker.SMITHY);
             case MAGE -> o.hasZone(WorkZone.MAGE_TOWER) ? o.zone(WorkZone.MAGE_TOWER) : o.marker(Marker.THRONE);
-            case SKOTOVOD -> o.design().markers(Marker.PEN).isEmpty() ? o.marker(Marker.YARD) : o.marker(Marker.PEN);
+            case SKOTOVOD -> o.hasZone(WorkZone.PEN) ? o.zone(WorkZone.PEN) : o.marker(Marker.YARD);
             case STEWARD -> switch (cycle % 3) {
                 case 0 -> o.marker(Marker.THRONE);
                 case 1 -> o.marker(Marker.BOARD);

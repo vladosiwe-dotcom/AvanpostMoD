@@ -822,6 +822,54 @@ public final class OutpostGameTests {
         h.succeed();
     }
 
+    /**
+     * Перенос загона, кузницы и шахты: зона переезжает только в готовую постройку, прежнее место запоминается
+     * (оттуда уводят скот и забирают печи), новая шахта не готова, пока шахтёр не прокопает ствол; всё сохраняется.
+     */
+    @GameTest(template = "empty")
+    public static void relocationRebindsZones(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        Outpost o = virtualOutpost(level, data, FAR.offset(2048, 0, 0), 2, UUID.randomUUID());
+        try {
+            long now = level.getGameTime();
+            BlockPos oldPen = o.zone(com.vladosiwe.lordsoutpost.outpost.WorkZone.PEN);
+            var pen = new com.vladosiwe.lordsoutpost.outpost.Project(++o.projectCounter, com.vladosiwe.lordsoutpost.outpost.Project.Type.PEN,
+                    o.center.offset(50, 0, 0), net.minecraft.world.level.block.Rotation.NONE);
+            o.projects.add(pen);
+            h.assertTrue(o.zone(com.vladosiwe.lordsoutpost.outpost.WorkZone.PEN).equals(oldPen), "пока загон не построен, работают по старому месту");
+            pen.paid = pen.size(o);
+            pen.placed.set(0, pen.size(o));
+            com.vladosiwe.lordsoutpost.data.Projects.finish(o, pen, now);
+            h.assertTrue(o.zone(com.vladosiwe.lordsoutpost.outpost.WorkZone.PEN).equals(pen.zoneAnchor()), "загон переехал в новую постройку");
+            h.assertTrue(oldPen.equals(o.zones.previous(com.vladosiwe.lordsoutpost.outpost.WorkZone.PEN)), "старое место запомнено для перевода скота");
+            h.assertTrue(com.vladosiwe.lordsoutpost.data.ChunkReconciliation.penSize(o) == 3, "новый загон 7×7");
+
+            var mine = new com.vladosiwe.lordsoutpost.outpost.Project(++o.projectCounter, com.vladosiwe.lordsoutpost.outpost.Project.Type.MINE,
+                    o.center.offset(-50, 0, 0), net.minecraft.world.level.block.Rotation.CLOCKWISE_90);
+            o.projects.add(mine);
+            o.mineCursor = 40;
+            mine.paid = mine.size(o);
+            mine.placed.set(0, mine.size(o));
+            com.vladosiwe.lordsoutpost.data.Projects.finish(o, mine, now);
+            var site = o.mine();
+            h.assertTrue(site.exists() && !site.ready() && site.top().equals(mine.origin), "новая шахта ждёт проходки ствола");
+            h.assertTrue(o.mineCursor == 0, "штрек новой шахты начинается сначала");
+            h.assertTrue(site.entry().equals(mine.zoneAnchor()), "шахтёр получает новую точку входа");
+            o.zones.mineDepth = 3;
+            Outpost copy = Outpost.load(o.save(level.registryAccess()), level.registryAccess());
+            h.assertTrue(copy.zones.mineDepth == 3 && !copy.mine().ready() && copy.mine().top().equals(mine.origin), "проходка ствола сохраняется");
+            h.assertTrue(copy.zone(com.vladosiwe.lordsoutpost.outpost.WorkZone.PEN).equals(pen.zoneAnchor())
+                    && oldPen.equals(copy.zones.previous(com.vladosiwe.lordsoutpost.outpost.WorkZone.PEN)), "перенос загона сохраняется");
+            copy.zones.mineDepth = com.vladosiwe.lordsoutpost.outpost.WorkZones.MINE_DEPTH;
+            h.assertTrue(copy.mine().ready() && copy.mine().bottom().equals(mine.origin.below(6)), "после проходки шахта готова, дно на 6 блоков ниже");
+        } finally {
+            OutpostManager.abandon(data, o, level.getGameTime());
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
     /** Тир кирки ограничен одновременно развитием форта и личным уровнем шахтёра. */
     @GameTest(template = "empty")
     public static void minerToolTierUsesBothProgressions(GameTestHelper h) {

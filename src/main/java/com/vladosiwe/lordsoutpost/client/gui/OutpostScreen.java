@@ -497,7 +497,13 @@ public class OutpostScreen extends Screen {
             int color = !z.problem().isEmpty() ? Ui.WARN : z.moved() ? Ui.ACCENT : Ui.MUTED;
             Ui.text(g, font, label, rx, zy + 1, 84, color);
             if (!z.problem().isEmpty()) hits.add(rx, zy, 84, 10, null, Component.translatable("lordsoutpost.ui.zones.problem", z.problem()));
-            if (z.relocatable()) {
+            if (z.id().equals("pen") || z.id().equals("smithy") || z.id().equals("mine")) {
+                // Загон, кузница и шахта — постройки: на новом месте их сначала строят, потом зона переезжает.
+                String zid = z.id();
+                Ui.button(g, font, hits, rx + 88, zy, 94, 10, Component.translatable("lordsoutpost.ui.zones.rebuild"), true, false, mouseX, mouseY,
+                        () -> Net.action(view.id, Action.ORDER_PROJECT, t -> t.putString("type", zid)),
+                        Component.translatable("lordsoutpost.ui.zones.rebuild.tip"));
+            } else if (z.relocatable()) {
                 String zid = z.id();
                 Ui.button(g, font, hits, rx + 88, zy, 52, 10, Component.translatable("lordsoutpost.ui.zones.here"), true, false, mouseX, mouseY,
                         () -> Net.action(view.id, Action.MOVE_ZONE, t -> { t.putString("zone", zid); t.putBoolean("here", true); }),

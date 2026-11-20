@@ -178,6 +178,7 @@ add(P + 'event.project_ordered', 'Лорд заказал постройку: %s
 add(P + 'event.project_done', 'Достроено: %s.', 'Completed: %s.')
 add(P + 'event.project_cancelled', 'Заказ отменён: %s.', 'Order cancelled: %s.')
 add(P + 'event.caravan_goods_lost', 'Вьючное животное каравана пало — груз остался на дороге.', 'The caravan\'s pack animal fell — its cargo lies on the road.')
+add(P + 'event.mine_ready', 'Новый шахтный ствол прокопан: шахтёр начинает новый штрек.', 'The new mine shaft is dug: the miner starts a new tunnel.')
 add(P + 'event.zone_moved', 'Рабочая зона «%s» перенесена в %s.', 'Work zone "%s" moved to %s.')
 add(P + 'event.zone_reset', 'Рабочая зона «%s» возвращена на место по чертежу.', 'Work zone "%s" returned to its blueprint place.')
 add(P + 'event.ambush_lost', 'Засада: караван потерял половину груза.', 'Ambush: the caravan lost half its cargo.')
@@ -267,6 +268,8 @@ add(P + 'ui.zones.problem', 'Проблема: %s', 'Problem: %s')
 add(P + 'ui.zones.here', 'Сюда', 'Here')
 add(P + 'ui.zones.here.tip', 'Перенести зону туда, где вы стоите (во дворе).', 'Move the zone to where you stand (in the yard).')
 add(P + 'ui.zones.reset', 'Назад', 'Reset')
+add(P + 'ui.zones.rebuild', 'Новое место', 'New place')
+add(P + 'ui.zones.rebuild.tip', 'Построить этот объект перед вами (смотрите туда, где строить). Когда постройка будет готова, работник переедет туда.', 'Build this object in front of you (look where to build). When it is done, the worker moves there.')
 add(P + 'ui.zones.reset.tip', 'Вернуть зону на место по чертежу.', 'Return the zone to its blueprint place.')
 add(P + 'ui.shop', 'Лавка (%s/9)', 'Shop (%s/9)')
 add(P + 'ui.shop.empty', 'Пусто: торговец принесёт излишки склада.', 'Empty: the merchant brings storehouse surplus.')
@@ -300,7 +303,10 @@ add(P + 'ui.build.hint', 'Постройки оплачиваются из те�
 for k, ru, en, d_ru, d_en in [
         ('house', 'Дом', 'House', '+2 места для жителей, две кровати.', '+2 resident places, two beds.'),
         ('watchtower', 'Сторожевая башня', 'Watchtower', 'Пост для стрелка, +5% к обороне.', 'A post for an archer, +5% defence.'),
-        ('wall', 'Участок стены', 'Wall section', 'Стена 11 блоков, +3% к обороне.', '11-block wall, +3% defence.')]:
+        ('wall', 'Участок стены', 'Wall section', 'Стена 11 блоков, +3% к обороне.', '11-block wall, +3% defence.'),
+        ('pen', 'Новый загон', 'New pen', 'Загон 7×7. Когда готов, скотовод переводит туда скот.', 'A 7×7 pen. When done, the rancher moves the herd there.'),
+        ('smithy', 'Новая кузница', 'New smithy', 'Печи, наковальня, стол. Кузнец переезжает и забирает содержимое старых печей.', 'Furnaces, anvil, table. The smith moves and empties the old furnaces.'),
+        ('mine', 'Новая шахта', 'New mine', 'Копёр над стволом. Ствол с лестницами прокапывает шахтёр, затем ведёт новый штрек.', 'A headframe. The miner digs the laddered shaft, then a new tunnel.')]:
     add(P + 'project.' + k, ru, en)
     add(P + 'project.' + k + '.desc', d_ru, d_en)
 for k, ru, en in [('mine', 'Шахта', 'Mine'), ('woodyard', 'Дровяной двор', 'Woodyard'), ('pen', 'Загон', 'Pen'), ('farm', 'Поле', 'Field'),
@@ -311,7 +317,8 @@ for k, ru, en in [('repair_armor', 'Ремонт брони', 'Armour repair'), 
                   ('breed_animals', 'Разведение', 'Breeding'), ('fetch_seeds', 'Семена', 'Seeds'), ('fetch_torches', 'Факелы', 'Torches'),
                   ('forge_tool', 'Ковка', 'Forging'), ('fetch_feed', 'Корм', 'Feed'), ('fetch_tools', 'Инструменты', 'Tools'),
                   ('fetch_pickaxe', 'Кирка', 'Pickaxe'), ('smelt_ore', 'Переплавка', 'Smelting'), ('fetch_sapling', 'Саженец', 'Sapling'),
-                  ('stock_shop', 'Товар в лавку', 'Shop stock')]:
+                  ('stock_shop', 'Товар в лавку', 'Shop stock'), ('fetch_build', 'Материал для стройки', 'Building material'),
+                  ('fetch_ladders', 'Лестницы для ствола', 'Shaft ladders')]:
     add(P + 'task.' + k, ru, en)
 for k, ru, en in [('created', 'создана', 'created'), ('available', 'ждёт исполнителя', 'waiting'), ('reserved', 'материалы отложены', 'materials reserved'),
                   ('in_progress', 'в работе', 'in progress'), ('paused', 'приостановлена', 'paused')]:

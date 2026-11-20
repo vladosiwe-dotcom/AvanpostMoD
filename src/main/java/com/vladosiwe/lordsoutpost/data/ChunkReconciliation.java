@@ -636,8 +636,8 @@ public final class ChunkReconciliation {
      * дальше запись следует за настоящим загоном, где скотовод сам пригоняет, разводит и забивает скот.
      */
     private static void pen(ServerLevel level, Outpost o) {
-        if (o.design().markers(Marker.PEN).isEmpty()) return;
-        BlockPos pen = o.marker(Marker.PEN);
+        if (!o.hasZone(com.vladosiwe.lordsoutpost.outpost.WorkZone.PEN)) return;
+        BlockPos pen = o.zone(com.vladosiwe.lordsoutpost.outpost.WorkZone.PEN);
         List<Animal> animals = penAnimals(level, o);
         if (!o.penSpawned) {
             o.penSpawned = true;
@@ -659,12 +659,14 @@ public final class ChunkReconciliation {
     }
 
     public static int penSize(Outpost o) {
+        // Загон, построенный по заказу, — 7×7 (изгородь в 3 блоках от центра).
+        if (o.zones.link(com.vladosiwe.lordsoutpost.outpost.WorkZone.PEN) != null) return 3;
         return o.tier == 1 ? 2 : 3;
     }
 
     /** Скот внутри загона. */
     public static List<Animal> penAnimals(ServerLevel level, Outpost o) {
-        BlockPos pen = o.marker(Marker.PEN);
+        BlockPos pen = o.zone(com.vladosiwe.lordsoutpost.outpost.WorkZone.PEN);
         int size = penSize(o) - 1;
         AABB box = new AABB(pen.getX() - size, pen.getY() - 1, pen.getZ() - size, pen.getX() + size + 1, pen.getY() + 3, pen.getZ() + size + 1);
         return level.getEntitiesOfClass(Animal.class, box, a -> a.isAlive() && (a instanceof Cow || a instanceof Sheep || a instanceof Pig || a instanceof Chicken));

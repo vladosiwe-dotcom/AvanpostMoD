@@ -22,13 +22,18 @@ import java.util.List;
  */
 public final class Project {
     public enum Type {
-        HOUSE("house"), WATCHTOWER("watchtower"), WALL("wall");
+        HOUSE("house", null), WATCHTOWER("watchtower", null), WALL("wall", null),
+        /** Новые места рабочих объектов: после постройки соответствующая зона переезжает сюда. */
+        PEN("pen", WorkZone.PEN), SMITHY("smithy", WorkZone.SMITHY), MINE("mine", WorkZone.MINE);
 
         public static final Type[] VALUES = values();
         public final String id;
+        /** Зона, которую переносит эта постройка (null — обычная постройка). */
+        @Nullable public final WorkZone relocates;
 
-        Type(String id) {
+        Type(String id, @Nullable WorkZone relocates) {
             this.id = id;
+            this.relocates = relocates;
         }
 
         public Component label() {
@@ -109,6 +114,16 @@ public final class Project {
     public float progress(Outpost o) {
         int n = size(o);
         return n == 0 ? 1f : placed.cardinality() / (float) n;
+    }
+
+    /** Якорь рабочей зоны, которую переносит постройка (центр загона, место кузнеца, вход в шахту). */
+    public BlockPos zoneAnchor() {
+        return origin.offset(ProjectDesigner.anchor(type).rotate(rotation));
+    }
+
+    /** Направление штрека новой шахты (единичный вектор по горизонтали). */
+    public BlockPos mineDir() {
+        return new BlockPos(0, 0, 1).rotate(rotation);
     }
 
     /** Позиция дозорного на башне в мире. */

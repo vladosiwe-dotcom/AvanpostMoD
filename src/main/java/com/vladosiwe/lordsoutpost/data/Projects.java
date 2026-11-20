@@ -55,7 +55,11 @@ public final class Projects {
     /** Ставит заказ перед игроком (по направлению взгляда). Ничего не меняет, если место не годится. */
     public static OrderResult order(ServerLevel level, Outpost o, Project.Type type, BlockPos at, Direction facing, long now) {
         int active = 0;
-        for (Project p : o.projects) if (p.active()) active++;
+        for (Project p : o.projects) {
+            if (p.active()) active++;
+            // Переносить один объект двумя заказами сразу нельзя.
+            if (p.active() && p.type == type && type.relocates != null) return OrderResult.TOO_MANY;
+        }
         if (active >= MAX_ACTIVE) return OrderResult.TOO_MANY;
         Direction dir = facing.getAxis().isHorizontal() ? facing : Direction.NORTH;
         int x = at.getX() + dir.getStepX() * ProjectDesigner.depth(type), z = at.getZ() + dir.getStepZ() * ProjectDesigner.depth(type);
@@ -311,7 +315,7 @@ public final class Projects {
                 Step s = steps.get(i);
                 BlockPos pos = o.world(s.pos());
                 ChunkReconciliation.placeStep(level, o, s, effects);
-                if (p.floor(o, i)) foundation(level, o, pos);
+                if (p.floor(o, i) && !s.state().isAir()) foundation(level, o, pos);
                 // Заказ Лорда — его постройка: ремонт, лесоруб и чертежи тиров её не трогают.
                 if (!s.state().isAir()) o.notePlayerPlaced(pos);
                 p.placed.set(i);
@@ -347,10 +351,18 @@ public final class Projects {
         }
     }
 
-    private static void finish(Outpost o, Project p, long now) {
+    public static void finish(Outpost o, Project p, long now) {
         if (p.placed.cardinality() >= p.size(o) && p.paid >= p.size(o)) {
             p.state = Project.State.DONE;
             o.log(now, "lordsoutpost.event.project_done", p.type.id);
+            // Новое место рабочего объекта готово: зона и привязки профессии переезжают сюда.
+            if (p.type.relocates != null) {
+                var zone = p.type.relocates;
+                BlockPos was = o.hasZone(zone) ? o.zone(zone) : p.zoneAnchor();
+                o.zones.rebind(zone, p.zoneAnchor(), p.id, was);
+                if (zone == com.vladosiwe.lordsoutpost.outpost.WorkZone.MINE) o.mineCursor = 0;
+                o.log(now, "lordsoutpost.event.zone_moved", zone.id, p.zoneAnchor().toShortString());
+            }
         }
         o.dirtyForClients = true;
     }
