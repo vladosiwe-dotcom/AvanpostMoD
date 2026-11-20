@@ -48,9 +48,7 @@ public class CaravanGoal extends Goal {
         int x = (int) Math.floor(mob.getX() + dx / dist * hop), z = (int) Math.floor(mob.getZ() + dz / dist * hop);
         if (!level.hasChunk(x >> 4, z >> 4)) return;
         BlockPos target = new BlockPos(x, level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z), z);
-        if (mob.tickCount % 20 == 0 || mob.getNavigation().isDone()) {
-            mob.getNavigation().moveTo(target.getX() + 0.5, target.getY(), target.getZ() + 0.5, 0.95);
-        }
+        mob.pathTo(target.getX() + 0.5, target.getY(), target.getZ() + 0.5, 0.95);
         // Раз в пять секунд проверяем, что караван продвигается; если упёрся в реку или обрыв — переносим на переход вперёд.
         if (mob.tickCount % 100 == 0) {
             if (lastDist - dist < 2.0) {

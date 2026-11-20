@@ -149,8 +149,8 @@ public class BuildGoal extends Goal {
             }
             Path path = mob.getNavigation().getPath();
             if (path == null || path.isDone() || !workPosition.equals(path.getTarget())) {
-                if (workPath != null && workPath.canReach()) mob.getNavigation().moveTo(workPath, 1.0);
-                else mob.getNavigation().moveTo(wx, wy, wz, 1.0);
+                if (workPath != null && workPath.canReach() && (path == null || path != workPath)) mob.getNavigation().moveTo(workPath, 1.0);
+                else mob.pathTo(wx, wy, wz, 1.0);
             }
             return;
         }

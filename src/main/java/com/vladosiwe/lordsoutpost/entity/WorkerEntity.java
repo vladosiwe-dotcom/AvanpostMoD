@@ -116,6 +116,7 @@ public class WorkerEntity extends OutpostNpc implements net.minecraft.world.item
     protected void registerGoals() {
         goalSelector.addGoal(0, new FloatGoal(this));
         goalSelector.addGoal(1, new net.minecraft.world.entity.ai.goal.OpenDoorGoal(this, true));
+        goalSelector.addGoal(1, new com.vladosiwe.lordsoutpost.entity.ai.OpenGateGoal(this));
         goalSelector.addGoal(1, new ShelterGoal(this));
         goalSelector.addGoal(2, new CaravanGoal(this));
         goalSelector.addGoal(3, new BuildGoal(this));

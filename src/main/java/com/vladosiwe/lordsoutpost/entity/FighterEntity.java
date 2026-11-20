@@ -126,6 +126,7 @@ public class FighterEntity extends OutpostNpc implements RangedAttackMob {
     protected void registerGoals() {
         goalSelector.addGoal(0, new FloatGoal(this));
         goalSelector.addGoal(1, new net.minecraft.world.entity.ai.goal.OpenDoorGoal(this, true));
+        goalSelector.addGoal(1, new com.vladosiwe.lordsoutpost.entity.ai.OpenGateGoal(this));
         goalSelector.addGoal(2, new MeleeAttackGoal(this, 1.15, true) {
             @Override
             public boolean canUse() {

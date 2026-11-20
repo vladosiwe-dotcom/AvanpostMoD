@@ -68,6 +68,19 @@ public abstract class OutpostNpc extends PathfinderMob implements OutpostMember 
         if (getNavigation() instanceof net.minecraft.world.entity.ai.navigation.GroundPathNavigation nav) nav.setCanOpenDoors(true);
     }
 
+    /** Навигация с калитками: закрытая калитка своего форта считается дверью, которую можно открыть. */
+    @Override
+    protected net.minecraft.world.entity.ai.navigation.PathNavigation createNavigation(Level level) {
+        return new net.minecraft.world.entity.ai.navigation.GroundPathNavigation(this, level) {
+            @Override
+            protected net.minecraft.world.level.pathfinder.PathFinder createPathFinder(int maxVisitedNodes) {
+                nodeEvaluator = new com.vladosiwe.lordsoutpost.entity.ai.GateNodeEvaluator();
+                nodeEvaluator.setCanPassDoors(true);
+                return new net.minecraft.world.level.pathfinder.PathFinder(nodeEvaluator, maxVisitedNodes);
+            }
+        };
+    }
+
     @Override
     protected void defineSynchedData(SynchedEntityData.Builder builder) {
         super.defineSynchedData(builder);
@@ -334,6 +347,35 @@ public abstract class OutpostNpc extends PathfinderMob implements OutpostMember 
      *
      * @return true, когда сущность на месте
      */
+    private int repathAt;
+    @Nullable private BlockPos repathGoal;
+    private boolean repathReach;
+
+    /**
+     * Запрос пути с ограничением частоты. Поиск пути — самая дорогая часть ИИ жителей: раньше при недостижимой цели
+     * он повторялся каждый тик. Теперь: путь к той же цели обновляется не чаще раза в 2 с, а после неудачи
+     * (пути нет или он обрывается, не дойдя) — с паузой 1,5–2,5 с.
+     * Возвращает true, если есть путь, который ведёт к цели.
+     */
+    public boolean pathTo(double x, double y, double z, double speed) {
+        BlockPos goal = BlockPos.containing(x, y, z);
+        boolean same = goal.equals(repathGoal);
+        boolean moving = !getNavigation().isDone();
+        if (same && tickCount < repathAt) return moving && repathReach;
+        // Дошёл по прошлому пути, но ещё не на месте — можно уточнить путь чуть раньше обычного.
+        var path = getNavigation().createPath(x, y, z, 0);
+        repathGoal = goal;
+        repathReach = path != null && path.canReach();
+        if (path != null) getNavigation().moveTo(path, speed);
+        repathAt = tickCount + (repathReach ? 40 : 30 + random.nextInt(20));
+        return repathReach;
+    }
+
+    /** Сбросить ограничение (цель сменилась по смыслу, например открылась калитка). */
+    public void repathNow() {
+        repathAt = 0;
+    }
+
     public boolean approach(BlockPos pos, double speed, double reach, int patience) {
         double dist = distanceToSqr(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5);
         if (dist <= reach * reach) {
@@ -342,8 +384,10 @@ public abstract class OutpostNpc extends PathfinderMob implements OutpostMember 
             return true;
         }
         if (getNavigation().isDone() || tickCount % 40 == 0) {
-            boolean ok = getNavigation().moveTo(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, speed);
-            if (!ok) stuckTicks += 20;
+            int before = repathAt;
+            boolean ok = pathTo(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, speed);
+            // Штраф за неудачу — только за новый поиск, а не за каждый тик ожидания.
+            if (!ok && repathAt != before) stuckTicks += 20;
         }
         stuckTicks++;
         if (stuckTicks > patience) {

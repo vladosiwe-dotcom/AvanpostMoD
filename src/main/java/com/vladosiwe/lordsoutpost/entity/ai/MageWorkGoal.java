@@ -39,7 +39,7 @@ public class MageWorkGoal extends Goal {
     @Nullable private Stage stage;
     @Nullable private MageCraft.Recipe recipe;
     @Nullable private OutpostTask task;
-    private int timer, patience;
+    private int timer, patience, repathAt;
     private long nextTry;
 
     public MageWorkGoal(PathfinderMob mob, Supplier<Outpost> outpost) {
@@ -145,7 +145,11 @@ public class MageWorkGoal extends Goal {
             mob.getNavigation().stop();
             return true;
         }
-        if (mob.getNavigation().isDone() || mob.tickCount % 40 == 0) mob.getNavigation().moveTo(target.getX() + 0.5, target.getY(), target.getZ() + 0.5, 0.9);
+        // Поиск пути дорог: не чаще раза в 2 с, а после неудачи — через 2 с, а не каждый тик.
+        if (mob.tickCount >= repathAt) {
+            boolean ok = mob.getNavigation().moveTo(target.getX() + 0.5, target.getY(), target.getZ() + 0.5, 0.9);
+            repathAt = mob.tickCount + (ok ? 40 : 40 + mob.getRandom().nextInt(20));
+        }
         return false;
     }
 

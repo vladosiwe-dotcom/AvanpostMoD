@@ -112,16 +112,12 @@ public class DutyGoal extends Goal {
             waypointTicks = 0;
             return;
         }
-        if (mob.getNavigation().isDone() || mob.tickCount % 40 == 0) {
-            mob.getNavigation().moveTo(target.getX() + 0.5, target.getY(), target.getZ() + 0.5, 0.85);
-        }
+        mob.pathTo(target.getX() + 0.5, target.getY(), target.getZ() + 0.5, 0.85);
     }
 
     private void walk(BlockPos target, double speed, double reach) {
         if (mob.distanceToSqr(target.getX() + 0.5, target.getY(), target.getZ() + 0.5) <= reach * reach) return;
-        if (mob.getNavigation().isDone() || mob.tickCount % 40 == 0) {
-            mob.getNavigation().moveTo(target.getX() + 0.5, target.getY(), target.getZ() + 0.5, speed);
-        }
+        mob.pathTo(target.getX() + 0.5, target.getY(), target.getZ() + 0.5, speed);
     }
 
     private void follow(Entity leader, double keep, double teleportAt) {

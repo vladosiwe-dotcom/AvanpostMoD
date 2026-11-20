@@ -245,7 +245,7 @@ public class WorkGoal extends Goal {
                 // Дошёл до дома: ложится в свободную кровать рядом.
                 BlockPos free = freeBed(level, bed);
                 if (free != null && mob.blockPosition().distSqr(free) < 16) mob.startSleeping(free);
-                else if (free != null) mob.getNavigation().moveTo(free.getX() + 0.5, free.getY(), free.getZ() + 0.5, 0.8);
+                else if (free != null) mob.pathTo(free.getX() + 0.5, free.getY(), free.getZ() + 0.5, 0.8);
             }
             phase = Phase.DECIDE;
             return;
@@ -480,7 +480,8 @@ public class WorkGoal extends Goal {
                 if (!level.getBlockState(base.below()).is(BlockTags.DIRT)) continue;
                 Outpost occupied = data.findAt(base);
                 if ((occupied != null && occupied != o) || (occupied == o && !o.insideWalls(base))
-                        || o.claimedTrees.contains(base) || !naturalLeaves(level, top) || plantedByPlayer(data, base)) continue;
+                        || o.claimedTrees.contains(base) || !naturalLeaves(level, top) || plantedByPlayer(data, base)
+                        || structural(level, data, base) || structural(level, data, top)) continue;
                 // Сначала освобождаем двор собственного форта, затем идём за деревьями за стенами.
                 double d = mob.distanceToSqr(base.getX(), base.getY(), base.getZ()) - (occupied == o ? 1_000_000.0 : 0.0);
                 // Форт строится из древесины своей палитры: её породу лесоруб берёт охотнее, а при нехватке дерева — в первую очередь.
@@ -598,7 +599,7 @@ public class WorkGoal extends Goal {
                 saplingSupplied = true;
             }
             if (!go(o, tree, 3.0, 500)) return false;
-            collectTree(level, tree);
+            collectTree(level, OutpostSavedData.get(level), tree);
             if (logs.isEmpty()) return true;
             timer = 12;
         }
@@ -613,7 +614,8 @@ public class WorkGoal extends Goal {
         timer = 12;
         BlockPos log = logs.pollFirst();
         BlockState state = level.getBlockState(log);
-        if (state.is(BlockTags.LOGS)) {
+        // Повторная проверка: пока лесоруб шёл, рядом могли начать стройку или поставить блок игрока.
+        if (state.is(BlockTags.LOGS) && !structural(level, OutpostSavedData.get(level), log)) {
             for (ItemStack drop : Block.getDrops(state, level, log, null, mob, AXE)) {
                 ItemStack left = mob.collect(drop);
                 if (!left.isEmpty()) mob.spawnAtLocation(left);
@@ -660,7 +662,16 @@ public class WorkGoal extends Goal {
     }
 
     /** Все брёвна дерева (связанные, в пределах кроны), сверху вниз. */
-    private void collectTree(ServerLevel level, BlockPos base) {
+    /** Бревно — часть стены, башни или заказанной постройки какого-либо форта рядом, либо поставлено игроком. */
+    private static boolean structural(ServerLevel level, OutpostSavedData data, BlockPos pos) {
+        BlockState actual = level.getBlockState(pos);
+        for (Outpost other : data.near(pos.getX(), pos.getZ(), 160)) {
+            if (other.structural(pos, actual) || other.placedByPlayer(pos)) return true;
+        }
+        return false;
+    }
+
+    private void collectTree(ServerLevel level, OutpostSavedData data, BlockPos base) {
         Set<BlockPos> seen = new HashSet<>();
         Deque<BlockPos> queue = new ArrayDeque<>();
         List<BlockPos> found = new ArrayList<>();
@@ -669,7 +680,7 @@ public class WorkGoal extends Goal {
         // Крупные 2×2 и джунглевые деревья могут содержать заметно больше 64 брёвен.
         while (!queue.isEmpty() && found.size() < 256) {
             BlockPos p = queue.poll();
-            if (!level.getBlockState(p).is(BlockTags.LOGS)) continue;
+            if (!level.getBlockState(p).is(BlockTags.LOGS) || structural(level, data, p)) continue;
             found.add(p);
             for (BlockPos n : BlockPos.betweenClosed(p.offset(-1, 0, -1), p.offset(1, 1, 1))) {
                 BlockPos q = n.immutable();
@@ -1362,9 +1373,7 @@ public class WorkGoal extends Goal {
             if (!mob.getNavigation().isDone()) mob.getNavigation().stop();
             return true;
         }
-        if (mob.getNavigation().isDone() || mob.tickCount % 20 == 0) {
-            mob.getNavigation().moveTo(target.getX() + 0.5, target.getY(), target.getZ() + 0.5, 1.0);
-        }
+        mob.pathTo(target.getX() + 0.5, target.getY(), target.getZ() + 0.5, 1.0);
         return false;
     }
 

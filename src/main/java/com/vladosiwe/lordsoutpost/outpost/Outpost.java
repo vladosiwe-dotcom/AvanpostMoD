@@ -285,6 +285,27 @@ public final class Outpost {
         return pos.getY() >= center.getY() - 8 && pos.getY() <= center.getY() + 40 && insideHorizontally(pos.getX(), pos.getZ(), radius());
     }
 
+    /**
+     * Клетка принадлежит постройкам форта: чертежу текущего или строящегося тира либо заказанной постройке.
+     * Такие блоки (брёвна стен и башен, ограды загона) не трогают ни лесорубы, ни расчистка.
+     */
+    public boolean structural(BlockPos pos, net.minecraft.world.level.block.state.BlockState actual) {
+        if (actual.isAir() || !contains(pos)) return false;
+        BlockPos rel = pos.subtract(center);
+        // Постройка — только если чертёж хочет здесь именно этот блок: бревно стены — да, дерево на месте будущего дома — нет.
+        var cell = design().cells.get(rel);
+        if (cell != null && cell.state().getBlock() == actual.getBlock()) return true;
+        if (!complete()) {
+            var next = blueprint().design(tier + 1).cells.get(rel);
+            if (next != null && next.state().getBlock() == actual.getBlock()) return true;
+        }
+        for (Project p : projects) {
+            if (p.state == Project.State.CANCELLED) continue;
+            for (var step : p.steps(this)) if (step.pos().equals(rel) && step.state().getBlock() == actual.getBlock()) return true;
+        }
+        return false;
+    }
+
     public double distanceSqr(double x, double z) {
         double dx = x - center.getX(), dz = z - center.getZ();
         return dx * dx + dz * dz;

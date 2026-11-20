@@ -1641,6 +1641,8 @@ public final class OutpostGameTests {
                     var inPen = com.vladosiwe.lordsoutpost.data.ChunkReconciliation.penAnimals(level, o);
                     long luredCows = testCows.stream().filter(inPen::contains).count();
                     if ((h.getTick() - mark[0]) % 200 == 0) LordsOutpost.LOGGER.info("Работа жителей: приведено коров {}", luredCows);
+                    if ((h.getTick() - mark[0]) % 200 == 0) LordsOutpost.LOGGER.info("Работа жителей: условия: брёвна {} двор {} двор-пересажен {} трава {} пересажено {} мусор {} донесено {} коровы {} шахтёр {}",
+                            logsLeft, courtyardLogsLeft, courtyardReplanted, courtyardPlantCleared, replanted, litterGone, o.depositedItems, luredCows, minerWorked);
                     if (logsLeft > 0 || courtyardLogsLeft > 0 || courtyardReplanted || !courtyardPlantCleared
                             || !replanted || !litterGone || o.depositedItems < 24 + 5 || luredCows < 1 || !minerWorked) return;
                     // Склад: бочки отражают запас.
