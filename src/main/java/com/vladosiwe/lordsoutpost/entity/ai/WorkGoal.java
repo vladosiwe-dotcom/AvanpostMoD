@@ -90,7 +90,10 @@ public class WorkGoal extends Goal {
     @Nullable private BlockPos tree;
     @Nullable private BlockPos vegetation;
     private final Deque<BlockPos> logs = new ArrayDeque<>();
+    /** Природная листва срубленного дерева: её обрывают ради саженцев и палок. */
+    private final Deque<BlockPos> leaves = new ArrayDeque<>();
     @Nullable private Block treeLog;
+    private boolean felled, saplingSupplied;
     // Шахтёр.
     private int column = -1;
     // Скотовод.
@@ -173,6 +176,9 @@ public class WorkGoal extends Goal {
         tree = null;
         vegetation = null;
         logs.clear();
+        leaves.clear();
+        felled = false;
+        saplingSupplied = false;
         if (animal != null && animal.isLeashed() && animal.getLeashHolder() == mob) animal.dropLeash(true, false);
         if (feed != null) holdFeed(false);
         animal = null;
@@ -187,6 +193,7 @@ public class WorkGoal extends Goal {
         if (task != null && task.active() && o != null) Logistics.cancel(o, task, "interrupted", mob.level().getGameTime());
         task = null;
         item = null;
+        smeltFurnace = null;
     }
 
     @Override
@@ -241,7 +248,7 @@ public class WorkGoal extends Goal {
                     case MINER -> mine(level, o, r, now);
                     case SKOTOVOD -> skotovodHunting ? hunt(level, o, r, now) : herd(level, o, r, now);
                     case FARMER -> farm(level, o, r, now);
-                    case SMITH -> smith(level, o, r, now);
+                    case SMITH -> smeltFurnace != null ? smelt(level, o, r, now) : smith(level, o, r, now);
                     default -> true;
                 };
                 if (done) {
@@ -453,6 +460,8 @@ public class WorkGoal extends Goal {
                         || o.claimedTrees.contains(base) || !naturalLeaves(level, top) || plantedByPlayer(data, base)) continue;
                 // Сначала освобождаем двор собственного форта, затем идём за деревьями за стенами.
                 double d = mob.distanceToSqr(base.getX(), base.getY(), base.getZ()) - (occupied == o ? 1_000_000.0 : 0.0);
+                // Форт строится из древесины своей палитры: её породу лесоруб берёт охотнее, а при нехватке дерева — в первую очередь.
+                if (level.getBlockState(base).is(o.palette.log)) d -= o.scarce == Resource.WOOD ? 4096 : 1024;
                 if (d < bestD) {
                     bestD = d;
                     best = base;
@@ -462,6 +471,9 @@ public class WorkGoal extends Goal {
         tree = best;
         o.claimedTrees.add(best);
         logs.clear();
+        leaves.clear();
+        felled = false;
+        saplingSupplied = false;
         treeLog = level.getBlockState(best).getBlock();
         return true;
     }
@@ -551,7 +563,17 @@ public class WorkGoal extends Goal {
     /** Возвращает true, когда дерево свалено (или пропало). */
     private boolean chop(ServerLevel level, Outpost o, Resident r, long now) {
         if (tree == null) return true;
+        if (felled) return clearCrown(level, o, r, now);
         if (logs.isEmpty()) {
+            // За стенами дерево сажают заново: саженец этой породы лесоруб берёт со склада, если он там есть.
+            if (!saplingSupplied && !o.insideWalls(tree) && treeLog != null) {
+                Item sapling = saplingFor(treeLog).asItem();
+                if (sapling != Items.AIR && countCarried(sapling) == 0 && Logistics.available(level, o, sapling, null) > 0) {
+                    Supply s = supply(level, o, r, sapling, 1, 0, OutpostTask.Type.FETCH_SAPLING, now);
+                    if (s == Supply.BUSY) return false;
+                }
+                saplingSupplied = true;
+            }
             if (!go(o, tree, 3.0, 500)) return false;
             collectTree(level, tree);
             if (logs.isEmpty()) return true;
@@ -577,10 +599,41 @@ public class WorkGoal extends Goal {
             r.lastRealWork = now;
         }
         if (!logs.isEmpty()) return false;
+        felled = true;
+        timer = 4;
+        return false;
+    }
+
+    /** Обрывает природную листву срубленного дерева (саженцы, палки, яблоки — по ванильной добыче), затем сажает саженец. */
+    private boolean clearCrown(ServerLevel level, Outpost o, Resident r, long now) {
+        if (!leaves.isEmpty()) {
+            if (--timer > 0) return false;
+            timer = 4;
+            BlockPos leaf = leaves.pollFirst();
+            BlockState state = level.getBlockState(leaf);
+            if (state.getBlock() instanceof LeavesBlock && !state.getValue(LeavesBlock.PERSISTENT)) {
+                mob.swing(InteractionHand.MAIN_HAND);
+                for (ItemStack drop : Block.getDrops(state, level, leaf, null, mob, AXE)) {
+                    ItemStack left = mob.collect(drop);
+                    if (!left.isEmpty()) mob.spawnAtLocation(left);
+                }
+                level.destroyBlock(leaf, false, mob);
+            }
+            return false;
+        }
         replant(level, tree);
         o.claimedTrees.remove(tree);
         tree = null;
+        felled = false;
         return true;
+    }
+
+    /** Саженец той же породы, что и бревно. */
+    private static Block saplingFor(Block log) {
+        ResourceLocation id = BuiltInRegistries.BLOCK.getKey(log);
+        String path = id.getPath().replace("stripped_", "").replace("_log", "_sapling").replace("_wood", "_sapling");
+        if (path.startsWith("mangrove")) path = "mangrove_propagule";
+        return BuiltInRegistries.BLOCK.getOptional(ResourceLocation.fromNamespaceAndPath(id.getNamespace(), path)).orElse(Blocks.OAK_SAPLING);
     }
 
     /** Все брёвна дерева (связанные, в пределах кроны), сверху вниз. */
@@ -603,22 +656,52 @@ public class WorkGoal extends Goal {
         }
         found.sort(Comparator.comparingInt((BlockPos p) -> p.getY()).reversed());
         logs.addAll(found);
+        // Крона: природная листва в пределах 4 блоков от брёвен этого дерева.
+        Set<BlockPos> crown = new HashSet<>();
+        for (BlockPos p : found) {
+            for (BlockPos n : BlockPos.betweenClosed(p.offset(-3, -1, -3), p.offset(3, 3, 3))) {
+                if (crown.size() >= 96) break;
+                BlockState s = level.getBlockState(n);
+                if (s.getBlock() instanceof LeavesBlock && !s.getValue(LeavesBlock.PERSISTENT) && n.getY() >= base.getY()) crown.add(n.immutable());
+            }
+        }
+        List<BlockPos> sorted = new ArrayList<>(crown);
+        sorted.sort(Comparator.comparingInt((BlockPos p) -> p.getY()).reversed());
+        leaves.addAll(sorted);
     }
 
+    /**
+     * Сажает настоящий саженец из ноши (своей породы, иначе любой подходящий) — только за стенами
+     * и только если дереву есть где расти: над местом свободно, рядом нет чужих стволов.
+     */
     private void replant(ServerLevel level, BlockPos base) {
         // Внутри стен деревья расчищают под двор и постройки; саженцы возвращаются только за пределами форта.
         Outpost o = mob.outpost();
         if ((o != null && o.insideWalls(base)) || treeLog == null || !level.getBlockState(base).isAir()
                 || !level.getBlockState(base.below()).is(BlockTags.DIRT)) return;
-        ResourceLocation id = BuiltInRegistries.BLOCK.getKey(treeLog);
-        String path = id.getPath().replace("stripped_", "").replace("_log", "_sapling").replace("_wood", "_sapling");
-        if (path.startsWith("mangrove")) path = "mangrove_propagule";
-        Block sapling = BuiltInRegistries.BLOCK.getOptional(ResourceLocation.fromNamespaceAndPath(id.getNamespace(), path)).orElse(Blocks.OAK_SAPLING);
-        BlockState state = sapling.defaultBlockState();
-        if (state.canSurvive(level, base)) {
-            level.setBlockAndUpdate(base, state);
-            level.playSound(null, base, SoundEvents.GRASS_PLACE, SoundSource.BLOCKS, 0.8f, 1f);
+        for (int dy = 1; dy <= 5; dy++) {
+            BlockState above = level.getBlockState(base.above(dy));
+            if (!above.isAir() && !(above.getBlock() instanceof LeavesBlock)) return;
         }
+        for (BlockPos n : BlockPos.betweenClosed(base.offset(-1, 0, -1), base.offset(1, 1, 1))) {
+            if (level.getBlockState(n).is(BlockTags.LOGS)) return;
+        }
+        Item preferred = saplingFor(treeLog).asItem();
+        Item chosen = null;
+        if (countCarried(preferred) > 0) chosen = preferred;
+        else {
+            for (int i = 0; i < mob.inventory.getContainerSize() && chosen == null; i++) {
+                ItemStack st = mob.inventory.getItem(i);
+                if (st.is(net.minecraft.tags.ItemTags.SAPLINGS) && st.getItem() instanceof net.minecraft.world.item.BlockItem bi
+                        && bi.getBlock().defaultBlockState().canSurvive(level, base)) chosen = st.getItem();
+            }
+        }
+        if (!(chosen instanceof net.minecraft.world.item.BlockItem sapling)) return;
+        BlockState state = sapling.getBlock().defaultBlockState();
+        if (!state.canSurvive(level, base)) return;
+        removeCarried(chosen, 1);
+        level.setBlockAndUpdate(base, state);
+        level.playSound(null, base, SoundEvents.GRASS_PLACE, SoundSource.BLOCKS, 0.8f, 1f);
     }
 
     // ============================== Шахтёр ==============================
@@ -806,11 +889,113 @@ public class WorkGoal extends Goal {
         return countCarried(Items.TORCH) > 0 ? Supply.READY : Supply.NONE;
     }
 
+    /** Кирки от лучшей к худшей; тир 0 — деревянная, 1 — каменная, 2 — железная, 3 — алмазная. */
+    private static final Item[] PICKAXES = {Items.DIAMOND_PICKAXE, Items.IRON_PICKAXE, Items.STONE_PICKAXE, Items.WOODEN_PICKAXE};
+
+    public static int pickaxeTier(Item item) {
+        return item == Items.DIAMOND_PICKAXE ? 3 : item == Items.IRON_PICKAXE ? 2 : item == Items.STONE_PICKAXE ? 1 : 0;
+    }
+
+    /** Лучшая кирка в ноше, которую шахтёру позволяют уровень и тир форта. */
+    @Nullable
+    private ItemStack carriedPickaxe(int maxTier) {
+        ItemStack best = null;
+        for (int i = 0; i < mob.inventory.getContainerSize(); i++) {
+            ItemStack st = mob.inventory.getItem(i);
+            if (st.isEmpty() || !st.is(net.minecraft.tags.ItemTags.PICKAXES) || pickaxeTier(st.getItem()) > maxTier) continue;
+            if (best == null || pickaxeTier(st.getItem()) > pickaxeTier(best.getItem())) best = st;
+        }
+        return best;
+    }
+
+    /**
+     * Кирка на смену: лучшая допустимая со склада (с её износом). Если на складе нет ни одной, шахтёр сам делает
+     * каменную у склада по ванильному рецепту: 3 булыжника + палки из бревна (остаток палок идёт на склад).
+     * Железную и алмазную куёт кузнец по заказу планировщика.
+     */
+    private Supply pickaxe(ServerLevel level, Outpost o, Resident r, long now) {
+        int max = WorkerEntity.minerToolTier(o, r);
+        if (carriedPickaxe(max) != null) return Supply.READY;
+        if (task == null) {
+            Item best = null;
+            for (Item p : PICKAXES) if (pickaxeTier(p) <= max && Logistics.available(level, o, p, null) > 0) { best = p; break; }
+            if (best != null) {
+                task = Logistics.request(level, o, r, OutpostTask.Type.FETCH_PICKAXE, java.util.Map.of(best, 1), now);
+            } else {
+                Item log = Storehouse.findItem(level, o, st -> st.is(net.minecraft.tags.ItemTags.LOGS));
+                if (log == null || Logistics.available(level, o, log, null) < 1 || Logistics.available(level, o, Items.COBBLESTONE, null) < 3) return Supply.NONE;
+                java.util.Map<Item, Integer> want = new java.util.LinkedHashMap<>();
+                want.put(Items.COBBLESTONE, 3);
+                want.put(log, 1);
+                task = Logistics.request(level, o, r, OutpostTask.Type.FETCH_PICKAXE, want, now);
+            }
+            if (task == null) return Supply.NONE;
+        }
+        if (!go(o, o.zone(WorkZone.STOREHOUSE), 1.8, 500)) return Supply.BUSY;
+        OutpostTask t = task;
+        task = null;
+        if (!Logistics.withdraw(level, o, t, mob, now)) {
+            Logistics.cancel(o, t, "withdraw failed", now);
+            return Supply.NONE;
+        }
+        Item log = null;
+        for (Item i : t.carried.keySet()) if (new ItemStack(i).is(net.minecraft.tags.ItemTags.LOGS)) log = i;
+        if (log != null && countCarried(Items.COBBLESTONE) >= 3 && countCarried(log) >= 1) {
+            removeCarried(Items.COBBLESTONE, 3);
+            removeCarried(log, 1);
+            mob.swing(InteractionHand.MAIN_HAND);
+            for (ItemStack made : new ItemStack[]{new ItemStack(Items.STONE_PICKAXE), new ItemStack(Items.STICK, 6)}) {
+                ItemStack left = mob.collect(made);
+                if (!left.isEmpty()) mob.spawnAtLocation(left);
+            }
+            level.playSound(null, mob.blockPosition(), SoundEvents.WOOD_PLACE, SoundSource.NEUTRAL, 0.6f, 1.0f);
+        }
+        Logistics.complete(o, t, now);
+        return carriedPickaxe(max) != null ? Supply.READY : Supply.NONE;
+    }
+
+    /** Показывает в руке ту кирку, которой шахтёр реально работает (сама кирка лежит в ноше). */
+    private void showPickaxe(@Nullable ItemStack pick) {
+        ItemStack hand = mob.getMainHandItem();
+        if (pick == null) {
+            if (!hand.isEmpty()) mob.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        } else if (!hand.is(pick.getItem())) {
+            mob.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, new ItemStack(pick.getItem()));
+        }
+    }
+
+    /** Добывает блок настоящей киркой: дроп по её свойствам, износ кирки, опыт шахтёра. */
+    private void dig(ServerLevel level, Resident r, BlockPos p, BlockState s, ItemStack pick, long now) {
+        for (ItemStack drop : Block.getDrops(s, level, p, level.getBlockEntity(p), mob, pick)) {
+            ItemStack left = mob.collect(drop);
+            if (!left.isEmpty()) mob.spawnAtLocation(left);
+        }
+        level.destroyBlock(p, false, mob);
+        pick.hurtAndBreak(1, level, mob, item -> {});
+        mob.inventory.setChanged();
+        r.miningXp = Math.min(500, r.miningXp + 1);
+        r.lastRealWork = now;
+    }
+
     private boolean mine(ServerLevel level, Outpost o, Resident r, long now) {
-        mob.refreshMinerTool(o, r);
         List<Column> cols = minePlan(level, o);
         if (column < 0 || column >= cols.size()) return true;
         Column c = cols.get(column);
+        if (timer < 0) {
+            Supply tool = pickaxe(level, o, r, now);
+            if (tool == Supply.BUSY) return false;
+            if (tool == Supply.NONE) {
+                // Без кирки камень не добыть: шахтёр сообщает планировщику и ждёт кирку от кузнеца.
+                o.zones.report(WorkZone.MINE, "no pickaxe");
+                showPickaxe(null);
+                noJobUntil = now + 1200;
+                return true;
+            }
+            o.zones.clearProblem(WorkZone.MINE);
+        }
+        ItemStack pick = carriedPickaxe(WorkerEntity.minerToolTier(o, r));
+        if (pick == null) return true;
+        showPickaxe(pick);
         if (needTorches && timer < 0) {
             Supply s = torches(level, o, r, now);
             if (s == Supply.BUSY) return false;
@@ -860,17 +1045,28 @@ public class WorkGoal extends Goal {
                 continue;
             }
             if (s.isAir() || s.getDestroySpeed(level, p) < 0 || o.design().cells.containsKey(p.subtract(o.center))) continue;
-            ItemStack pickaxe = mob.getMainHandItem();
-            for (ItemStack drop : Block.getDrops(s, level, p, level.getBlockEntity(p), mob, pickaxe)) {
-                ItemStack left = mob.collect(drop);
-                if (!left.isEmpty()) mob.spawnAtLocation(left);
-            }
-            level.destroyBlock(p, false, mob);
-            r.miningXp = Math.min(500, r.miningXp + 1);
-            r.lastRealWork = now;
+            if (pick.isEmpty()) break;
+            dig(level, r, p, s, pick, now);
             // Записываем прогресс шахтёра и курс штрека в SavedData, а не ждём следующего макроцикла.
             OutpostSavedData.get(level).setDirty();
         }
+        // Руда, вскрытая в стенах, потолке или полу столбца, добывается сразу: железо идёт из настоящей руды.
+        int ores = 0;
+        for (BlockPos p : new BlockPos[]{lower, upper}) {
+            for (Direction d : Direction.values()) {
+                BlockPos n = p.relative(d);
+                if (ores >= 4 || pick.isEmpty() || n.equals(lower) || n.equals(upper) || n.equals(c.stand) || n.equals(c.stand.above())) continue;
+                BlockState ns = level.getBlockState(n);
+                if (!ns.is(net.neoforged.neoforge.common.Tags.Blocks.ORES) || o.design().cells.containsKey(n.subtract(o.center))) continue;
+                // За рудой может стоять вода или лава: такую жилу не вскрывают.
+                boolean wet = false;
+                for (Direction e : Direction.values()) if (!level.getFluidState(n.relative(e)).isEmpty()) wet = true;
+                if (wet) continue;
+                dig(level, r, n, ns, pick, now);
+                ores++;
+            }
+        }
+        if (pick.isEmpty()) showPickaxe(null);
         // Факел — только настоящий, из ноши.
         if (c.torch && countCarried(Items.TORCH) > 0 && level.getBlockState(lower).isAir()
                 && level.getBlockState(lower.below()).isFaceSturdy(level, lower.below(), Direction.UP)) {
@@ -1345,8 +1541,9 @@ public class WorkGoal extends Goal {
      */
     private boolean findSmithTask(ServerLevel level, Outpost o, Resident r, long now) {
         OutpostTask t = o.tasks.ofExecutor(r.id);
-        if (t == null) t = o.tasks.nextFor(Role.SMITH);
-        if (t == null) return false;
+        // Заказ на инструмент берётся, только когда планировщик уже отложил под него материалы (вместе с бревном на рукоять).
+        if (t == null) t = o.tasks.nextFor(Role.SMITH, x -> x.type != OutpostTask.Type.FORGE_TOOL || !x.reserved.isEmpty());
+        if (t == null) return smeltPlan(level, o, r, now);
         boolean forge = t.type == OutpostTask.Type.FORGE_TOOL;
         Resident target = t.subject == null ? null : o.resident(t.subject);
         if (forge ? t.product == null : (target == null || !target.active() || !target.role.combat)) {
@@ -1422,6 +1619,13 @@ public class WorkGoal extends Goal {
             ItemStack made = new ItemStack(task.product);
             ItemStack left = mob.collect(made);
             if (!left.isEmpty()) mob.spawnAtLocation(left);
+            // Рукоять из бревна: из 8 палок ушли 2, остальные — на склад.
+            boolean log = false;
+            for (Item i : materials.keySet()) if (new ItemStack(i).is(net.minecraft.tags.ItemTags.LOGS)) log = true;
+            if (log) {
+                ItemStack sticks = mob.collect(new ItemStack(Items.STICK, 6));
+                if (!sticks.isEmpty()) mob.spawnAtLocation(sticks);
+            }
             level.playSound(null, mob.blockPosition(), SoundEvents.ANVIL_USE, SoundSource.NEUTRAL, 0.7f, 1.1f);
             Logistics.complete(o, task, now);
             task = null;
@@ -1447,6 +1651,149 @@ public class WorkGoal extends Goal {
             count -= n;
         }
         mob.inventory.setChanged();
+    }
+
+    // ============================== Переплавка в настоящей печи ==============================
+
+    /** Топливо, которое кузнец кладёт в печь (уголь из шахты или древесный). */
+    private static final Item[] FUELS = {Items.COAL, Items.CHARCOAL};
+    @Nullable private BlockPos smeltFurnace;
+    private boolean smeltCollect;
+
+    /** Печь кузницы: сначала доменная (руда плавится вдвое быстрее), потом обычная. */
+    @Nullable
+    private static net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity furnaceAt(ServerLevel level, @Nullable BlockPos pos) {
+        return pos != null && level.isLoaded(pos) && level.getBlockEntity(pos) instanceof net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity f ? f : null;
+    }
+
+    private static List<BlockPos> smithyFurnaces(ServerLevel level, Outpost o) {
+        List<BlockPos> out = new ArrayList<>();
+        if (!o.hasZone(WorkZone.SMITHY)) return out;
+        BlockPos at = o.zone(WorkZone.SMITHY);
+        for (BlockPos p : BlockPos.betweenClosed(at.offset(-3, -1, -3), at.offset(3, 2, 3))) {
+            if (level.getBlockEntity(p) instanceof net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity) out.add(p.immutable());
+        }
+        out.sort(Comparator.comparingInt(p -> level.getBlockState(p).is(Blocks.BLAST_FURNACE) ? 0 : 1));
+        return out;
+    }
+
+    /**
+     * Когда заказов нет, кузнец плавит руду: забирает готовые слитки из печей кузницы или загружает в свободную печь
+     * сырое железо и уголь со склада. Плавит сама печь — по ванильным правилам и только пока чанк загружен.
+     */
+    private boolean smeltPlan(ServerLevel level, Outpost o, Resident r, long now) {
+        smeltFurnace = null;
+        for (BlockPos p : smithyFurnaces(level, o)) {
+            var f = furnaceAt(level, p);
+            if (f != null && !f.getItem(2).isEmpty()) {
+                smeltFurnace = p;
+                smeltCollect = true;
+                return true;
+            }
+        }
+        if (Logistics.available(level, o, Items.RAW_IRON, null) <= 0) return false;
+        for (BlockPos p : smithyFurnaces(level, o)) {
+            var f = furnaceAt(level, p);
+            if (f == null || !f.getItem(0).isEmpty()) continue;
+            boolean fuel = !f.getItem(1).isEmpty();
+            for (Item fu : FUELS) if (Logistics.available(level, o, fu, null) > 0) fuel = true;
+            if (!fuel) {
+                o.zones.report(WorkZone.SMITHY, "no fuel");
+                return false;
+            }
+            smeltFurnace = p;
+            smeltCollect = false;
+            return true;
+        }
+        return false;
+    }
+
+    private boolean smelt(ServerLevel level, Outpost o, Resident r, long now) {
+        var f = furnaceAt(level, smeltFurnace);
+        if (f == null) {
+            smeltFurnace = null;
+            return true;
+        }
+        if (smeltCollect) {
+            if (!go(o, smeltFurnace, 2.2, 500)) return false;
+            ItemStack out = f.getItem(2);
+            if (!out.isEmpty()) {
+                mob.swing(InteractionHand.MAIN_HAND);
+                ItemStack left = mob.collect(out.copy());
+                f.setItem(2, left);
+                f.setChanged();
+                level.playSound(null, smeltFurnace, SoundEvents.FURNACE_FIRE_CRACKLE, SoundSource.BLOCKS, 0.6f, 1.0f);
+                r.lastRealWork = now;
+            }
+            smeltFurnace = null;
+            return true;
+        }
+        // Загрузка: сырьё и топливо со склада через логистику, затем в печь.
+        if (countCarried(Items.RAW_IRON) == 0) {
+            if (task == null) {
+                int ore = Math.min(16, Logistics.available(level, o, Items.RAW_IRON, null));
+                if (ore <= 0) {
+                    smeltFurnace = null;
+                    return true;
+                }
+                java.util.Map<Item, Integer> want = new java.util.LinkedHashMap<>();
+                want.put(Items.RAW_IRON, ore);
+                int haveFuel = f.getItem(1).getCount() * 8;
+                int fuelNeed = Math.max(0, (int) Math.ceil((ore - haveFuel) / 8.0));
+                if (fuelNeed > 0) {
+                    Item fuel = null;
+                    for (Item fu : FUELS) if (Logistics.available(level, o, fu, null) >= fuelNeed && (f.getItem(1).isEmpty() || f.getItem(1).is(fu))) { fuel = fu; break; }
+                    if (fuel == null) {
+                        o.zones.report(WorkZone.SMITHY, "no fuel");
+                        smeltFurnace = null;
+                        noJobUntil = now + 600;
+                        return true;
+                    }
+                    want.put(fuel, fuelNeed);
+                }
+                task = Logistics.request(level, o, r, OutpostTask.Type.SMELT_ORE, want, now);
+                if (task == null) {
+                    smeltFurnace = null;
+                    return true;
+                }
+                task.zone = WorkZone.SMITHY;
+            }
+            if (!go(o, o.zone(WorkZone.STOREHOUSE), 1.8, 500)) return false;
+            boolean ok = Logistics.withdraw(level, o, task, mob, now);
+            if (!ok) {
+                Logistics.cancel(o, task, "withdraw failed", now);
+                task = null;
+                smeltFurnace = null;
+                return true;
+            }
+            return false;
+        }
+        if (!go(o, smeltFurnace, 2.2, 500)) return false;
+        mob.swing(InteractionHand.MAIN_HAND);
+        loadSlot(f, 0, Items.RAW_IRON);
+        for (Item fu : FUELS) if (countCarried(fu) > 0 && (f.getItem(1).isEmpty() || f.getItem(1).is(fu))) loadSlot(f, 1, fu);
+        f.setChanged();
+        level.playSound(null, smeltFurnace, SoundEvents.FIRECHARGE_USE, SoundSource.BLOCKS, 0.4f, 1.2f);
+        if (task != null) {
+            Logistics.complete(o, task, now);
+            task = null;
+        }
+        o.zones.clearProblem(WorkZone.SMITHY);
+        r.lastRealWork = now;
+        smeltFurnace = null;
+        return true;
+    }
+
+    /** Перекладывает предмет из ноши в слот печи, сколько влезет; остальное остаётся в ноше и вернётся на склад. */
+    private void loadSlot(net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity f, int slot, Item item) {
+        ItemStack in = f.getItem(slot);
+        if (!in.isEmpty() && !in.is(item)) return;
+        int room = in.isEmpty() ? item.getDefaultMaxStackSize() : in.getMaxStackSize() - in.getCount();
+        int n = Math.min(room, countCarried(item));
+        if (n <= 0) return;
+        removeCarried(item, n);
+        if (in.isEmpty()) f.setItem(slot, new ItemStack(item, n));
+        else in.grow(n);
     }
 
     private int countCarried(Item item) {

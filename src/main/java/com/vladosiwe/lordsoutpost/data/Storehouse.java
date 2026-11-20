@@ -175,8 +175,8 @@ public final class Storehouse {
         if (count <= 0) return List.of();
         ResourceItems.Value value = ResourceItems.of(new ItemStack(item));
         // Предметы без ресурсной стоимости (вёдра, ножницы, факелы, уголь) лежат в бочках сами по себе и в запас не входят.
+        // Казна и эссенция (изумруды, алмазы, аметист) в бочках — просто предметы: в запас они не входят и берутся как есть.
         boolean counted = value != null && physical(value.resource());
-        if (value != null && !counted) return null;
         double amount = counted ? count * value.perItem() : 0;
         if (counted && o.stock(value.resource()) + 1e-6 < amount) return null;
         List<Container> barrels = barrels(level, o);

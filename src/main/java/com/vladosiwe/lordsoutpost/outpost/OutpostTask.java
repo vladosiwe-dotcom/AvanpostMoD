@@ -47,7 +47,13 @@ public final class OutpostTask {
         /** Скотовод берёт со склада корм для приманивания и разведения. */
         FETCH_FEED(Role.SKOTOVOD, false),
         /** Скотовод берёт со склада инструменты (ножницы, ведро). */
-        FETCH_TOOLS(Role.SKOTOVOD, false);
+        FETCH_TOOLS(Role.SKOTOVOD, false),
+        /** Шахтёр берёт кирку со склада или материалы, чтобы сделать каменную. */
+        FETCH_PICKAXE(Role.MINER, false),
+        /** Кузнец берёт сырую руду и топливо для печи кузницы. */
+        SMELT_ORE(Role.SMITH, false),
+        /** Лесоруб берёт со склада саженец той же породы, чтобы посадить его на месте срубленного дерева. */
+        FETCH_SAPLING(Role.LUMBERJACK, false);
 
         public static final Type[] VALUES = values();
 

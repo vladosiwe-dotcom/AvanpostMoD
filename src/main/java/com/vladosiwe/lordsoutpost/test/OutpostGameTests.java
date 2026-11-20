@@ -1204,6 +1204,10 @@ public final class OutpostGameTests {
                     net.minecraft.world.SimpleContainer wheat = new net.minecraft.world.SimpleContainer(1);
                     wheat.setItem(0, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.WHEAT, 32));
                     com.vladosiwe.lordsoutpost.data.Storehouse.deposit(level, o, wheat);
+                    // Саженцы на складе: за стенами лесоруб сажает настоящий саженец, а не создаёт его из ничего.
+                    net.minecraft.world.SimpleContainer saplings = new net.minecraft.world.SimpleContainer(1);
+                    saplings.setItem(0, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.OAK_SAPLING, 4));
+                    com.vladosiwe.lordsoutpost.data.Storehouse.deposit(level, o, saplings);
                     // Мусор во дворе.
                     BlockPos yard = o.marker(Marker.YARD);
                     for (int i = 0; i < 3; i++) {

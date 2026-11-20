@@ -172,9 +172,19 @@ public final class OutpostDirector {
     static void toolTasks(@Nullable ServerLevel level, Outpost o, long now) {
         if (level == null || !o.online || o.state != com.vladosiwe.lordsoutpost.outpost.OutpostState.OWNED) return;
         boolean herders = o.count(Role.SKOTOVOD) > 0, smith = o.count(Role.SMITH) > 0;
-        for (Item product : new Item[]{Items.SHEARS, Items.BUCKET}) {
-            boolean needed = herders && smith && owned(level, o, product) == 0
-                    && (product != Items.BUCKET || Storehouse.countItem(level, o, Items.MILK_BUCKET) < 4);
+        // Кирку лучше той, что есть у шахтёров, куёт кузнец, если её позволяют тир форта и уровень шахтёров.
+        int pickTier = 0;
+        for (Resident r : o.residents) if (r.role == Role.MINER) pickTier = Math.max(pickTier, com.vladosiwe.lordsoutpost.entity.WorkerEntity.minerToolTier(o, r));
+        int ownedTier = 0;
+        for (Item p : new Item[]{Items.DIAMOND_PICKAXE, Items.IRON_PICKAXE, Items.STONE_PICKAXE}) {
+            if (owned(level, o, p) > 0) ownedTier = Math.max(ownedTier, com.vladosiwe.lordsoutpost.entity.ai.WorkGoal.pickaxeTier(p));
+        }
+        Item pick = pickTier >= 3 && ownedTier < 3 && Storehouse.countItem(level, o, Items.DIAMOND) >= 3 ? Items.DIAMOND_PICKAXE
+                : pickTier >= 2 && ownedTier < 2 ? Items.IRON_PICKAXE : null;
+        for (Item product : new Item[]{Items.SHEARS, Items.BUCKET, Items.IRON_PICKAXE, Items.DIAMOND_PICKAXE}) {
+            boolean tool = product == Items.IRON_PICKAXE || product == Items.DIAMOND_PICKAXE;
+            boolean needed = smith && (tool ? product == pick : herders && owned(level, o, product) == 0
+                    && (product != Items.BUCKET || Storehouse.countItem(level, o, Items.MILK_BUCKET) < 4));
             OutpostTask t = null;
             for (OutpostTask x : o.tasks.all()) if (x.active() && x.type == OutpostTask.Type.FORGE_TOOL && x.product == product) t = x;
             if (!needed) {
@@ -186,7 +196,19 @@ public final class OutpostDirector {
                 t.product = product;
                 t.zone = WorkZone.SMITHY;
             }
-            if (t.executor == null && t.reserved.isEmpty()) Logistics.reserve(level, o, t, recipe(product), now);
+            if (t.executor == null && t.reserved.isEmpty()) {
+                Map<Item, Integer> recipe = recipe(product);
+                if (tool) {
+                    // Рукоять — палки из бревна, как на верстаке: 1 бревно → 8 палок, нужно 2, остаток идёт на склад.
+                    Item log = Storehouse.findItem(level, o, st -> st.is(net.minecraft.tags.ItemTags.LOGS));
+                    if (log == null) {
+                        o.tasks.set(t, OutpostTask.State.PAUSED, "no logs", now);
+                        continue;
+                    }
+                    recipe.put(log, 1);
+                }
+                Logistics.reserve(level, o, t, recipe, now);
+            }
         }
     }
 
@@ -195,12 +217,19 @@ public final class OutpostDirector {
         Map<Item, Integer> m = new LinkedHashMap<>();
         if (product == Items.BUCKET) m.put(Items.IRON_INGOT, 3);
         else if (product == Items.SHEARS) m.put(Items.IRON_INGOT, 2);
+        else if (product == Items.IRON_PICKAXE) m.put(Items.IRON_INGOT, 3);
+        else if (product == Items.DIAMOND_PICKAXE) m.put(Items.DIAMOND, 3);
         return m;
     }
 
     /** Материалы любой кузнечной задачи. */
     public static Map<Item, Integer> materials(OutpostTask t, @Nullable Resident target) {
-        if (t.type == OutpostTask.Type.FORGE_TOOL) return recipe(t.product);
+        if (t.type == OutpostTask.Type.FORGE_TOOL) {
+            // Состав заказа зафиксирован резервом (в него входит и конкретное бревно на рукоять).
+            Map<Item, Integer> m = new LinkedHashMap<>(recipe(t.product));
+            for (var e : (t.carried.isEmpty() ? t.reserved : t.carried).entrySet()) m.putIfAbsent(e.getKey(), e.getValue());
+            return m;
+        }
         return target == null ? Map.of() : smithMaterials(t, target);
     }
 
