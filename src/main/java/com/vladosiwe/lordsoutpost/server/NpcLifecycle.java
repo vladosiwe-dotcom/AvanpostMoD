@@ -110,7 +110,8 @@ public final class NpcLifecycle {
         if (o == null) return;
         Resident r = npc.residentId() == null ? null : o.resident(npc.residentId());
         // Недонесённая ноша не пропадает: её ресурсы засчитываются сразу.
-        if (npc instanceof com.vladosiwe.lordsoutpost.entity.WorkerEntity w && o.state == OutpostState.OWNED) {
+        // Проверка владения не нужна: ноша не должна исчезать и у форта, который только что потерял Лорда.
+        if (npc instanceof com.vladosiwe.lordsoutpost.entity.WorkerEntity w && !w.inventory.isEmpty()) {
             com.vladosiwe.lordsoutpost.data.Storehouse.depositVirtually(o, w.inventory);
             // Ноша жителя уже перенесена в запасы/дань — фиксируем её до выгрузки или завершения сервера.
             data.setDirty();

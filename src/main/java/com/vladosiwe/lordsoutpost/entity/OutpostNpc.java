@@ -175,12 +175,51 @@ public abstract class OutpostNpc extends PathfinderMob implements OutpostMember 
         return super.isImmobile() || isSleeping();
     }
 
+    /**
+     * Состояние сущности уже вернулось в запись жителя (ноша на складе, здоровье записано).
+     * Такое тело больше не представляет жителя: если его чанк снова станет доступен, оно уходит само.
+     */
+    private boolean detached;
+
     @Override
     public void remove(RemovalReason reason) {
         // Иначе кровать останется «занятой» навсегда.
         if (!level().isClientSide && isSleeping()) stopSleeping();
-        if (!level().isClientSide && reason != RemovalReason.KILLED) NpcLifecycle.onUnloaded(this);
         super.remove(reason);
+    }
+
+    /**
+     * Сущность перестала отслеживаться миром. Выгрузка чанка вызывает {@code setRemoved(UNLOADED_TO_CHUNK)},
+     * который нельзя переопределить и который не проходит через {@link #remove}, поэтому запись обновляется здесь:
+     * этот хук срабатывает и при выгрузке чанка, и при понижении его статуса, и при discard().
+     */
+    @Override
+    public void onRemovedFromLevel() {
+        super.onRemovedFromLevel();
+        if (level().isClientSide || detached || getRemovalReason() == RemovalReason.KILLED || isDeadOrDying()) return;
+        detach();
+    }
+
+    /** Возвращает состояние в запись ровно один раз. */
+    public void detach() {
+        if (detached || level().isClientSide) return;
+        detached = true;
+        if (isSleeping()) stopSleeping();
+        NpcLifecycle.onUnloaded(this);
+    }
+
+    public boolean detached() {
+        return detached;
+    }
+
+    @Override
+    public void tick() {
+        // Тело, чьё состояние уже вернулось в запись, не должно снова работать рядом с новым телом того же жителя.
+        if (detached && !level().isClientSide) {
+            discard();
+            return;
+        }
+        super.tick();
     }
 
     @Override

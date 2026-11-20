@@ -129,6 +129,12 @@ public final class Outpost {
     /** Занятые строителями шаги: индекс шага -> тик, после которого блок ставится сам. */
     public transient final Map<Integer, Long> claims = new HashMap<>();
     public transient int claimCursor;
+    /** Отложенные шаги стройки, до которых строители не смогли добраться: индекс -> тик повторной попытки. */
+    public transient final Map<Integer, Long> deferredSteps = new HashMap<>();
+    /** Сколько раз подряд шаг оказался недостижимым (для удлинения отсрочки и расширенного поиска позиции). */
+    public transient final Map<Integer, Integer> stepFailures = new HashMap<>();
+    /** Игровое время последнего онлайн-тика стройки (для проверки отсрочек без доступа к миру). */
+    public transient long buildClock;
     public transient boolean lootSeeded;
     public transient int repairCursor;
     public transient final Deque<BlockPos> repairs = new ArrayDeque<>();
@@ -139,6 +145,13 @@ public final class Outpost {
     public transient long defenselessSince;
     /** Для форта из генерации мира: проверено, что структура действительно стоит в чанке. */
     public boolean verified;
+
+    // --- Правки игрока (сохраняются) ---
+    /** Блоки, поставленные игроком на территории или в лесной зоне: их не рубят, не расчищают и не сносят стройкой. */
+    public final it.unimi.dsi.fastutil.longs.LongOpenHashSet playerPlaced = new it.unimi.dsi.fastutil.longs.LongOpenHashSet();
+    /** Клетки чертежа, которые игрок сознательно разобрал: ремонт их не восстанавливает. */
+    public final it.unimi.dsi.fastutil.longs.LongOpenHashSet playerRemoved = new it.unimi.dsi.fastutil.longs.LongOpenHashSet();
+    public static final int MAX_PLAYER_EDITS = 65536;
 
     public Outpost(long id, BlockPos center, Layout layout, Palette palette, Rotation rotation, Difficulty difficulty, boolean manual) {
         this.id = id;
@@ -273,9 +286,20 @@ public final class Outpost {
     public double add(Resource r, double amount) {
         if (amount <= 0) return 0;
         double cur = stock(r);
+        // Запас может быть выше ёмкости (игрок сам положил предметы в бочки) — тогда он не урезается.
+        if (cur >= capacity(r)) return 0;
         double next = Math.min(capacity(r), cur + amount);
         stock.put(r, next);
         return next - cur;
+    }
+
+    /**
+     * Учитывает предметы, которые уже физически лежат на складе (их принёс игрок). Ёмкость ограничивает
+     * только выработку поселения; настоящие предметы нельзя «не учесть», иначе синхронизация бочек их удалит.
+     */
+    public void addPhysical(Resource r, double amount) {
+        if (amount <= 0) return;
+        stock.put(r, stock(r) + amount);
     }
 
     public boolean take(Resource r, double amount) {
@@ -350,6 +374,35 @@ public final class Outpost {
         return until != null && until > now;
     }
 
+    // ============================== Правки игрока ==============================
+
+    public boolean placedByPlayer(BlockPos pos) {
+        return playerPlaced.contains(pos.asLong());
+    }
+
+    public boolean removedByPlayer(BlockPos pos) {
+        return playerRemoved.contains(pos.asLong());
+    }
+
+    public void notePlayerPlaced(BlockPos pos) {
+        long k = pos.asLong();
+        playerRemoved.remove(k);
+        if (playerPlaced.size() < MAX_PLAYER_EDITS) playerPlaced.add(k);
+    }
+
+    public void notePlayerRemoved(BlockPos pos, boolean blueprintCell) {
+        long k = pos.asLong();
+        playerPlaced.remove(k);
+        if (blueprintCell && playerRemoved.size() < MAX_PLAYER_EDITS) playerRemoved.add(k);
+    }
+
+    /** Клетку заново занял чертёж (новая постройка): старые пометки больше не действуют. */
+    public void clearPlayerMarks(BlockPos pos) {
+        long k = pos.asLong();
+        playerPlaced.remove(k);
+        playerRemoved.remove(k);
+    }
+
     // ============================== Права ==============================
 
     public boolean isLord(UUID player) {
@@ -409,6 +462,8 @@ public final class Outpost {
         t.put("storeLast", sl);
         t.putInt("mineCursor", mineCursor);
         t.putDouble("credit", buildCredit);
+        t.putLongArray("playerPlaced", playerPlaced.toLongArray());
+        t.putLongArray("playerRemoved", playerRemoved.toLongArray());
 
         CompoundTag st = new CompoundTag();
         for (var e : stock.entrySet()) st.putDouble(e.getKey().id, e.getValue());
@@ -495,6 +550,8 @@ public final class Outpost {
         for (Resource r : Resource.VALUES) if (sl.contains(r.id)) o.storeLast.put(r, sl.getDouble(r.id));
         o.mineCursor = Math.max(0, t.getInt("mineCursor"));
         o.buildCredit = t.getDouble("credit");
+        for (long l : t.getLongArray("playerPlaced")) o.playerPlaced.add(l);
+        for (long l : t.getLongArray("playerRemoved")) o.playerRemoved.add(l);
 
         CompoundTag st = t.getCompound("stock");
         for (Resource r : Resource.VALUES) if (st.contains(r.id)) o.stock.put(r, Math.max(0, st.getDouble(r.id)));

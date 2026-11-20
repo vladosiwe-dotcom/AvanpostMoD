@@ -109,7 +109,8 @@ public final class QuestBoard {
      */
     @Nullable
     public static Quest deliver(Outpost o, Resource res, double amount, long now) {
-        o.add(res, amount);
+        // Предметы игрока уже лежат в бочках или изъяты из его инвентаря: учитываются целиком, без урезания ёмкостью.
+        o.addPhysical(res, amount);
         o.dirtyForClients = true;
         for (Quest q : o.quests) {
             if (q.resource != res || q.done()) continue;

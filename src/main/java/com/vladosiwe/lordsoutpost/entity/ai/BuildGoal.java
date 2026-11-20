@@ -85,9 +85,14 @@ public class BuildGoal extends Goal {
         }
 
         if (ChunkReconciliation.blockedByForeignBlock(level, o, claim)) {
-            // Не сносим сундуки, посевы, декор и постройки игрока ради автоматического чертежа.
-            lastResult = "blocked-foreign:" + level.getBlockState(target);
-            release(o, 40);
+            // Не сносим сундуки, посевы, декор и постройки игрока ради автоматического чертежа:
+            // чертёж уступает клетку, иначе строители вечно возвращались бы к этому шагу и стройка стояла.
+            lastResult = "yield-to-player:" + level.getBlockState(target);
+            ChunkReconciliation.yieldToPlayer(o, claim);
+            claim = -1;
+            workPosition = null;
+            workPath = null;
+            cooldown = 2;
             return;
         }
 
@@ -100,7 +105,7 @@ public class BuildGoal extends Goal {
         }
         if (workPosition == null) {
             lastResult = "no-reachable-work-position";
-            if (--timeout <= 0) release(o, 40);
+            if (--timeout <= 0) defer(o, level.getGameTime());
             return;
         }
 
@@ -111,8 +116,7 @@ public class BuildGoal extends Goal {
         if (mob.distanceToSqr(wx, wy, wz) > 0.64) {
             lastResult = "walking";
             if (--timeout <= 0) {
-                release(o, 40);
-                mob.getNavigation().stop();
+                defer(o, level.getGameTime());
                 return;
             }
             Path path = mob.getNavigation().getPath();
@@ -129,10 +133,11 @@ public class BuildGoal extends Goal {
         double dx = target.getX() + 0.5 - (mob.getX());
         double dy = target.getY() + 0.5 - eyeY;
         double dz = target.getZ() + 0.5 - (mob.getZ());
-        if (dx * dx + dy * dy + dz * dz > 4.5 * 4.5) {
+        double maxReach = reach(o) + 0.5;
+        if (dx * dx + dy * dy + dz * dz > maxReach * maxReach) {
             workPosition = null;
             lastResult = "out-of-reach";
-            if (--timeout <= 0) release(o, 40);
+            if (--timeout <= 0) defer(o, level.getGameTime());
             return;
         }
 
@@ -168,9 +173,13 @@ public class BuildGoal extends Goal {
         workPath = null;
         double bestDistance = Double.MAX_VALUE;
         double tx = block.getX() + 0.5, ty = block.getY() + 0.5, tz = block.getZ() + 0.5;
-        for (int dy = 1; dy >= -4; dy--) {
-            for (int dx = -1; dx <= 1; dx++) {
-                for (int dz = -1; dz <= 1; dz++) {
+        // После нескольких неудач строитель ищет опору шире: с соседнего яруса лесов, со стены или крыши рядом.
+        boolean wide = ChunkReconciliation.stepFailures(o, claim) >= 3;
+        int span = wide ? 2 : 1, up = wide ? 2 : 1, down = wide ? -6 : -4;
+        double reach = reach(o);
+        for (int dy = up; dy >= down; dy--) {
+            for (int dx = -span; dx <= span; dx++) {
+                for (int dz = -span; dz <= span; dz++) {
                     if (dx == 0 && dz == 0) continue;
                     BlockPos feet = new BlockPos(block.getX() + dx, block.getY() + dy, block.getZ() + dz);
                     if (level.isOutsideBuildHeight(feet) || level.isOutsideBuildHeight(feet.above())) continue;
@@ -185,7 +194,7 @@ public class BuildGoal extends Goal {
 
                     double eyeY = feet.getY() + mob.getEyeHeight();
                     double rx = tx - (feet.getX() + 0.5), ry = ty - eyeY, rz = tz - (feet.getZ() + 0.5);
-                    if (rx * rx + ry * ry + rz * rz > 4.0 * 4.0) continue;
+                    if (rx * rx + ry * ry + rz * rz > reach * reach) continue;
                     double distance = mob.distanceToSqr(feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5);
                     if (distance >= bestDistance) continue;
                     Path path = mob.getNavigation().createPath(feet, 0);
@@ -215,6 +224,21 @@ public class BuildGoal extends Goal {
                 && level.getBlockState(feet).getCollisionShape(level, feet).isEmpty()
                 && level.getBlockState(feet.above()).getCollisionShape(level, feet.above()).isEmpty()
                 && level.getBlockState(feet.below()).isFaceSturdy(level, feet.below(), Direction.UP);
+    }
+
+    /** Обычная досягаемость руки 4 блока; для трудных клеток — 5, как у игрока. */
+    private double reach(Outpost o) {
+        return ChunkReconciliation.stepFailures(o, claim) >= 3 ? 5.0 : 4.0;
+    }
+
+    /** Шаг недоступен: откладываем его, а строитель берёт следующий. */
+    private void defer(Outpost o, long now) {
+        ChunkReconciliation.deferStep(o, claim, now);
+        claim = -1;
+        workPosition = null;
+        workPath = null;
+        cooldown = 10;
+        mob.getNavigation().stop();
     }
 
     private void release(Outpost o, int retryTicks) {

@@ -72,7 +72,9 @@ public class OutpostPiece extends StructurePiece {
                             BoundingBox box, ChunkPos chunkPos, BlockPos pivot) {
         FortBlueprint bp = FortBlueprint.get(layout, palette, rotation);
         Map<BlockPos, BlockState> snapshot = bp.snapshot(difficulty.tier, Outpost.initialSteps(bp, difficulty));
-        FortPlacer.clearFluids(level, center, com.vladosiwe.lordsoutpost.blueprint.Layout.RADIUS[difficulty.tier] + com.vladosiwe.lordsoutpost.blueprint.Layout.MARGIN,
+        // Снимок может включать начатое расширение (следующий тир шире): жидкость убирается по полному радиусу.
+        int topTier = difficulty.progress > 0 && difficulty.tier < FortBlueprint.MAX_TIER ? difficulty.tier + 1 : difficulty.tier;
+        FortPlacer.clearFluids(level, center, Layout.RADIUS[topTier] + Layout.MARGIN,
                 box, rel -> snapshot.containsKey(rel));
         FortPlacer.place(level, center, bp, difficulty, snapshot, box, random);
     }

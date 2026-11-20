@@ -423,6 +423,73 @@ public final class OutpostGameTests {
         h.succeed();
     }
 
+    /** Переполненная дань не выбрасывает предметы: ресурсы уходят на склад, прочее копится сверх 54 стопок. */
+    @GameTest(template = "empty")
+    public static void tributeOverflowKeepsItems(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        Outpost o = virtualOutpost(level, data, FAR.offset(256, 0, 0), 1, UUID.randomUUID());
+        try {
+            o.tribute.clear();
+            for (int i = 0; i < Outpost.MAX_TRIBUTE_STACKS; i++) o.tribute.add(new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.COBBLESTONE, 64));
+            o.setStock(Resource.STONE, 0);
+            Simulation.addTribute(o, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.COBBLESTONE, 10));
+            h.assertTrue(Math.abs(o.stock(Resource.STONE) - 10) < 1e-6, "булыжник сверх полной дани должен уйти на склад, а не пропасть");
+            Simulation.addTribute(o, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.ARROW, 70));
+            int arrows = o.tribute.stream().filter(st -> st.is(net.minecraft.world.item.Items.ARROW)).mapToInt(net.minecraft.world.item.ItemStack::getCount).sum();
+            h.assertTrue(arrows == 70, "все стрелы должны сохраниться в дани, сохранилось " + arrows);
+        } finally {
+            OutpostManager.abandon(data, o, level.getGameTime());
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
+    /**
+     * Предметы, которые игрок положил в бочки сверх ёмкости склада, учитываются целиком (иначе синхронизация бочек
+     * удалила бы их), а последующая выработка не урезает уже существующий запас.
+     */
+    @GameTest(template = "empty")
+    public static void playerDepositAboveCapacityIsKept(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        Outpost o = virtualOutpost(level, data, FAR.offset(384, 0, 0), 1, UUID.randomUUID());
+        try {
+            int cap = o.capacity(Resource.STONE);
+            o.setStock(Resource.STONE, cap - 10);
+            QuestBoard.deliver(o, Resource.STONE, 50, level.getGameTime());
+            h.assertTrue(Math.abs(o.stock(Resource.STONE) - (cap + 40)) < 1e-6, "вклад игрока должен учитываться без урезания");
+            o.add(Resource.STONE, 25);
+            h.assertTrue(Math.abs(o.stock(Resource.STONE) - (cap + 40)) < 1e-6, "выработка не должна уменьшать запас выше ёмкости");
+        } finally {
+            OutpostManager.abandon(data, o, level.getGameTime());
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
+    /** Правки игрока (поставленные и разобранные блоки) переживают сохранение и загрузку. */
+    @GameTest(template = "empty")
+    public static void playerEditsPersist(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        Outpost o = virtualOutpost(level, data, FAR.offset(512, 0, 0), 1, UUID.randomUUID());
+        try {
+            BlockPos sapling = o.center.offset(3, 1, 3), wall = o.center.offset(-5, 2, 0);
+            o.notePlayerPlaced(sapling);
+            o.notePlayerRemoved(wall, true);
+            Outpost copy = Outpost.load(o.save(level.registryAccess()), level.registryAccess());
+            h.assertTrue(copy.placedByPlayer(sapling), "посаженное игроком должно сохраниться");
+            h.assertTrue(copy.removedByPlayer(wall), "разобранное игроком должно сохраниться");
+            copy.clearPlayerMarks(wall);
+            h.assertFalse(copy.removedByPlayer(wall), "новая постройка снимает пометку");
+        } finally {
+            OutpostManager.abandon(data, o, level.getGameTime());
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
     /** Тир кирки ограничен одновременно развитием форта и личным уровнем шахтёра. */
     @GameTest(template = "empty")
     public static void minerToolTierUsesBothProgressions(GameTestHelper h) {

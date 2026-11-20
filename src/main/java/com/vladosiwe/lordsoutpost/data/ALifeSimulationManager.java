@@ -96,6 +96,15 @@ public final class ALifeSimulationManager {
     public static void reset(MinecraftServer server) {
         ServerLevel level = server.overworld();
         if (level == null) return;
-        for (Outpost o : OutpostSavedData.get(level).all()) ChunkReconciliation.forget(o);
+        OutpostSavedData data = OutpostSavedData.get(level);
+        // ServerStoppingEvent приходит до сохранения мира. Сущности жителей не пишутся в чанк, поэтому их ношу
+        // и здоровье нужно вернуть в запись сейчас: при закрытии мира сущности не проходят через выгрузку.
+        for (Outpost o : data.all()) {
+            for (var r : new java.util.ArrayList<>(o.residents)) {
+                if (r.entity != null && level.getEntity(r.entity) instanceof com.vladosiwe.lordsoutpost.entity.OutpostNpc npc) npc.detach();
+            }
+        }
+        data.setDirty();
+        for (Outpost o : data.all()) ChunkReconciliation.forget(o);
     }
 }

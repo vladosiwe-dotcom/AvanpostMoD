@@ -90,6 +90,8 @@ public final class ChunkReconciliation {
                 } else if (!on && o.online) {
                     o.online = false;
                     o.claims.clear();
+                    o.deferredSteps.clear();
+                    o.stepFailures.clear();
                 }
                 if (o.online) syncResidents(level, data, o, now);
                 if (o.state == OutpostState.OWNED) {
@@ -151,17 +153,20 @@ public final class ChunkReconciliation {
         // Тиры, достроенные без игрока: доставляем хвосты их планов.
         o.doneBits.clear();
         o.claims.clear();
+        o.deferredSteps.clear();
+        o.stepFailures.clear();
         while (o.placedTier <= o.tier) {
             ensureGround(level, o, o.placedTier, Integer.MAX_VALUE);
             List<Step> plan = bp.plan(o.placedTier);
-            for (int i = o.placed; i < plan.size(); i++) placeStep(level, o, plan.get(i), false);
+            com.vladosiwe.lordsoutpost.blueprint.Design before = bp.design(o.placedTier - 1);
+            for (int i = o.placed; i < plan.size(); i++) placeTail(level, o, plan.get(i), before);
             o.placedTier++;
             o.placed = 0;
         }
         if (!o.complete()) {
             List<Step> plan = o.nextPlan();
             if (o.steps > o.placed) ensureGround(level, o, o.placedTier, Integer.MAX_VALUE);
-            for (int i = o.placed; i < Math.min(o.steps, plan.size()); i++) placeStep(level, o, plan.get(i), false);
+            for (int i = o.placed; i < Math.min(o.steps, plan.size()); i++) placeTail(level, o, plan.get(i), o.design());
             o.placed = Math.min(o.steps, plan.size());
         }
         if (o.state == OutpostState.WILD && !o.lootSeeded) seedTreasure(level, o);
@@ -175,7 +180,11 @@ public final class ChunkReconciliation {
         ChunkAccess chunk = level.getChunk(o.center.getX() >> 4, o.center.getZ() >> 4, ChunkStatus.STRUCTURE_STARTS, false);
         if (chunk == null) return false;
         StructureStart start = chunk.getStartForStructure(structure);
-        return start != null && start.isValid();
+        if (start != null && start.isValid()) return true;
+        // Начало структуры хранится в чанке-кандидате сетки; если центр оказался в соседнем чанке,
+        // форт всё равно стоит — его видно по ссылкам структуры в чанке центра.
+        StructureStart byReference = level.structureManager().getStructureAt(o.center.above(), structure);
+        return byReference != null && byReference.isValid();
     }
 
     /** Редкая добыча в сундуке Капитана. */
@@ -208,6 +217,7 @@ public final class ChunkReconciliation {
             // Тир завершился прямо сейчас (последний блок ещё не стоял) — доводим до конца.
             arrive(level, data, o, now);
         }
+        o.buildClock = now;
         if (!o.complete() && o.placedTier == o.tier + 1) {
             if (o.groundTier < o.placedTier && (o.steps > o.placed || o.state == OutpostState.OWNED)) ensureGround(level, o, o.placedTier, 24);
             List<Step> plan = o.nextPlan();
@@ -223,7 +233,7 @@ public final class ChunkReconciliation {
                     boolean hasBuilder = o.activeCount(Role.BUILDER) > 0;
                     for (int idx : expired) {
                         if (hasBuilder) releaseClaim(o, idx);
-                        else place(level, o, idx, true);
+                        else placeOrYield(level, o, idx, true);
                     }
                 }
             }
@@ -232,7 +242,7 @@ public final class ChunkReconciliation {
             if (o.activeCount(Role.BUILDER) == 0 && o.groundTier >= o.placedTier
                     && limit - o.placed - o.claims.size() > BACKLOG) {
                 int idx = nextFree(o, limit);
-                if (idx >= 0) place(level, o, idx, false);
+                if (idx >= 0) placeOrYield(level, o, idx, false);
             }
         }
         long phase = Math.floorMod(now + o.id, 40L);
@@ -253,9 +263,67 @@ public final class ChunkReconciliation {
 
     private static int nextFree(Outpost o, int limit) {
         for (int i = o.placed; i < limit; i++) {
-            if (!o.doneBits.get(i) && !o.claims.containsKey(i)) return i;
+            if (o.doneBits.get(i) || o.claims.containsKey(i)) continue;
+            Long retry = o.deferredSteps.get(i);
+            if (retry != null && retry > o.buildClock) continue;
+            return i;
         }
         return -1;
+    }
+
+    /**
+     * Строитель не смог добраться до шага: шаг откладывается с растущей паузой (10 с, 20 с … до 5 мин),
+     * чтобы остальные шаги шли своим чередом, а невозможная задача не повторялась каждый тик.
+     */
+    public static void deferStep(Outpost o, int index, long now) {
+        if (index < 0) return;
+        o.claims.remove(index);
+        int fails = o.stepFailures.merge(index, 1, Integer::sum);
+        long delay = 200L << Math.min(5, fails - 1);
+        o.deferredSteps.put(index, now + Math.min(6000L, delay));
+        if (fails == 6) {
+            List<Step> plan = o.nextPlan();
+            if (index < plan.size()) {
+                BlockPos p = o.world(plan.get(index).pos());
+                com.vladosiwe.lordsoutpost.LordsOutpost.LOGGER.info("Форт #{}: шаг стройки {} у {} недоступен строителям, отложен",
+                        Long.toHexString(o.id), index, p.toShortString());
+            }
+        }
+    }
+
+    /** Сколько раз этот шаг уже откладывался. */
+    public static int stepFailures(Outpost o, int index) {
+        return o.stepFailures.getOrDefault(index, 0);
+    }
+
+    /**
+     * Клетку шага занимает постройка игрока: чертёж уступает. Шаг считается выполненным без установки блока,
+     * поэтому стройка идёт дальше, а постройка игрока остаётся на месте.
+     */
+    public static void yieldToPlayer(Outpost o, int index) {
+        List<Step> plan = o.nextPlan();
+        o.claims.remove(index);
+        if (index < 0 || index >= plan.size() || o.placedTier != o.tier + 1) return;
+        int i = index;
+        do {
+            if (i >= o.placed) {
+                o.doneBits.set(i);
+                o.claims.remove(i);
+                o.deferredSteps.remove(i);
+                o.stepFailures.remove(i);
+            }
+            i++;
+        } while (i < plan.size() && plan.get(i).chain());
+        advancePlaced(o);
+    }
+
+    private static void advancePlaced(Outpost o) {
+        while (o.doneBits.get(o.placed)) {
+            o.doneBits.clear(o.placed);
+            o.deferredSteps.remove(o.placed);
+            o.stepFailures.remove(o.placed);
+            o.placed++;
+        }
     }
 
     /** Строитель резервирует следующий доступный шаг чертежа. */
@@ -300,12 +368,47 @@ public final class ChunkReconciliation {
         List<Step> plan = o.nextPlan();
         if (index < 0 || index >= plan.size()) return true;
         Step step = plan.get(index);
-        BlockPos pos = o.world(step.pos());
+        return !mayOverwrite(level, o, o.world(step.pos()), step.pos(), step.state(), o.design());
+    }
+
+    /**
+     * Можно ли чертежу занять клетку: она пуста, в ней уже нужный блок, блок прежнего тира форта, жидкость
+     * или естественная помеха. Всё, что поставил игрок, и любые блоки с содержимым чертёж не трогает.
+     */
+    public static boolean mayOverwrite(ServerLevel level, Outpost o, BlockPos pos, BlockPos rel, BlockState desired,
+                                       @Nullable com.vladosiwe.lordsoutpost.blueprint.Design previous) {
         BlockState old = level.getBlockState(pos);
-        if (old.isAir() || old.equals(step.state())) return false;
-        var previous = o.design().cells.get(step.pos());
-        if (previous != null && previous.state() == old) return false;
-        return !isNaturalObstruction(old, step.state());
+        if (old.isAir() || old.equals(desired)) return true;
+        if (o.placedByPlayer(pos)) return false;
+        var prev = previous == null ? null : previous.cells.get(rel);
+        if (prev != null && prev.state().getBlock() == old.getBlock()) return true;
+        if (old.getBlock() instanceof net.minecraft.world.level.block.LiquidBlock) return true;
+        return level.getBlockEntity(pos) == null && isNaturalObstruction(old, desired);
+    }
+
+    /** Ставит шаг, выполненный без игрока, только если клетка не занята чужой постройкой. */
+    private static void placeTail(ServerLevel level, Outpost o, Step step, com.vladosiwe.lordsoutpost.blueprint.Design before) {
+        BlockPos pos = o.world(step.pos());
+        if (level.isOutsideBuildHeight(pos)) return;
+        if (!mayOverwrite(level, o, pos, step.pos(), step.state(), before)) return;
+        placeStep(level, o, step, false);
+        o.clearPlayerMarks(pos);
+    }
+
+    /**
+     * Естественный рельеф и растительность, которые можно срезать при выравнивании площадки.
+     * Всё прочее (доски, кирпич, стекло, блоки с содержимым) считается постройкой и остаётся на месте.
+     */
+    public static boolean naturalTerrain(BlockState s) {
+        return s.is(BlockTags.LOGS) || s.is(BlockTags.LEAVES) || s.is(BlockTags.DIRT) || s.is(BlockTags.BASE_STONE_OVERWORLD)
+                || s.is(BlockTags.SAND) || s.is(BlockTags.SNOW) || s.is(BlockTags.ICE) || s.is(BlockTags.TERRACOTTA)
+                || s.is(net.neoforged.neoforge.common.Tags.Blocks.ORES) || s.is(net.neoforged.neoforge.common.Tags.Blocks.GRAVELS)
+                || s.is(BlockTags.FLOWERS) || s.is(BlockTags.SAPLINGS) || s.is(BlockTags.REPLACEABLE) || s.is(BlockTags.REPLACEABLE_BY_TREES)
+                || s.is(Blocks.CLAY) || s.is(Blocks.CACTUS) || s.is(Blocks.SUGAR_CANE) || s.is(Blocks.BAMBOO) || s.is(Blocks.PUMPKIN)
+                || s.is(Blocks.MELON) || s.is(Blocks.MOSS_BLOCK) || s.is(Blocks.SANDSTONE) || s.is(Blocks.RED_SANDSTONE)
+                || s.is(Blocks.BROWN_MUSHROOM_BLOCK) || s.is(Blocks.RED_MUSHROOM_BLOCK) || s.is(Blocks.MUSHROOM_STEM)
+                || s.is(Blocks.SWEET_BERRY_BUSH) || s.is(Blocks.POWDER_SNOW)
+                || s.getBlock() instanceof net.minecraft.world.level.block.LiquidBlock;
     }
 
     /** Строитель вручную убирает естественную растительность, попавшую в ячейку нового здания. */
@@ -315,7 +418,8 @@ public final class ChunkReconciliation {
         Step step = plan.get(index);
         BlockPos pos = o.world(step.pos());
         BlockState old = level.getBlockState(pos);
-        if (old.isAir() || old.equals(step.state()) || level.getBlockEntity(pos) != null || !isNaturalObstruction(old, step.state())) return false;
+        if (old.isAir() || old.equals(step.state()) || level.getBlockEntity(pos) != null || o.placedByPlayer(pos)
+                || !isNaturalObstruction(old, step.state())) return false;
         var previous = o.design().cells.get(step.pos());
         if (previous != null && previous.state() == old) return false;
         builder.swing(InteractionHand.MAIN_HAND);
@@ -328,6 +432,12 @@ public final class ChunkReconciliation {
         return true;
     }
 
+    /** Автодостройка без строителей: ставит шаг, но клетку с постройкой игрока оставляет как есть. */
+    private static void placeOrYield(ServerLevel level, Outpost o, int index, boolean effects) {
+        if (blockedByForeignBlock(level, o, index)) yieldToPlayer(o, index);
+        else place(level, o, index, effects);
+    }
+
     /** Ставит шаг текущего плана вместе с привязанными к нему (вторая половина кровати). */
     public static void place(ServerLevel level, Outpost o, int index, boolean effects) {
         List<Step> plan = o.nextPlan();
@@ -337,15 +447,13 @@ public final class ChunkReconciliation {
         do {
             if (i >= o.placed && !o.doneBits.get(i)) {
                 placeStep(level, o, plan.get(i), effects);
+                o.clearPlayerMarks(o.world(plan.get(i).pos()));
                 o.doneBits.set(i);
                 o.claims.remove(i);
             }
             i++;
         } while (i < plan.size() && plan.get(i).chain());
-        while (o.doneBits.get(o.placed)) {
-            o.doneBits.clear(o.placed);
-            o.placed++;
-        }
+        advancePlaced(o);
     }
 
     private static void placeStep(ServerLevel level, Outpost o, Step step, boolean effects) {
@@ -427,12 +535,16 @@ public final class ChunkReconciliation {
             budget--;
             for (int y = baseY + 26; y > baseY; y--) {
                 pos.set(x, y, z);
-                if (!level.getBlockState(pos).isAir()) level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS);
+                BlockState s = level.getBlockState(pos);
+                // Срезается только естественный рельеф: постройки игрока за прежними стенами остаются.
+                if (s.isAir() || o.placedByPlayer(pos) || level.getBlockEntity(pos) != null || !naturalTerrain(s)) continue;
+                level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS);
             }
             for (int d = 0; d <= 8; d++) {
                 pos.set(x, baseY - d, z);
                 BlockState s = level.getBlockState(pos);
                 if (!s.isAir() && s.getFluidState().isEmpty() && !s.canBeReplaced()) break;
+                if (o.placedByPlayer(pos)) break;
                 level.setBlock(pos, (d == 0 ? Blocks.GRASS_BLOCK : Blocks.DIRT).defaultBlockState(), Block.UPDATE_CLIENTS);
             }
         }
@@ -448,7 +560,7 @@ public final class ChunkReconciliation {
         if (!o.repairs.isEmpty()) {
             BlockPos rel = o.repairs.pollFirst();
             var cell = cells.get(rel);
-            if (cell != null && !overridden(o, rel)) {
+            if (cell != null && !overridden(o, rel) && !o.removedByPlayer(o.world(rel))) {
                 Resource cost = FortBlueprint.costOf(cell.state());
                 if (cost == null || o.take(cost, 1)) placeStep(level, o, new Step(rel, cell.state(), false, cost), true);
                 else o.repairs.addLast(rel);
@@ -464,7 +576,7 @@ public final class ChunkReconciliation {
             BlockPos rel = it.next();
             o.repairCursor++;
             var cell = cells.get(rel);
-            if (cell.state().isAir() || rel.getY() <= 0 || overridden(o, rel)) continue;
+            if (cell.state().isAir() || rel.getY() <= 0 || overridden(o, rel) || o.removedByPlayer(o.world(rel))) continue;
             Block want = cell.state().getBlock();
             if (!(want == Blocks.COBBLESTONE || FortBlueprint.costOf(cell.state()) != null)) continue;
             if (level.getBlockState(o.world(rel)).isAir() && o.repairs.size() < 64) o.repairs.addLast(rel);
@@ -697,8 +809,7 @@ public final class ChunkReconciliation {
             if (!c.materialized) {
                 Vec3 p = c.position();
                 BlockPos at = BlockPos.containing(p.x, o.center.getY(), p.z);
-                if (c.phase != Caravan.Phase.TRADING && level.isPositionEntityTicking(at)
-                        && level.getNearestPlayer(p.x, level.getSeaLevel() + 10, p.z, 96, false) != null) materialize(level, o, c);
+                if (c.phase != Caravan.Phase.TRADING && level.isPositionEntityTicking(at) && playerNearby(level, p.x, p.z, 96)) materialize(level, o, c);
                 continue;
             }
             Resident leader = o.resident(c.leader);
@@ -741,6 +852,16 @@ public final class ChunkReconciliation {
                 }
             }
         }
+    }
+
+    /** Игрок рядом по горизонтали: высота не важна (игрок может быть в горах или в шахте над дорогой каравана). */
+    private static boolean playerNearby(ServerLevel level, double x, double z, double range) {
+        for (ServerPlayer p : level.players()) {
+            if (p.isSpectator()) continue;
+            double dx = p.getX() - x, dz = p.getZ() - z;
+            if (dx * dx + dz * dz <= range * range) return true;
+        }
+        return false;
     }
 
     private static void materialize(ServerLevel level, Outpost o, Caravan c) {

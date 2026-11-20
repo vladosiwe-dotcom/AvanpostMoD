@@ -126,6 +126,49 @@ public final class ProtectionEvents {
         }
     }
 
+    // ============================== Учёт правок игрока ==============================
+
+    /** Радиус, в котором лесоруб ищет деревья вокруг дровяного двора (см. WorkGoal.findTree), с запасом. */
+    private static final int FORESTRY_ZONE = 72;
+
+    /**
+     * Игрок поставил блок: запоминаем его, чтобы жители не срубили посаженное дерево, не выпололи цветы
+     * и не снесли постройку ради чертежа. Срабатывает последним и только если установку никто не отменил.
+     */
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public static void notePlace(BlockEvent.EntityPlaceEvent event) {
+        if (event.isCanceled() || !(event.getLevel() instanceof ServerLevel level) || level.dimension() != Level.OVERWORLD) return;
+        if (!(event.getEntity() instanceof Player) || event.getEntity() instanceof net.neoforged.neoforge.common.util.FakePlayer) return;
+        OutpostSavedData data = OutpostSavedData.get(level);
+        BlockPos pos = event.getPos().immutable();
+        boolean plant = event.getPlacedBlock().is(net.minecraft.tags.BlockTags.SAPLINGS);
+        boolean changed = false;
+        for (Outpost o : data.near(pos.getX(), pos.getZ(), FORESTRY_ZONE + 48)) {
+            if (o.state == OutpostState.WILD) continue;
+            boolean inside = o.contains(pos);
+            boolean forestry = plant && o.marker(Marker.WOODYARD).distSqr(pos) <= (double) FORESTRY_ZONE * FORESTRY_ZONE;
+            if (inside || forestry) {
+                o.notePlayerPlaced(pos);
+                changed = true;
+            }
+        }
+        if (changed) data.setDirty();
+    }
+
+    /** Игрок разобрал блок: если это клетка чертежа, ремонт больше не будет её восстанавливать. */
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public static void noteBreak(BlockEvent.BreakEvent event) {
+        if (event.isCanceled() || !(event.getLevel() instanceof ServerLevel level) || level.dimension() != Level.OVERWORLD) return;
+        if (event.getPlayer() == null || event.getPlayer() instanceof net.neoforged.neoforge.common.util.FakePlayer) return;
+        OutpostSavedData data = OutpostSavedData.get(level);
+        BlockPos pos = event.getPos().immutable();
+        Outpost o = data.findAt(pos);
+        if (o == null || o.state == OutpostState.WILD) return;
+        boolean cell = o.design().cells.containsKey(pos.subtract(o.center));
+        o.notePlayerRemoved(pos, cell);
+        data.setDirty();
+    }
+
     /** Взрывы не разрушают защищённый форт. */
     @SubscribeEvent
     public static void onExplosion(ExplosionEvent.Detonate event) {

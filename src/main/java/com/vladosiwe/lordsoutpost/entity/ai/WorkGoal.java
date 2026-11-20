@@ -306,6 +306,8 @@ public class WorkGoal extends Goal {
         double bestD = Double.MAX_VALUE;
         for (ItemEntity e : mob.level().getEntitiesOfClass(ItemEntity.class, mob.getBoundingBox().inflate(14, 4, 14))) {
             if (!e.isAlive() || e.getAge() < 40 || e.hasPickUpDelay()) continue;
+            // Предмет, который игрок сам выбросил, — его дело: житель не уносит его на склад, пока предмет не залежится.
+            if (e.getAge() < 3000 && e.getOwner() instanceof net.minecraft.world.entity.player.Player) continue;
             if (!o.contains(e.blockPosition()) && mob.distanceToSqr(e) > 36) continue;
             double d = mob.distanceToSqr(e);
             if (d < bestD) {
@@ -413,7 +415,7 @@ public class WorkGoal extends Goal {
                 if (!level.getBlockState(base.below()).is(BlockTags.DIRT)) continue;
                 Outpost occupied = data.findAt(base);
                 if ((occupied != null && occupied != o) || (occupied == o && !o.insideWalls(base))
-                        || o.claimedTrees.contains(base) || !naturalLeaves(level, top)) continue;
+                        || o.claimedTrees.contains(base) || !naturalLeaves(level, top) || plantedByPlayer(data, base)) continue;
                 // Сначала освобождаем двор собственного форта, затем идём за деревьями за стенами.
                 double d = mob.distanceToSqr(base.getX(), base.getY(), base.getZ()) - (occupied == o ? 1_000_000.0 : 0.0);
                 if (d < bestD) {
@@ -445,7 +447,8 @@ public class WorkGoal extends Goal {
                     BlockPos pos = new BlockPos(x, y, z);
                     BlockState state = level.getBlockState(pos);
                     if (state.isAir() || !state.getFluidState().isEmpty() || level.getBlockEntity(pos) != null
-                            || state.is(BlockTags.CROPS) || state.is(BlockTags.LOGS) || state.is(BlockTags.LEAVES)) continue;
+                            || state.is(BlockTags.CROPS) || state.is(BlockTags.LOGS) || state.is(BlockTags.LEAVES)
+                            || o.placedByPlayer(pos)) continue;
                     if (!(state.canBeReplaced() || state.is(BlockTags.FLOWERS) || state.is(BlockTags.SAPLINGS)
                             || state.is(BlockTags.REPLACEABLE_BY_TREES))) continue;
                     double d = mob.distanceToSqr(pos.getX(), pos.getY(), pos.getZ());
@@ -485,6 +488,20 @@ public class WorkGoal extends Goal {
         r.lastRealWork = now;
         vegetation = null;
         return true;
+    }
+
+    /**
+     * Дерево выросло из саженца, посаженного игроком (у крупных деревьев 2×2 саженец мог стоять в соседней клетке).
+     * Проверяются все аванпосты рядом: декоративное дерево игрока не рубят ни свои, ни соседские лесорубы.
+     */
+    private static boolean plantedByPlayer(OutpostSavedData data, BlockPos base) {
+        for (Outpost other : data.near(base.getX(), base.getZ(), 160)) {
+            if (other.playerPlaced.isEmpty()) continue;
+            for (int dx = -1; dx <= 1; dx++)
+                for (int dz = -1; dz <= 1; dz++)
+                    if (other.placedByPlayer(base.offset(dx, 0, dz))) return true;
+        }
+        return false;
     }
 
     /** Дерево растёт само, если у вершины есть природная (не поставленная игроком) листва. */

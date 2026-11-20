@@ -91,9 +91,9 @@ public final class Simulation {
         o.add(Resource.SEEDS, farmers * FARM_SEEDS_PER_DAY * prod);
         int miners = virtualWorkers(o, Role.MINER, now);
         o.add(Resource.STONE, miners * STONE_PER_DAY * prod * (o.boosted(Resource.STONE, now) ? boost : 1));
-        // Железной руды в штреке мало, поэтому шахтёр в мире всё равно даёт половину железа «из промывки».
-        double ironMiners = miners + 0.5 * (o.activeCount(Role.MINER) - miners);
-        o.add(Resource.IRON, ironMiners * 24 * prod * (o.boosted(Resource.IRON, now) ? boost : 1));
+        // Железо вдали — виртуальная добыча. Шахтёр, работающий в мире, приносит только реально добытую руду:
+        // абстрактная «промывка» рядом с игроком давала железо из ничего.
+        o.add(Resource.IRON, miners * 24 * prod * (o.boosted(Resource.IRON, now) ? boost : 1));
         double foodBoost = o.boosted(Resource.FOOD, now) ? boost : 1;
         int skotovods = virtualWorkers(o, Role.SKOTOVOD, now);
         // Каждый скотовод делит рабочее время между охотой и стадом: половина выработки приходится на каждое направление.
@@ -195,6 +195,10 @@ public final class Simulation {
                     o.placedTier = o.tier + 1;
                     o.placed = 0;
                 }
+                // Индексы отложенных шагов относились к плану прежнего тира.
+                o.deferredSteps.clear();
+                o.stepFailures.clear();
+                o.doneBits.clear();
                 o.buildCredit = 0;
                 o.log(now, "lordsoutpost.event.tier_up", o.tier);
             }
@@ -269,6 +273,11 @@ public final class Simulation {
         }
     }
 
+    /**
+     * Кладёт предмет в дань. Предметы никогда не выбрасываются: при переполнении сначала ресурсы уходят
+     * на склад (если там есть место), а остальное копится сверх обычного предела в 54 стопки до тех пор,
+     * пока Лорд не разберёт Сундук Дани. Переданный стек опустошается.
+     */
     public static void addTribute(Outpost o, ItemStack stack) {
         if (stack.isEmpty()) return;
         for (ItemStack have : o.tribute) {
@@ -276,12 +285,37 @@ public final class Simulation {
                 int move = Math.min(stack.getCount(), have.getMaxStackSize() - have.getCount());
                 have.grow(move);
                 stack.shrink(move);
-                if (stack.isEmpty()) return;
+                if (stack.isEmpty()) {
+                    o.dirtyForClients = true;
+                    return;
+                }
             }
         }
-        if (o.tribute.size() < Outpost.MAX_TRIBUTE_STACKS) o.tribute.add(stack.copy());
+        if (o.tribute.size() >= Outpost.MAX_TRIBUTE_STACKS) {
+            // Сундук Дани переполнен: ресурс лучше положить на склад, чем держать мёртвым грузом.
+            ResourceItems.Value v = ResourceItems.of(stack);
+            if (v != null && Storehouse.physical(v.resource())) {
+                double room = Math.max(0, o.capacity(v.resource()) - o.stock(v.resource()));
+                int accepted = Math.min(stack.getCount(), (int) Math.floor((room + 1e-9) / v.perItem()));
+                if (accepted > 0) {
+                    o.add(v.resource(), accepted * v.perItem());
+                    stack.shrink(accepted);
+                }
+            }
+            if (!stack.isEmpty() && o.tribute.size() == TRIBUTE_WARN_STACKS) {
+                com.vladosiwe.lordsoutpost.LordsOutpost.LOGGER.warn("Форт #{}: в дани {} стопок, Сундук Дани давно не разбирали",
+                        Long.toHexString(o.id), o.tribute.size());
+            }
+        }
+        while (!stack.isEmpty()) {
+            int n = Math.min(stack.getCount(), stack.getMaxStackSize());
+            o.tribute.add(stack.copyWithCount(n));
+            stack.shrink(n);
+        }
         o.dirtyForClients = true;
     }
+
+    private static final int TRIBUTE_WARN_STACKS = 512;
 
     private static void grow(Outpost o, long now, double days, double boost, RandomSource rnd) {
         if (o.residents.size() >= o.populationCap() || o.starving) return;
