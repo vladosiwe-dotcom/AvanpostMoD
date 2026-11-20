@@ -1,5 +1,6 @@
 package com.vladosiwe.lordsoutpost.entity.ai;
 
+import com.vladosiwe.lordsoutpost.blueprint.FortBlueprint;
 import com.vladosiwe.lordsoutpost.blueprint.Step;
 import com.vladosiwe.lordsoutpost.data.ChunkReconciliation;
 import com.vladosiwe.lordsoutpost.data.Projects;
@@ -47,8 +48,12 @@ public class BuildGoal extends Goal {
     public boolean canUse() {
         if (mob.level().isClientSide || mob.role() != Role.BUILDER || mob.caravanId != null || mob.cargoReadyToDeposit()) return false;
         Outpost o = mob.outpost();
-        return o != null && (claim >= 0 || projectKey >= 0 || ChunkReconciliation.hasWork(o) || Projects.hasWork(o));
+        return o != null && (claim >= 0 || projectKey >= 0 || repair != null || (o.online && !o.repairs.isEmpty())
+                || ChunkReconciliation.hasWork(o) || Projects.hasWork(o));
     }
+
+    /** Ремонт: клетка готового тира, которую сломали (сначала — склад, кузница, шахта, ворота, загон, поле). */
+    @Nullable private BlockPos repair;
 
     @Override
     public boolean requiresUpdateEveryTick() {
@@ -65,14 +70,48 @@ public class BuildGoal extends Goal {
         }
         if (!hasJob()) {
             if (--cooldown > 0) return;
-            claim = ChunkReconciliation.claim(o, level.getGameTime());
+            // Ремонт важнее новой стройки: очередь ремонта уже отсортирована — функциональные здания впереди.
+            if (o.online && !o.repairs.isEmpty()) {
+                repair = o.repairs.pollFirst();
+                if (repairStep(o) == null || ChunkReconciliation.repairDone(level, o, repair)) {
+                    repair = null;
+                    cooldown = 2;
+                    return;
+                }
+                Step rs = repairStep(o);
+                target = o.world(rs.pos());
+                workPosition = null;
+                timeout = 200;
+                lastResult = "claimed-repair";
+            }
+        }
+        if (!hasJob()) {
+            // Заказы Лорда не ждут конца всего тира: один строитель (или единственный) берёт сначала заказ,
+            // остальные — сначала план тира. Так идут обе стройки сразу.
+            boolean ordersFirst = Projects.hasWork(o) && (o.activeCount(com.vladosiwe.lordsoutpost.outpost.Role.BUILDER) <= 1
+                    || (mob.getUUID().getLeastSignificantBits() & 1L) == 0);
+            if (ordersFirst) {
+                projectKey = Projects.claim(o, level.getGameTime());
+                if (projectKey < 0) {
+                    topUp(o);
+                    projectKey = Projects.claimPaying(o, level.getGameTime());
+                }
+                if (projectKey < 0 && Projects.neededMaterial(o) != null && !hasCarried(Projects.neededMaterial(o))
+                        && Projects.unpaidExists(o)) {
+                    fetching = Projects.neededMaterial(o);
+                    fetchTimeout = 600;
+                    lastResult = "fetch-" + fetching.id;
+                    return;
+                }
+            }
+            if (projectKey < 0) claim = ChunkReconciliation.claim(o, level.getGameTime());
             if (claim >= o.nextPlan().size()) {
                 ChunkReconciliation.releaseClaim(o, claim);
                 claim = -1;
                 cooldown = 20;
                 return;
             }
-            if (claim < 0) projectKey = Projects.claim(o, level.getGameTime());
+            if (claim < 0 && projectKey < 0) projectKey = Projects.claim(o, level.getGameTime());
             if (claim < 0 && projectKey < 0) {
                 // Следующий шаг заказа оплачивается материалом из ноши строителя.
                 topUp(o);
@@ -229,7 +268,7 @@ public class BuildGoal extends Goal {
     private void fetchMaterial(ServerLevel level, Outpost o) {
         var r = fetching;
         long now = level.getGameTime();
-        BlockPos store = o.zone(com.vladosiwe.lordsoutpost.outpost.WorkZone.STOREHOUSE);
+        BlockPos store = com.vladosiwe.lordsoutpost.data.Storehouse.storePos(level, o);
         if (--fetchTimeout <= 0) {
             fetching = null;
             cooldown = 200;
@@ -275,11 +314,19 @@ public class BuildGoal extends Goal {
     // ---------- Текущая работа: шаг плана тира или шаг заказанной постройки ----------
 
     private boolean hasJob() {
-        return claim >= 0 || projectKey >= 0;
+        return claim >= 0 || projectKey >= 0 || repair != null;
+    }
+
+    @Nullable
+    private Step repairStep(Outpost o) {
+        if (repair == null) return null;
+        var cell = o.design().cells.get(repair);
+        return cell == null ? null : new Step(repair, cell.state(), false, FortBlueprint.costOf(cell.state()));
     }
 
     @Nullable
     private Step jobStep(Outpost o) {
+        if (repair != null) return repairStep(o);
         if (claim >= 0) {
             List<Step> plan = o.nextPlan();
             return claim < plan.size() ? plan.get(claim) : null;
@@ -288,10 +335,19 @@ public class BuildGoal extends Goal {
     }
 
     private boolean renewJob(Outpost o, long now) {
+        if (repair != null) return true;
         return claim >= 0 ? ChunkReconciliation.renewClaim(o, claim, now) : Projects.renew(o, projectKey, now);
     }
 
     private void placeJob(ServerLevel level, Outpost o, boolean effects) {
+        if (repair != null) {
+            Step rs = repairStep(o);
+            // Материал ремонта — со склада, как и у стройки; нет материала — ремонт ждёт в очереди.
+            if (rs != null && (rs.cost() == null || o.take(rs.cost(), 1))) ChunkReconciliation.placeStep(level, o, rs, effects);
+            else if (rs != null) o.repairs.addLast(repair);
+            repair = null;
+            return;
+        }
         if (claim >= 0) ChunkReconciliation.place(level, o, claim, effects);
         else if (projectKey >= 0) Projects.place(level, o, projectKey, effects);
         claim = -1;
@@ -299,10 +355,12 @@ public class BuildGoal extends Goal {
     }
 
     private boolean blockedJob(ServerLevel level, Outpost o) {
+        if (repair != null) return o.placedByPlayer(o.world(repair)) || o.removedByPlayer(o.world(repair));
         return claim >= 0 ? ChunkReconciliation.blockedByForeignBlock(level, o, claim) : Projects.blocked(level, o, projectKey);
     }
 
     private void yieldJob(Outpost o) {
+        repair = null;
         if (claim >= 0) ChunkReconciliation.yieldToPlayer(o, claim);
         else if (projectKey >= 0) Projects.yieldCell(o, projectKey);
         claim = -1;
@@ -314,6 +372,8 @@ public class BuildGoal extends Goal {
     }
 
     private void releaseJob(@Nullable Outpost o) {
+        if (repair != null && o != null) o.repairs.addLast(repair);
+        repair = null;
         ChunkReconciliation.releaseClaim(o, claim);
         if (o != null) Projects.release(o, projectKey);
         claim = -1;
@@ -414,6 +474,8 @@ public class BuildGoal extends Goal {
 
     /** Шаг недоступен: откладываем его, а строитель берёт следующий. */
     private void defer(Outpost o, long now) {
+        if (repair != null) o.repairs.addLast(repair);
+        repair = null;
         if (claim >= 0) ChunkReconciliation.deferStep(o, claim, now);
         else if (projectKey >= 0) Projects.defer(o, projectKey, now);
         claim = -1;

@@ -224,7 +224,8 @@ public final class Simulation {
      */
     private static void smith(Outpost o, long now, double days, double boost) {
         int smiths = virtualWorkers(o, Role.SMITH, now);
-        if (smiths == 0) return;
+        // Без кузницы по чертежу (или перенесённой) ремонта и перековки нет — ни рядом с игроком, ни вдали.
+        if (smiths == 0 || !o.hasZone(com.vladosiwe.lordsoutpost.outpost.WorkZone.SMITHY)) return;
         boolean helped = o.boosted(Resource.HIDES, now) || o.boosted(Resource.IRON, now);
         o.smithWork = Math.min(8, o.smithWork + smiths * 30 * days * (helped ? boost : 1));
         while (o.smithWork >= 1) {

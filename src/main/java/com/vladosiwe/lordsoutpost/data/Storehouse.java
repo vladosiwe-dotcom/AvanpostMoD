@@ -53,13 +53,56 @@ public final class Storehouse {
         };
     }
 
-    /** Бочки склада текущего тира, которые сейчас загружены. */
+    /**
+     * Бочки склада текущего тира, которые сейчас загружены. Пока склад сносят и строят заново (смена тира),
+     * жители пользуются временным хранилищем: бочками нового склада, если они уже стоят, иначе бочками и сундуками,
+     * которые Лорд сам поставил внутри стен. Место временного хранилища запоминается в {@link Outpost#tempStore}.
+     */
     public static List<Container> barrels(ServerLevel level, Outpost o) {
         List<Container> out = new ArrayList<>();
         for (BlockPos pos : o.markers(Marker.STOCKPILE)) {
             if (level.isLoaded(pos) && level.getBlockEntity(pos) instanceof Container c) out.add(c);
         }
+        if (!out.isEmpty()) {
+            o.tempStore = null;
+            return out;
+        }
+        BlockPos first = null;
+        if (!o.complete()) {
+            var next = o.blueprint().design(o.tier + 1);
+            for (BlockPos rel : next.markers(Marker.STOCKPILE)) {
+                BlockPos pos = o.world(rel);
+                if (level.isLoaded(pos) && level.getBlockEntity(pos) instanceof Container c) {
+                    out.add(c);
+                    if (first == null) first = pos;
+                }
+            }
+        }
+        if (out.isEmpty()) {
+            var it = o.playerPlaced.iterator();
+            while (it.hasNext()) {
+                BlockPos pos = BlockPos.of(it.nextLong());
+                if (!o.insideWalls(pos) || !level.isLoaded(pos)) continue;
+                var be = level.getBlockEntity(pos);
+                if (be instanceof net.minecraft.world.level.block.entity.BarrelBlockEntity || be instanceof net.minecraft.world.level.block.entity.ChestBlockEntity) {
+                    out.add((Container) be);
+                    if (first == null) first = pos;
+                }
+            }
+        }
+        o.tempStore = first;
         return out;
+    }
+
+    /** Куда нести и откуда брать: склад или, пока его нет, временное хранилище. */
+    public static BlockPos storePos(ServerLevel level, Outpost o) {
+        barrels(level, o);
+        return o.tempStore != null ? o.tempStore : o.zone(com.vladosiwe.lordsoutpost.outpost.WorkZone.STOREHOUSE);
+    }
+
+    public static BlockPos storeInside(ServerLevel level, Outpost o) {
+        barrels(level, o);
+        return o.tempStore != null ? o.tempStore : o.marker(Marker.STORE_INSIDE);
     }
 
     public static EnumMap<Resource, Double> measure(List<Container> barrels) {

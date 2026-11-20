@@ -822,6 +822,39 @@ public final class OutpostGameTests {
         h.succeed();
     }
 
+    /**
+     * Временное хранилище: склада нет (снесён при смене тира) — жители пользуются бочкой, которую поставил Лорд
+     * внутри стен; когда склад снова стоит, временное хранилище больше не используется.
+     */
+    @GameTest(template = "empty")
+    public static void temporaryStorageWhileStorehouseIsRebuilt(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        Outpost o = virtualOutpost(level, data, FAR.offset(2560, 0, 0), 1, UUID.randomUUID());
+        List<BlockPos> barrels = o.markers(com.vladosiwe.lordsoutpost.blueprint.Marker.STOCKPILE);
+        BlockPos temp = o.marker(com.vladosiwe.lordsoutpost.blueprint.Marker.YARD).above(2);
+        try {
+            for (BlockPos b : barrels) level.getChunk(b);
+            level.getChunk(temp);
+            h.assertTrue(Storehouse.barrels(level, o).isEmpty(), "склада нет");
+            level.setBlockAndUpdate(temp, net.minecraft.world.level.block.Blocks.BARREL.defaultBlockState());
+            o.notePlayerPlaced(temp);
+            h.assertTrue(Storehouse.barrels(level, o).size() == 1 && temp.equals(Storehouse.storePos(level, o)), "бочка Лорда — временный склад");
+            var box = new net.minecraft.world.SimpleContainer(1);
+            box.setItem(0, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.COBBLESTONE, 10));
+            Storehouse.deposit(level, o, box);
+            h.assertTrue(Storehouse.countItem(level, o, net.minecraft.world.item.Items.COBBLESTONE) == 10, "ноша легла во временный склад");
+            for (BlockPos b : barrels) level.setBlockAndUpdate(b, net.minecraft.world.level.block.Blocks.BARREL.defaultBlockState());
+            h.assertTrue(!temp.equals(Storehouse.storePos(level, o)) && o.tempStore == null, "склад построен — временный больше не нужен");
+        } finally {
+            for (BlockPos b : barrels) level.setBlockAndUpdate(b, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+            level.setBlockAndUpdate(temp, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+            OutpostManager.abandon(data, o, level.getGameTime());
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
     /** Лавка торговца продаёт только то, что в ней лежит: продажа списывает товар, изумруды идут в казну, лавка сохраняется. */
     @GameTest(template = "empty")
     public static void shopSellsOnlyRealStock(GameTestHelper h) {

@@ -612,7 +612,8 @@ public final class ChunkReconciliation {
     private static void repair(ServerLevel level, Outpost o) {
         var cells = o.design().cells;
         if (cells.isEmpty() || o.placedTier != o.tier + 1) return;
-        if (!o.repairs.isEmpty()) {
+        // Строители есть и форт рядом — чинят они сами, ногами и руками (BuildGoal); иначе — по-старому, само.
+        if (!o.repairs.isEmpty() && o.activeCount(Role.BUILDER) == 0) {
             BlockPos rel = o.repairs.pollFirst();
             var cell = cells.get(rel);
             if (cell != null && !overridden(o, rel) && !o.removedByPlayer(o.world(rel))) {
@@ -631,12 +632,33 @@ public final class ChunkReconciliation {
             BlockPos rel = it.next();
             o.repairCursor++;
             var cell = cells.get(rel);
-            if (cell.state().isAir() || rel.getY() <= 0 || overridden(o, rel) || o.removedByPlayer(o.world(rel))) continue;
             Block want = cell.state().getBlock();
-            if (!(want == Blocks.COBBLESTONE || FortBlueprint.costOf(cell.state()) != null)) continue;
-            if (level.getBlockState(o.world(rel)).isAir() && o.repairs.size() < 64) o.repairs.addLast(rel);
+            boolean ladder = want instanceof net.minecraft.world.level.block.LadderBlock;
+            // Под землёй чинится только лестница ствола шахты; всё прочее — над уровнем двора.
+            if (cell.state().isAir() || (rel.getY() <= 0 && !ladder) || overridden(o, rel) || o.removedByPlayer(o.world(rel))) continue;
+            if (!(ladder || want == Blocks.COBBLESTONE || FortBlueprint.costOf(cell.state()) != null)) continue;
+            if (o.repairs.contains(rel) || o.repairs.size() >= 64) continue;
+            if (repairDone(level, o, rel)) continue;
+            // Сначала функциональные здания (ворота, склад, кузница, шахта, загон, поле) и лестницы, потом остальное.
+            if (ladder || cell.stage() == com.vladosiwe.lordsoutpost.blueprint.FortDesigner.ST_WORKS
+                    || cell.stage() == com.vladosiwe.lordsoutpost.blueprint.FortDesigner.ST_GATE) o.repairs.addFirst(rel);
+            else o.repairs.addLast(rel);
         }
         if (!it.hasNext()) o.repairCursor = 0;
+    }
+
+    /**
+     * Клетка в порядке: стоит нужный блок. Пустая клетка или лестница, заваленная грунтом/камнем, — требует ремонта.
+     */
+    public static boolean repairDone(ServerLevel level, Outpost o, BlockPos rel) {
+        var cell = o.design().cells.get(rel);
+        if (cell == null) return true;
+        BlockState now = level.getBlockState(o.world(rel));
+        if (now.getBlock() == cell.state().getBlock()) return true;
+        if (now.isAir()) return false;
+        // Ствол шахты: лестницу заменили блоки (обвал, игрок не ставил) — их убирают и ставят лестницу заново.
+        return !(cell.state().getBlock() instanceof net.minecraft.world.level.block.LadderBlock)
+                || o.placedByPlayer(o.world(rel)) || level.getBlockEntity(o.world(rel)) != null;
     }
 
     /** Клетка уже перестроена шагами следующего тира — чинить её по старому чертежу нельзя. */

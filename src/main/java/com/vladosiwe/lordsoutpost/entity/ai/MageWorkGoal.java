@@ -165,7 +165,7 @@ public class MageWorkGoal extends Goal {
             nextTry = now + 1200;
             return;
         }
-        BlockPos store = o.zone(WorkZone.STOREHOUSE);
+        BlockPos store = Storehouse.storePos(level, o);
         switch (stage) {
             case FETCH -> {
                 if (!walk(store, 2.2)) return;

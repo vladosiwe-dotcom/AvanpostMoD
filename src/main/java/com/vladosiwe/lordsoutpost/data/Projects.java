@@ -99,7 +99,7 @@ public final class Projects {
         }
         if (active >= MAX_ACTIVE) return OrderResult.TOO_MANY;
         if (!level.hasChunk(x >> 4, z >> 4)) return OrderResult.NO_GROUND;
-        int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
+        int y = groundY(level, x, z);
         if (Math.abs(y - o.center.getY()) > 12) return OrderResult.NO_GROUND;
         Project p = new Project(o.projectCounter + 1, type, new BlockPos(x, y, z), Rotation.values()[Math.floorMod(rot, 4)]);
         OrderResult check = check(level, o, p);
@@ -109,7 +109,7 @@ public final class Projects {
         for (int i = 0; i < steps.size(); i++) {
             if (!p.floor(o, i)) continue;
             BlockPos w = o.world(steps.get(i).pos());
-            int g = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, w.getX(), w.getZ()) - 1;
+            int g = groundY(level, w.getX(), w.getZ());
             if (Math.abs(g - w.getY()) > 2) return OrderResult.UNEVEN;
         }
         if (!missing(o, type).isEmpty()) return OrderResult.NO_RESOURCES;
@@ -120,6 +120,18 @@ public final class Projects {
         o.log(now, "lordsoutpost.event.project_ordered", type.id);
         o.dirtyForClients = true;
         return OrderResult.OK;
+    }
+
+    /** Высота земли: верхний блок без стволов, листвы, снега и травы (их строители расчистят). */
+    public static int groundY(ServerLevel level, int x, int z) {
+        BlockPos.MutableBlockPos p = new BlockPos.MutableBlockPos(x, level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1, z);
+        while (p.getY() > level.getMinBuildHeight()) {
+            BlockState s = level.getBlockState(p);
+            if (!(s.isAir() || s.is(net.minecraft.tags.BlockTags.LOGS) || s.is(net.minecraft.tags.BlockTags.LEAVES)
+                    || s.is(net.minecraft.tags.BlockTags.SNOW) || (s.canBeReplaced() && s.getFluidState().isEmpty()))) break;
+            p.move(0, -1, 0);
+        }
+        return p.getY();
     }
 
     /** Приоритет заказа: заказы выполняются по порядку списка; up — поднять на одну позицию выше. */
@@ -232,7 +244,11 @@ public final class Projects {
                 if (bp.design(t).cells.containsKey(s.pos())) return OrderResult.OVERLAPS_FORT;
             }
             if (taken.contains(s.pos())) return OrderResult.OCCUPIED;
-            if (!level.isLoaded(pos) || !ChunkReconciliation.mayOverwrite(level, o, pos, s.pos(), s.state(), null)) return OrderResult.OCCUPIED;
+            if (!level.isLoaded(pos)) return OrderResult.OCCUPIED;
+            // Природный рельеф (камень, снег, лёд, кусты, деревья) строители расчищают; постройки и блоки игрока — нет.
+            BlockState here = level.getBlockState(pos);
+            boolean natural = ChunkReconciliation.naturalTerrain(here) && level.getBlockEntity(pos) == null && !o.placedByPlayer(pos);
+            if (!natural && !ChunkReconciliation.mayOverwrite(level, o, pos, s.pos(), s.state(), null)) return OrderResult.OCCUPIED;
         }
         return OrderResult.OK;
     }
@@ -304,6 +320,11 @@ public final class Projects {
             }
         }
         return -1;
+    }
+
+    /** Есть заказ, шаги которого ещё не оплачены материалом. */
+    public static boolean unpaidExists(Outpost o) {
+        return unpaid(o) != null;
     }
 
     public static boolean hasWork(Outpost o) {
@@ -407,7 +428,12 @@ public final class Projects {
 
     public static boolean blocked(ServerLevel level, Outpost o, long key) {
         Step s = step(o, key);
-        return s == null || !ChunkReconciliation.mayOverwrite(level, o, o.world(s.pos()), s.pos(), s.state(), null);
+        if (s == null) return true;
+        BlockPos pos = o.world(s.pos());
+        BlockState here = level.getBlockState(pos);
+        // Природный рельеф под заказом (камень, снег, кусты) строитель заменяет; уступает только постройкам и игроку.
+        if (ChunkReconciliation.naturalTerrain(here) && level.getBlockEntity(pos) == null && !o.placedByPlayer(pos)) return false;
+        return !ChunkReconciliation.mayOverwrite(level, o, pos, s.pos(), s.state(), null);
     }
 
     /** Ставит шаг проекта (с привязанной половиной двери или кровати). */

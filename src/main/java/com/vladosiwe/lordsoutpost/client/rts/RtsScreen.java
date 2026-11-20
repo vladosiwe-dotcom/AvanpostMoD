@@ -210,7 +210,8 @@ public class RtsScreen extends Screen {
         BlockPos.MutableBlockPos q = new BlockPos.MutableBlockPos(p.getX(), y, p.getZ());
         while (q.getY() > mc.level.getMinBuildHeight()) {
             var st = mc.level.getBlockState(q);
-            if (!(st.isAir() || st.is(net.minecraft.tags.BlockTags.LEAVES) || st.canBeReplaced())) break;
+            if (!(st.isAir() || st.is(net.minecraft.tags.BlockTags.LEAVES) || st.is(net.minecraft.tags.BlockTags.LOGS)
+                    || st.is(net.minecraft.tags.BlockTags.SNOW) || (st.canBeReplaced() && st.getFluidState().isEmpty()))) break;
             q.move(0, -1, 0);
         }
         return q.immutable();
@@ -363,6 +364,8 @@ public class RtsScreen extends Screen {
         int x = 6, y = 24, w = LEFT_W;
         Ui.panel(g, x - 2, y - 2, w + 4, height - y - 4);
         g.drawString(font, Component.translatable("lordsoutpost.rts.catalog"), x + 2, y + 2, Ui.ACCENT, false);
+        Ui.button(g, font, hits, x + w - 40, y, 40, 11, Component.translatable("lordsoutpost.rts.exit_short"), true, false, mx, my, this::onClose,
+                Component.translatable("lordsoutpost.rts.exit"));
         y += 14;
         for (Project.Type type : Project.Type.VALUES) {
             boolean sel = type == selected;
@@ -415,7 +418,7 @@ public class RtsScreen extends Screen {
                 status = Component.translatable("lordsoutpost.msg.project." + result);
                 color = Ui.BAD;
             }
-            y += Ui.wrapped(g, font, status, x + 2, y, w - 4, color, 3) + 2;
+            y += Ui.wrapped(g, font, status, x + 2, y, w - 4, color, 2) + 2;
             if (!missing.isEmpty() && "no_resources".equals(result)) {
                 StringBuilder sb = new StringBuilder();
                 for (var e : missing.entrySet()) {
@@ -429,7 +432,7 @@ public class RtsScreen extends Screen {
             Ui.button(g, font, hits, x + w / 2 + 1, y, w / 2 - 1, 12, Component.translatable("lordsoutpost.rts.cancel_pick"), true, false, mx, my,
                     this::cancelSelection, null);
         }
-        Ui.button(g, font, hits, x, height - 22, w, 14, Component.translatable("lordsoutpost.rts.exit"), true, false, mx, my, this::onClose, null);
+
     }
 
     private void drawOrders(GuiGraphics g, OutpostView.Manage m, int mx, int my) {

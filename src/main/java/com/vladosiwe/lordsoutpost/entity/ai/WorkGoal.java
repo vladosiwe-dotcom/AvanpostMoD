@@ -294,7 +294,7 @@ public class WorkGoal extends Goal {
             }
             case CRAFT -> craftBread(level, o, r, now);
             case DEPOSIT -> {
-                if (go(o, o.marker(Marker.STORE_INSIDE), 1.8, 500)) {
+                if (go(o, Storehouse.storeInside(level, o), 1.8, 500)) {
                     mob.swing(InteractionHand.MAIN_HAND);
                     // Скотовод корм не сдаёт: он для животных, не для кухни.
                     java.util.List<ItemStack> kept = new ArrayList<>();
@@ -374,7 +374,9 @@ public class WorkGoal extends Goal {
                 case SMITH -> findSmithTask(level, o, r, now);
                 case CARAVANEER -> findShopTask(level, o, r, now);
                 case SKOTOVOD -> {
-                    boolean huntFirst = skotovodHuntNext;
+                    // Пока в загоне меньше четырёх голов, сначала — пригнать скот, потом уже охота.
+                    boolean penLow = o.hasZone(WorkZone.PEN) && ChunkReconciliation.penAnimals(level, o).size() < Math.min(o.penCapacity(), 4);
+                    boolean huntFirst = skotovodHuntNext && !penLow;
                     boolean selected = huntFirst ? startHunt() : planHerd(level, o, now);
                     if (selected) {
                         skotovodHunting = huntFirst;
@@ -982,7 +984,7 @@ public class WorkGoal extends Goal {
             }
             if (task == null) return Supply.NONE;
         }
-        if (!go(o, o.zone(WorkZone.STOREHOUSE), 1.8, 500)) return Supply.BUSY;
+        if (!go(o, Storehouse.storePos(level, o), 1.8, 500)) return Supply.BUSY;
         OutpostTask t = task;
         task = null;
         if (!Logistics.withdraw(level, o, t, mob, now)) {
@@ -1048,7 +1050,7 @@ public class WorkGoal extends Goal {
             }
             if (task == null) return Supply.NONE;
         }
-        if (!go(o, o.zone(WorkZone.STOREHOUSE), 1.8, 500)) return Supply.BUSY;
+        if (!go(o, Storehouse.storePos(level, o), 1.8, 500)) return Supply.BUSY;
         OutpostTask t = task;
         task = null;
         if (!Logistics.withdraw(level, o, t, mob, now)) {
@@ -1114,7 +1116,7 @@ public class WorkGoal extends Goal {
             }
             if (task == null) return Supply.NONE;
         }
-        if (!go(o, o.zone(WorkZone.STOREHOUSE), 1.8, 500)) return Supply.BUSY;
+        if (!go(o, Storehouse.storePos(level, o), 1.8, 500)) return Supply.BUSY;
         OutpostTask t = task;
         task = null;
         if (!Logistics.withdraw(level, o, t, mob, now)) {
@@ -1587,7 +1589,7 @@ public class WorkGoal extends Goal {
             task = Logistics.request(level, o, r, type, java.util.Map.of(item, want), now);
             if (task == null) return Supply.NONE;
         }
-        if (!go(o, o.zone(WorkZone.STOREHOUSE), 1.8, 500)) return Supply.BUSY;
+        if (!go(o, Storehouse.storePos(level, o), 1.8, 500)) return Supply.BUSY;
         boolean ok = Logistics.withdraw(level, o, task, mob, now);
         if (ok) Logistics.complete(o, task, now);
         else Logistics.cancel(o, task, "withdraw failed", now);
@@ -1960,7 +1962,7 @@ public class WorkGoal extends Goal {
                 }
                 if (go(o, NpcLifecycle.groundAt(level, o, p.getX(), p.getZ()), 3.0, 400)) {
                     huntPoint++;
-                    if (++emptyPoints >= points.size() + 8) {
+                    if (++emptyPoints >= points.size() + 3) {
                         noJobUntil = now + 1200;
                         return true;
                     }
@@ -2028,7 +2030,23 @@ public class WorkGoal extends Goal {
      * Кузнец берёт задачу с общей доски: свою незавершённую или самую важную свободную (ремонт важнее перековки —
      * это решает планировщик приоритетом). Материалы под неё резервируются на складе.
      */
+    /** Настоящая наковальня кузницы (в 4 блоках от её точки); без неё кузнец не куёт и не делает вид. */
+    @Nullable
+    private static BlockPos anvil(ServerLevel level, Outpost o) {
+        if (!o.hasZone(WorkZone.SMITHY)) return null;
+        BlockPos z = o.zone(WorkZone.SMITHY);
+        for (BlockPos p : BlockPos.betweenClosed(z.offset(-4, -1, -4), z.offset(4, 2, 4))) {
+            if (level.isLoaded(p) && level.getBlockState(p).is(net.minecraft.tags.BlockTags.ANVIL)) return p.immutable();
+        }
+        return null;
+    }
+
     private boolean findSmithTask(ServerLevel level, Outpost o, Resident r, long now) {
+        // Ковать можно только в кузнице с наковальней: без здания кузнец лишь переплавляет руду в печах (если они есть).
+        if (anvil(level, o) == null) {
+            o.zones.report(WorkZone.SMITHY, "no anvil");
+            return smeltPlan(level, o, r, now);
+        }
         OutpostTask t = o.tasks.ofExecutor(r.id);
         // Заказ на инструмент берётся, только когда планировщик уже отложил под него материалы (вместе с бревном на рукоять).
         if (t == null) t = o.tasks.nextFor(Role.SMITH, x -> x.type != OutpostTask.Type.FORGE_TOOL || !x.reserved.isEmpty());
@@ -2072,7 +2090,7 @@ public class WorkGoal extends Goal {
         var materials = OutpostDirector.materials(task, target);
         if (task.carried.isEmpty()) {
             // 1. На склад за материалами.
-            if (!go(o, o.zone(WorkZone.STOREHOUSE), 1.8, 500)) return false;
+            if (!go(o, Storehouse.storePos(level, o), 1.8, 500)) return false;
             if (!Logistics.withdraw(level, o, task, mob, now)) {
                 Logistics.cancel(o, task, task.reason.isEmpty() ? "withdraw failed" : task.reason, now);
                 task = null;
@@ -2084,8 +2102,14 @@ public class WorkGoal extends Goal {
             return false;
         }
         // 2. В кузницу.
-        BlockPos anvil = o.hasZone(WorkZone.SMITHY) ? o.zone(WorkZone.SMITHY) : o.marker(Marker.STORAGE);
-        if (!go(o, anvil, 1.6, 500)) return false;
+        BlockPos anvil = anvil(level, o);
+        if (anvil == null) {
+            // Кузницу снесли посреди работы: материалы остаются в ноше и вернутся на склад, задача ждёт кузницу.
+            Logistics.cancel(o, task, "no anvil", now);
+            task = null;
+            return true;
+        }
+        if (!go(o, anvil, 2.0, 500)) return false;
         if (mob.tickCount % 20 == 0) {
             mob.swing(InteractionHand.MAIN_HAND);
             mob.playSound(mob.tickCount % 80 == 0 ? SoundEvents.SMITHING_TABLE_USE : SoundEvents.ANVIL_USE, 0.5f, 0.9f + mob.getRandom().nextFloat() * 0.2f);
@@ -2169,7 +2193,7 @@ public class WorkGoal extends Goal {
     private boolean shop(ServerLevel level, Outpost o, Resident r, long now) {
         if (task == null || !task.active()) return true;
         if (task.carried.isEmpty()) {
-            if (!go(o, o.zone(WorkZone.STOREHOUSE), 1.8, 500)) return false;
+            if (!go(o, Storehouse.storePos(level, o), 1.8, 500)) return false;
             if (!Logistics.withdraw(level, o, task, mob, now)) {
                 Logistics.cancel(o, task, "withdraw failed", now);
                 task = null;
@@ -2325,7 +2349,7 @@ public class WorkGoal extends Goal {
                 }
                 task.zone = WorkZone.SMITHY;
             }
-            if (!go(o, o.zone(WorkZone.STOREHOUSE), 1.8, 500)) return false;
+            if (!go(o, Storehouse.storePos(level, o), 1.8, 500)) return false;
             boolean ok = Logistics.withdraw(level, o, task, mob, now);
             if (!ok) {
                 Logistics.cancel(o, task, "withdraw failed", now);
@@ -2478,7 +2502,7 @@ public class WorkGoal extends Goal {
                     }
                     task.zone = WorkZone.FARM;
                 }
-                if (!go(o, o.zone(WorkZone.STOREHOUSE), 1.8, 500)) return false;
+                if (!go(o, Storehouse.storePos(level, o), 1.8, 500)) return false;
                 boolean ok = Logistics.withdraw(level, o, task, mob, now);
                 if (ok) Logistics.complete(o, task, now);
                 else Logistics.cancel(o, task, "withdraw failed", now);
@@ -2511,7 +2535,7 @@ public class WorkGoal extends Goal {
 
     /** Крафтит хлеб у склада из пшеницы сверх неприкосновенного запаса. */
     private void craftBread(ServerLevel level, Outpost o, Resident r, long now) {
-        if (!go(o, o.marker(Marker.STORE_INSIDE), 1.8, 500)) return;
+        if (!go(o, Storehouse.storeInside(level, o), 1.8, 500)) return;
         if (Storehouse.countItem(level, o, Items.WHEAT) < FARM_WHEAT_RESERVE + 3 || !canCarryItem(Items.BREAD)) {
             phase = Phase.DECIDE;
             return;
