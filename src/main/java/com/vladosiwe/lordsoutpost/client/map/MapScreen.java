@@ -50,6 +50,9 @@ public class MapScreen extends Screen implements Ui.Projection {
     }
 
     /** Открыть карту сразу в режиме прокладки маршрута отряда. */
+    /** Открыть как предпросмотр контура следующего тира. */
+    public static final int PREVIEW = -2;
+
     public MapScreen(int routeSquad) {
         super(Component.translatable("lordsoutpost.map.title"));
         this.presetSquad = routeSquad;
@@ -63,7 +66,15 @@ public class MapScreen extends Screen implements Ui.Projection {
             cz = mc.player.getZ();
         }
         PacketDistributor.sendToServer(new Payloads.MapRequest(true));
-        if (presetSquad >= 0 && mode == NONE) {
+        if (presetSquad == PREVIEW) {
+            // Предпросмотр нового тира: карта по центру своего форта, золотой контур — стены будущего тира.
+            ClientState.Marker own = ClientState.ownMarker();
+            if (own != null) {
+                cx = own.x;
+                cz = own.z;
+                zoom = 4.0;
+            }
+        } else if (presetSquad >= 0 && mode == NONE) {
             ClientState.Marker own = ClientState.ownMarker();
             if (own != null) {
                 cx = own.x;
@@ -129,6 +140,7 @@ public class MapScreen extends Screen implements Ui.Projection {
         drawTerrain(g);
         if (ow) {
             drawOutlines(g, phase);
+            drawZones(g, mouseX, mouseY);
             drawPosts(g, mouseX, mouseY);
             drawSquads(g, phase);
             drawCaravans(g, phase);
@@ -143,6 +155,7 @@ public class MapScreen extends Screen implements Ui.Projection {
         String coords = (int) Math.floor(worldX(mouseX)) + ", " + (int) Math.floor(worldZ(mouseY)) + "   ×" + (zoom >= 1 ? String.valueOf((int) zoom) : "1/" + (int) Math.round(1 / zoom));
         g.drawString(font, coords, width - font.width(coords) - 6, 3, Ui.MUTED, false);
         if (!ow) g.drawCenteredString(font, Component.translatable("lordsoutpost.map.overworld_only"), width / 2, 20, Ui.WARN);
+        else if (mode == NONE) drawLegend(g);
 
         if (mode != NONE) drawModeBar(g, mouseX, mouseY);
         else {
@@ -219,6 +232,7 @@ public class MapScreen extends Screen implements Ui.Projection {
 
     /** Посты наверху: всегда — мелким значком, в режиме удержания — крупно и с подсветкой ближайшего к курсору. */
     private void drawPosts(GuiGraphics g, int mouseX, int mouseY) {
+        if (mode != HOLD && zoom < 2) return;
         long near = nearestPost(mouseX, mouseY);
         for (long l : ClientState.posts) {
             BlockPos p = BlockPos.of(l);
@@ -230,6 +244,52 @@ public class MapScreen extends Screen implements Ui.Projection {
             g.fill(px - r, py - r, px + r + 1, py + r + 1, color);
             // Зубец башни.
             if (mode == HOLD) g.fill(px - 1, py - r - 3, px + 2, py - r - 1, color);
+        }
+    }
+
+    /** Рабочие места своего форта (поле, загон, шахта, кузница, дровяной двор, лавка) — значками при приближении. */
+    private void drawZones(GuiGraphics g, int mouseX, int mouseY) {
+        if (zoom < 2) return;
+        for (var e : ClientState.zones.entrySet()) {
+            BlockPos p = BlockPos.of(e.getValue());
+            if (!onScreen(p.getX(), p.getZ(), 10)) continue;
+            int px = (int) x(p.getX() + 0.5), py = (int) y(p.getZ() + 0.5);
+            net.minecraft.world.item.Item icon = switch (e.getKey()) {
+                case "farm" -> net.minecraft.world.item.Items.WHEAT;
+                case "pen" -> net.minecraft.world.item.Items.LEAD;
+                case "mine" -> net.minecraft.world.item.Items.IRON_PICKAXE;
+                case "smithy" -> net.minecraft.world.item.Items.ANVIL;
+                case "woodyard" -> net.minecraft.world.item.Items.IRON_AXE;
+                case "shop" -> net.minecraft.world.item.Items.EMERALD;
+                case "storehouse" -> net.minecraft.world.item.Items.BARREL;
+                case "mage_tower" -> net.minecraft.world.item.Items.ENCHANTED_BOOK;
+                default -> null;
+            };
+            if (icon == null) continue;
+            g.fill(px - 6, py - 6, px + 6, py + 6, 0xC0101620);
+            g.pose().pushPose();
+            g.pose().translate(px - 5, py - 5, 0);
+            g.pose().scale(0.625f, 0.625f, 1f);
+            g.renderItem(new net.minecraft.world.item.ItemStack(icon), 0, 0);
+            g.pose().popPose();
+            hits.add(px - 6, py - 6, 12, 12, null, Component.translatable("lordsoutpost.zone." + e.getKey()));
+        }
+    }
+
+    /** Легенда карты: что значат цвета и значки. */
+    private void drawLegend(GuiGraphics g) {
+        Object[][] rows = {{Ui.ACCENT, "lordsoutpost.map.legend.own"}, {Ui.GOOD, "lordsoutpost.map.legend.ally"},
+                {0xFFFF7A45, "lordsoutpost.map.legend.enemy"}, {Ui.BAD, "lordsoutpost.map.legend.wild"}, {0xFFE2B44C, "lordsoutpost.map.legend.posts"}};
+        int w = 0;
+        for (Object[] r : rows) w = Math.max(w, font.width(Component.translatable((String) r[1])));
+        w += 18;
+        int x = width - w - 6, y = 20, h = 6 + rows.length * 10;
+        g.fill(x - 1, y - 1, x + w + 1, y + h + 1, 0xFF2B2F36);
+        g.fill(x, y, x + w, y + h, 0xD01A140E);
+        for (int i = 0; i < rows.length; i++) {
+            int ry = y + 4 + i * 10;
+            g.fill(x + 4, ry + 1, x + 10, ry + 7, (Integer) rows[i][0]);
+            g.drawString(font, Component.translatable((String) rows[i][1]), x + 14, ry, Ui.MUTED, false);
         }
     }
 

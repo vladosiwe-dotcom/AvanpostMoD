@@ -59,6 +59,35 @@ public final class FortBlueprint {
         for (int t = 1; t <= MAX_TIER; t++) plans[t] = buildPlan(t > 1 ? designs[t - 1] : null, designs[t]);
     }
 
+    /**
+     * Смешанный комплект: тиры ниже split — из lower (как форт построен сейчас), начиная со split — из upper
+     * (планировка, которую Лорд выбрал для нового тира). План перехода на split считается от lower к upper:
+     * новые стены и ворота встают первыми, затем старые разбираются.
+     */
+    private FortBlueprint(FortBlueprint lower, FortBlueprint upper, int split) {
+        this.layout = upper.layout;
+        this.palette = upper.palette;
+        this.rotation = upper.rotation;
+        this.version = upper.version;
+        for (int t = 1; t <= MAX_TIER; t++) designs[t] = t < split ? lower.designs[t] : upper.designs[t];
+        for (int t = 1; t <= MAX_TIER; t++) plans[t] = t == split ? buildPlan(t > 1 ? designs[t - 1] : null, designs[t])
+                : t < split ? lower.plans[t] : upper.plans[t];
+    }
+
+    public static FortBlueprint mixed(FortBlueprint lower, FortBlueprint upper, int split) {
+        if (lower == upper || split <= 1) return upper;
+        String key = "mix/" + lower.layout.id + '/' + lower.rotation.ordinal() + '/' + upper.layout.id + '/' + upper.rotation.ordinal()
+                + '/' + upper.palette.id + '/' + upper.version + '/' + split;
+        synchronized (CACHE) {
+            FortBlueprint bp = CACHE.get(key);
+            if (bp == null) {
+                bp = new FortBlueprint(lower, upper, split);
+                CACHE.put(key, bp);
+            }
+            return bp;
+        }
+    }
+
     /** Первая планировка (старые миры). */
     public static FortBlueprint get(Layout layout, Palette palette, Rotation rotation) {
         return get(layout, palette, rotation, 1);

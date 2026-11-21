@@ -168,6 +168,25 @@ public final class Simulation {
         }
     }
 
+    /** Требования к началу перехода на следующий тир: что ещё не выполнено (ключ перевода) или null. */
+    @org.jetbrains.annotations.Nullable
+    public static String tierRequirementMissing(Outpost o) {
+        int next = o.tier + 1;
+        int pop = o.residents.size();
+        if (pop < minPopulation(next)) return "population";
+        if (OutpostDirector.foodDays(o) < minFoodDays(next)) return "food";
+        if (next >= 3 && o.builtProjects(com.vladosiwe.lordsoutpost.outpost.Project.Type.BARRACKS) == 0) return "barracks";
+        return null;
+    }
+
+    public static int minPopulation(int tier) {
+        return tier >= 3 ? 12 : 6;
+    }
+
+    public static double minFoodDays(int tier) {
+        return tier >= 3 ? 3 : 2;
+    }
+
     private static void build(Outpost o, long now, double days, double boost) {
         o.stalledOn = null;
         boolean projects = false;
@@ -182,7 +201,10 @@ public final class Simulation {
         // Рядом с игроком строители не стоят без дела — строят вдвое медленнее (голодные), пока поле и охота кормят форт.
         if (o.foodCritical && !o.online) return;
         o.buildCredit = Math.min(MAX_BUILD_CREDIT + rate * days, o.buildCredit + rate * days);
-        while (o.buildCredit >= 1 && o.steps < plan.size()) {
+        // Новый тир не начинается, пока не выполнены требования (население, еда, казарма для третьего);
+        // начатый переход идёт до конца.
+        o.tierBlocked = o.steps == 0 && !o.complete() ? tierRequirementMissing(o) : null;
+        while (o.tierBlocked == null && o.buildCredit >= 1 && o.steps < plan.size()) {
             Resource cost = plan.get(o.steps).cost();
             // Отложенное под задачи жителей (материалы кузнеца и т. п.) на стройку не идёт.
             if (cost != null && (o.available(cost) < 1 || !o.take(cost, 1))) {

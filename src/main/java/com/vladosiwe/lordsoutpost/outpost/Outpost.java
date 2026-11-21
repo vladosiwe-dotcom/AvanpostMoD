@@ -43,6 +43,13 @@ public final class Outpost {
     /** Центр форта; y — уровень земли (блок, на котором стоят). */
     public final BlockPos center;
     public final Layout layout;
+    /**
+     * Планировка и поворот, выбранные Лордом для тиров начиная с layoutSplit (null — как при основании). Нижние тиры
+     * остаются в исходной планировке, план перехода перестраивает форт в новую.
+     */
+    @Nullable public Layout nextLayout;
+    @Nullable public Rotation nextRotation;
+    public int layoutSplit;
     public final Palette palette;
     public final Rotation rotation;
     public final Difficulty difficulty;
@@ -195,6 +202,8 @@ public final class Outpost {
     @Nullable public transient Resource scarce;
     /** Еды почти нет: планировщик приостанавливает необязательную стройку. */
     public transient boolean foodCritical;
+    /** Почему не начинается переход на следующий тир (ключ требования) или null. */
+    @Nullable public transient String tierBlocked;
     /** Пиромант Iron's Spells у башни мага (сущность мода, сохраняется в чанке сама) и срок прихода нового после гибели. */
     @Nullable public UUID pyromancer;
     public long pyromancerRejoinAt;
@@ -230,7 +239,9 @@ public final class Outpost {
     // ============================== Чертёж и геометрия ==============================
 
     public FortBlueprint blueprint() {
-        return FortBlueprint.get(layout, palette, rotation, version);
+        FortBlueprint base = FortBlueprint.get(layout, palette, rotation, version);
+        if (nextLayout == null || nextRotation == null || layoutSplit <= 1) return base;
+        return FortBlueprint.mixed(base, FortBlueprint.get(nextLayout, palette, nextRotation, version), layoutSplit);
     }
 
     public Design design() {
@@ -264,10 +275,24 @@ public final class Outpost {
         return center.offset(rel);
     }
 
+    /** Очертания форта: выбранная для нового тира планировка, как только Лорд её выбрал (новые стены шире старых). */
+    public Layout shapeLayout() {
+        return nextLayout != null && layoutSplit > 1 ? nextLayout : layout;
+    }
+
+    public Rotation shapeRotation() {
+        return nextRotation != null && layoutSplit > 1 ? nextRotation : rotation;
+    }
+
+    /** Можно ли ещё выбрать планировку следующего тира: переход не начат. */
+    public boolean canChooseLayout() {
+        return !complete() && steps == 0 && (placedTier != tier + 1 || placed == 0);
+    }
+
     /** Мировые координаты -> канонические (ворота на юге). */
     private int[] canonical(int x, int z) {
         int dx = x - center.getX(), dz = z - center.getZ();
-        return switch (rotation) {
+        return switch (shapeRotation()) {
             case NONE -> new int[]{dx, dz};
             case CLOCKWISE_90 -> new int[]{dz, -dx};
             case CLOCKWISE_180 -> new int[]{-dx, -dz};
@@ -289,7 +314,7 @@ public final class Outpost {
         int span = r + 1;
         if (Math.abs(x - center.getX()) > span || Math.abs(z - center.getZ()) > span) return false;
         int[] c = canonical(x, z);
-        return layout.inside(c[0], c[1], r);
+        return shapeLayout().inside(c[0], c[1], r);
     }
 
     /** Внутри стен (без подступов). */
@@ -371,10 +396,10 @@ public final class Outpost {
 
     /** Контур периметра в мировых координатах (x, z) для карты. */
     public int[][] outline(int r) {
-        int[][] canon = layout.outline(r);
+        int[][] canon = shapeLayout().outline(r);
         int[][] out = new int[canon.length][2];
         for (int i = 0; i < canon.length; i++) {
-            BlockPos p = new BlockPos(canon[i][0], 0, canon[i][1]).rotate(rotation);
+            BlockPos p = new BlockPos(canon[i][0], 0, canon[i][1]).rotate(shapeRotation());
             out[i][0] = center.getX() + p.getX();
             out[i][1] = center.getZ() + p.getZ();
         }
@@ -574,6 +599,11 @@ public final class Outpost {
         t.putBoolean("fieldReworked2", fieldReworked);
         t.putString("palette", palette.id);
         t.putByte("rot", (byte) rotation.ordinal());
+        if (nextLayout != null && nextRotation != null) {
+            t.putString("nextLayout", nextLayout.id);
+            t.putByte("nextRot", (byte) nextRotation.ordinal());
+            t.putByte("layoutSplit", (byte) layoutSplit);
+        }
         t.putByte("skulls", (byte) difficulty.skulls);
         t.putBoolean("manual", manual);
 
@@ -697,6 +727,11 @@ public final class Outpost {
         o.version = t.contains("layoutVersion") ? Mth.clamp(t.getByte("layoutVersion"), 1, 2) : 1;
         o.natureCleared = t.getBoolean("natureCleared");
         o.fieldReworked = t.getBoolean("fieldReworked2");
+        if (t.contains("nextLayout")) {
+            o.nextLayout = Layout.byId(t.getString("nextLayout"));
+            o.nextRotation = Rotation.values()[Mth.clamp(t.getByte("nextRot"), 0, 3)];
+            o.layoutSplit = t.getByte("layoutSplit");
+        }
         o.state = OutpostState.VALUES[Mth.clamp(t.getByte("state"), 0, OutpostState.VALUES.length - 1)];
         o.name = t.getString("name");
         o.owner = t.hasUUID("owner") ? t.getUUID("owner") : null;

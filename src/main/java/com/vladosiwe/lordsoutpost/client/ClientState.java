@@ -64,6 +64,8 @@ public final class ClientState {
     public static final List<SquadMark> SQUADS = new ArrayList<>();
     /** Посты наверху своего форта (башни, вышки, стена) — куда можно поставить стрелков. */
     public static long[] posts = new long[0];
+    /** Рабочие места своего форта: id зоны → позиция. */
+    public static final java.util.Map<String, Long> zones = new java.util.LinkedHashMap<>();
     public static final List<CaravanMark> CARAVANS = new ArrayList<>();
     public static int[] nextOutline = new int[0];
     public static long own;
@@ -123,6 +125,9 @@ public final class ClientState {
         if (!world.isEmpty()) worldId = world;
         nextOutline = tag.getIntArray("nextOutline");
         posts = tag.getLongArray("posts");
+        zones.clear();
+        CompoundTag zt = tag.getCompound("zones");
+        for (String k : zt.getAllKeys()) zones.put(k, zt.getLong(k));
         SQUADS.clear();
         ListTag squads = tag.getList("squads", Tag.TAG_COMPOUND);
         for (int i = 0; i < squads.size(); i++) {

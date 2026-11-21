@@ -580,6 +580,11 @@ public final class ChunkReconciliation {
             }
         }
         if (state.isAir() && effects && !old.isAir()) level.levelEvent(2001, pos, Block.getId(old));
+        // Разборка старого (стена прежнего тира, лишнее при улучшении): материал возвращается на склад.
+        if (state.isAir() && !old.isAir() && !o.placedByPlayer(pos) && old.getFluidState().isEmpty()) {
+            Resource back = FortBlueprint.costOf(old);
+            if (back != null) o.add(back, 1);
+        }
         level.setBlock(pos, state, Block.UPDATE_ALL);
         if (effects && !state.isAir()) {
             var sound = state.getSoundType(level, pos, null);

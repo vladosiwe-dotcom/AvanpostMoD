@@ -207,6 +207,27 @@ public final class ServerActions {
             }
             case CANCEL_PROJECT -> com.vladosiwe.lordsoutpost.data.Projects.cancel(o, a.getLong("id"), now);
             case MOVE_PROJECT -> com.vladosiwe.lordsoutpost.data.Projects.move(o, a.getLong("id"), a.getBoolean("up"));
+            case CHOOSE_LAYOUT -> {
+                // Планировку и сторону ворот нового тира можно выбрать, пока переход не начат.
+                if (!o.canChooseLayout()) {
+                    feedback(player, "lordsoutpost.msg.layout.locked", ChatFormatting.YELLOW);
+                    return;
+                }
+                com.vladosiwe.lordsoutpost.blueprint.Layout layout = com.vladosiwe.lordsoutpost.blueprint.Layout.byId(a.getString("layout"));
+                net.minecraft.world.level.block.Rotation rot = net.minecraft.world.level.block.Rotation.values()[Math.floorMod(a.getInt("rot"), 4)];
+                if (layout == o.layout && rot == o.rotation) {
+                    o.nextLayout = null;
+                    o.nextRotation = null;
+                    o.layoutSplit = 0;
+                } else {
+                    o.nextLayout = layout;
+                    o.nextRotation = rot;
+                    o.layoutSplit = o.tier + 1;
+                }
+                o.dirtyForClients = true;
+                o.log(now, "lordsoutpost.event.layout_chosen", o.tier + 1);
+                feedback(player, "lordsoutpost.msg.layout.chosen", ChatFormatting.GREEN);
+            }
             case SET_ROLE -> {
                 if (!a.hasUUID("resident")) return;
                 Resident r = o.resident(a.getUUID("resident"));

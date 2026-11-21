@@ -172,12 +172,104 @@ public class OutpostScreen extends Screen {
 
     // ---------- Обзор ----------
 
+    /** Открыта панель перехода на следующий тир (вместо обзора). */
+    private boolean tierPanel;
+
+    private static final String[] STAGES = {"ground", "walls", "gate", "keep", "works", "housing", "decor", "demolish"};
+
+    /**
+     * Переход на тир: что он даст, требования (население, запас еды, казарма для третьего), этапы стройки с
+     * прогрессом и выбор планировки нового тира (пока переход не начат) с предпросмотром на карте.
+     */
+    private void drawTierPanel(GuiGraphics g, int x, int y, int mouseX, int mouseY) {
+        net.minecraft.nbt.CompoundTag t = view.manage == null ? new net.minecraft.nbt.CompoundTag() : view.manage.tierUp;
+        Ui.button(g, font, hits, x + W - 70, y - 2, 52, 11, Component.translatable("lordsoutpost.ui.back"), true, false, mouseX, mouseY,
+                () -> tierPanel = false, null);
+        if (t.getBoolean("complete") || !t.contains("next")) {
+            g.drawString(font, Component.translatable("lordsoutpost.tierup.max"), x, y, Ui.MUTED, false);
+            return;
+        }
+        int next = t.getInt("next");
+        g.drawString(font, Component.translatable("lordsoutpost.tierup.title", next), x, y, Ui.ACCENT, false);
+        int ly = y + 12;
+        // Что даст тир.
+        Ui.text(g, font, Component.translatable("lordsoutpost.tierup.radius", t.getInt("radiusFrom"), t.getInt("radiusTo")), x, ly, 176, Ui.TEXT);
+        ly += 10;
+        ly += Ui.wrapped(g, font, Component.translatable("lordsoutpost.tierup.benefits." + next), x, ly, 176, Ui.MUTED, 5) + 4;
+        // Требования.
+        g.drawString(font, Component.translatable("lordsoutpost.tierup.requirements"), x, ly, Ui.TEXT, false);
+        ly += 10;
+        boolean popOk = t.getInt("pop") >= t.getInt("popNeed");
+        Ui.text(g, font, Component.literal(popOk ? "✔ " : "✘ ").append(Component.translatable("lordsoutpost.tierup.req.population", t.getInt("pop"), t.getInt("popNeed"))),
+                x, ly, 176, popOk ? Ui.GOOD : Ui.BAD);
+        ly += 10;
+        boolean foodOk = t.getFloat("food") >= t.getFloat("foodNeed");
+        Ui.text(g, font, Component.literal(foodOk ? "✔ " : "✘ ").append(Component.translatable("lordsoutpost.tierup.req.food",
+                String.format("%.1f", t.getFloat("food")), String.format("%.0f", t.getFloat("foodNeed")))), x, ly, 176, foodOk ? Ui.GOOD : Ui.BAD);
+        ly += 10;
+        if (t.getBoolean("needBarracks")) {
+            boolean ok = t.getBoolean("barracks");
+            Ui.text(g, font, Component.literal(ok ? "✔ " : "✘ ").append(Component.translatable("lordsoutpost.tierup.req.barracks")), x, ly, 176, ok ? Ui.GOOD : Ui.BAD);
+            ly += 10;
+        }
+        Component status = t.getBoolean("started") ? Component.translatable("lordsoutpost.tierup.started")
+                : t.contains("blocked") ? Component.translatable("lordsoutpost.tierup.blocked") : Component.translatable("lordsoutpost.tierup.ready");
+        Ui.wrapped(g, font, status, x, ly + 2, 176, t.contains("blocked") ? Ui.WARN : Ui.GOOD, 2);
+
+        // Этапы стройки.
+        int rx = x + 190, ry = y + 12;
+        g.drawString(font, Component.translatable("lordsoutpost.tierup.stages"), rx, ry, Ui.TEXT, false);
+        ry += 11;
+        int[] total = t.getIntArray("stageTotal"), done = t.getIntArray("stageDone");
+        for (int i = 1; i < Math.min(total.length, STAGES.length); i++) {
+            if (total[i] == 0) continue;
+            float f = done[i] / (float) total[i];
+            Ui.text(g, font, Component.translatable("lordsoutpost.tierup.stage." + STAGES[i]), rx, ry, 84, f >= 1 ? Ui.GOOD : Ui.MUTED);
+            Ui.bar(g, rx + 86, ry + 1, 70, 6, f, f >= 1 ? Ui.GOOD : Ui.ACCENT);
+            g.drawString(font, Math.round(f * 100) + "%", rx + 160, ry, Ui.MUTED, false);
+            ry += 11;
+        }
+        // Планировка нового тира.
+        ry += 4;
+        g.drawString(font, Component.translatable("lordsoutpost.tierup.layout"), rx, ry, Ui.TEXT, false);
+        ry += 11;
+        boolean can = t.getBoolean("canChoose") && view.lord();
+        String layout = t.getString("layout");
+        int rot = t.getByte("rot");
+        for (String id : new String[]{"square", "octagon"}) {
+            int bx = rx + (id.equals("square") ? 0 : 88);
+            Ui.button(g, font, hits, bx, ry, 86, 12, Component.translatable("lordsoutpost.layout." + id), can, id.equals(layout), mouseX, mouseY,
+                    () -> Net.action(view.id, Action.CHOOSE_LAYOUT, a -> { a.putString("layout", id); a.putInt("rot", rot); }), null);
+        }
+        ry += 14;
+        String[] sides = {"south", "west", "north", "east"};
+        for (int i = 0; i < 4; i++) {
+            int r = i;
+            Ui.button(g, font, hits, rx + i * 44, ry, 42, 12, Component.translatable("lordsoutpost.tierup.gate." + sides[i]), can, rot == i, mouseX, mouseY,
+                    () -> Net.action(view.id, Action.CHOOSE_LAYOUT, a -> { a.putString("layout", layout); a.putInt("rot", r); }),
+                    Component.translatable("lordsoutpost.tierup.gate.tip"));
+        }
+        ry += 14;
+        Ui.button(g, font, hits, rx, ry, 174, 12, Component.translatable("lordsoutpost.tierup.preview"), true, false, mouseX, mouseY,
+                () -> Minecraft.getInstance().setScreen(new MapScreen(MapScreen.PREVIEW)), Component.translatable("lordsoutpost.tierup.preview.tip"));
+        if (!t.getBoolean("canChoose")) Ui.wrapped(g, font, Component.translatable("lordsoutpost.tierup.layout_locked"), rx, ry + 15, 174, Ui.MUTED, 2);
+    }
+
     private void drawOverview(GuiGraphics g, int x, int y, int mouseX, int mouseY) {
+        if (tierPanel) {
+            drawTierPanel(g, x, y, mouseX, mouseY);
+            return;
+        }
         // Стройка.
         Component tierLine = view.complete ? Component.translatable("lordsoutpost.ui.tier_done", view.tier)
                 : Component.translatable("lordsoutpost.ui.tier_progress", view.tier, view.tier + 1, Math.round(view.progress * 100));
         g.drawString(font, tierLine, x, y, Ui.TEXT, false);
         Ui.bar(g, x, y + 11, 176, 7, view.complete ? 1f : view.progress, view.stalled != null ? Ui.WARN : Ui.GOOD);
+        if (view.manage != null && !view.complete) {
+            boolean blocked = view.manage.tierUp.contains("blocked");
+            Ui.button(g, font, hits, x + 120, y - 2, 56, 11, Component.translatable("lordsoutpost.tierup.open"), true, blocked, mouseX, mouseY,
+                    () -> tierPanel = true, Component.translatable(blocked ? "lordsoutpost.tierup.blocked" : "lordsoutpost.tierup.open.tip"));
+        }
         if (view.stalled != null) {
             Ui.text(g, font, Component.translatable("lordsoutpost.ui.stalled", view.stalled.label()), x, y + 21, 176, Ui.WARN);
         } else if (!view.complete) {

@@ -88,6 +88,8 @@ public final class OutpostView {
     }
 
     public static final class Manage {
+        /** Переход на следующий тир (как пришло с сервера). */
+        public CompoundTag tierUp = new CompoundTag();
         public final float foodDays;
         @Nullable public final Resource scarce;
         public final boolean foodCritical;
@@ -116,6 +118,7 @@ public final class OutpostView {
         public final EnumMap<Resource, Integer> reserved;
 
         Manage(CompoundTag m) {
+            tierUp = m.getCompound("tierUp");
             foodDays = m.getFloat("foodDays");
             scarce = m.contains("scarce") ? Resource.byId(m.getString("scarce")) : null;
             foodCritical = m.getBoolean("foodCritical");

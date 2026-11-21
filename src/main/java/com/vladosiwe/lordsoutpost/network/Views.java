@@ -56,8 +56,8 @@ public final class Views {
         t.putString("owner", o.ownerName);
         t.putByte("tier", (byte) o.tier);
         t.putFloat("progress", o.progress());
-        t.putString("layout", o.layout.id);
-        t.putByte("rot", (byte) o.rotation.ordinal());
+        t.putString("layout", o.shapeLayout().id);
+        t.putByte("rot", (byte) o.shapeRotation().ordinal());
         t.putInt("reach", o.reach());
         t.putByte("access", (byte) Access.level(data, o, viewer).ordinal());
         t.putIntArray("outline", flat(o.outline(o.radius())));
@@ -116,6 +116,9 @@ public final class Views {
         }
         tag.put("squads", squads);
         tag.putLongArray("posts", com.vladosiwe.lordsoutpost.server.NpcLifecycle.highPosts(own).stream().mapToLong(BlockPos::asLong).toArray());
+        CompoundTag zoneTag = new CompoundTag();
+        for (var z : com.vladosiwe.lordsoutpost.outpost.WorkZone.VALUES) if (own.hasZone(z)) zoneTag.putLong(z.id, own.zone(z).asLong());
+        tag.put("zones", zoneTag);
         ListTag caravans = new ListTag();
         for (Caravan c : own.caravans) {
             CompoundTag ct = new CompoundTag();
@@ -408,6 +411,7 @@ public final class Views {
             projects.add(pt);
         }
         m.put("projects", projects);
+        m.put("tierUp", tierUp(o));
         // Стоимость каждого типа постройки в ресурсах (по шагам её чертежа).
         CompoundTag costs = new CompoundTag();
         for (com.vladosiwe.lordsoutpost.outpost.Project.Type type : com.vladosiwe.lordsoutpost.outpost.Project.Type.VALUES) {
@@ -425,8 +429,8 @@ public final class Views {
         m.putInt("orderLimit", com.vladosiwe.lordsoutpost.blueprint.Layout.radius(o.version, com.vladosiwe.lordsoutpost.blueprint.FortBlueprint.MAX_TIER)
                 + com.vladosiwe.lordsoutpost.blueprint.Layout.MARGIN + com.vladosiwe.lordsoutpost.data.Projects.EXTENT);
         m.putString("palette", o.palette.id);
-        m.putString("layout", o.layout.id);
-        m.putByte("frot", (byte) o.rotation.ordinal());
+        m.putString("layout", o.shapeLayout().id);
+        m.putByte("frot", (byte) o.shapeRotation().ordinal());
         CompoundTag reserved = new CompoundTag();
         for (Resource r : Resource.VALUES) {
             double n = com.vladosiwe.lordsoutpost.data.Projects.reserved(o, r);
@@ -446,6 +450,53 @@ public final class Views {
     }
 
     /** Короткая сводка своего аванпоста для HUD (приходит с картой раз в несколько секунд). */
+    /** Переход на следующий тир: требования, этапы стройки, что даст тир, выбор планировки. */
+    private static CompoundTag tierUp(Outpost o) {
+        CompoundTag t = new CompoundTag();
+        t.putBoolean("complete", o.complete());
+        if (o.complete()) return t;
+        int next = o.tier + 1;
+        t.putInt("next", next);
+        t.putInt("pop", o.residents.size());
+        t.putInt("popNeed", com.vladosiwe.lordsoutpost.data.Simulation.minPopulation(next));
+        t.putFloat("food", (float) com.vladosiwe.lordsoutpost.data.OutpostDirector.foodDays(o));
+        t.putFloat("foodNeed", (float) com.vladosiwe.lordsoutpost.data.Simulation.minFoodDays(next));
+        t.putBoolean("needBarracks", next >= 3);
+        t.putBoolean("barracks", o.builtProjects(com.vladosiwe.lordsoutpost.outpost.Project.Type.BARRACKS) > 0);
+        t.putBoolean("started", o.steps > 0);
+        String blocked = o.steps == 0 ? com.vladosiwe.lordsoutpost.data.Simulation.tierRequirementMissing(o) : null;
+        if (blocked != null) t.putString("blocked", blocked);
+        t.putInt("radiusFrom", com.vladosiwe.lordsoutpost.blueprint.Layout.radius(o.version, o.tier));
+        t.putInt("radiusTo", com.vladosiwe.lordsoutpost.blueprint.Layout.radius(o.version, next));
+        // Этапы: стены, ворота, донжон и башни, мастерские, жильё, двор, разборка старого.
+        var design = o.blueprint().design(next);
+        var plan = o.nextPlan();
+        int[] total = new int[8], done = new int[8];
+        for (int i = 0; i < plan.size(); i++) {
+            var step = plan.get(i);
+            var cell = design.cells.get(step.pos());
+            int b;
+            if (cell == null) b = 7;
+            else b = switch (cell.stage()) {
+                case com.vladosiwe.lordsoutpost.blueprint.FortDesigner.ST_WALLS -> 1;
+                case com.vladosiwe.lordsoutpost.blueprint.FortDesigner.ST_GATE -> 2;
+                case com.vladosiwe.lordsoutpost.blueprint.FortDesigner.ST_KEEP, com.vladosiwe.lordsoutpost.blueprint.FortDesigner.ST_MAGE -> 3;
+                case com.vladosiwe.lordsoutpost.blueprint.FortDesigner.ST_WORKS -> 4;
+                case com.vladosiwe.lordsoutpost.blueprint.FortDesigner.ST_HOUSING -> 5;
+                case com.vladosiwe.lordsoutpost.blueprint.FortDesigner.ST_DECOR -> 6;
+                default -> 0;
+            };
+            total[b]++;
+            if (i < o.steps) done[b]++;
+        }
+        t.putIntArray("stageTotal", total);
+        t.putIntArray("stageDone", done);
+        t.putBoolean("canChoose", o.canChooseLayout());
+        t.putString("layout", o.shapeLayout().id);
+        t.putByte("rot", (byte) o.shapeRotation().ordinal());
+        return t;
+    }
+
     private static CompoundTag hud(Outpost o) {
         CompoundTag h = new CompoundTag();
         h.putByte("tier", (byte) o.tier);
@@ -463,6 +514,9 @@ public final class Views {
         for (com.vladosiwe.lordsoutpost.outpost.Project p : o.projects) if (p.active()) projects++;
         h.putInt("projects", projects);
         if (!o.recommended.isEmpty()) h.putString("advice", o.recommended.keySet().iterator().next().id);
+        h.putInt("wood", (int) o.stock(com.vladosiwe.lordsoutpost.outpost.Resource.WOOD));
+        h.putInt("stone", (int) o.stock(com.vladosiwe.lordsoutpost.outpost.Resource.STONE));
+        h.putInt("iron", (int) o.stock(com.vladosiwe.lordsoutpost.outpost.Resource.IRON));
         return h;
     }
 

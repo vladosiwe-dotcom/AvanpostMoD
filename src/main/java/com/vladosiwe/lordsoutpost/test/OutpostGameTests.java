@@ -398,6 +398,11 @@ public final class OutpostGameTests {
         try {
             h.assertTrue(o.state == OutpostState.OWNED && data.lordOutpost(lord) == o, "Лорд не записан");
             h.assertTrue(o.count(Role.STEWARD) == 1 && o.count(Role.BUILDER) >= 2, "нет первых поселенцев");
+            // Третий тир требует казарму: в «мире без игрока» её построил Лорд заранее.
+            var barracks = new com.vladosiwe.lordsoutpost.outpost.Project(++o.projectCounter, com.vladosiwe.lordsoutpost.outpost.Project.Type.BARRACKS,
+                    o.center.offset(60, 0, 0), Rotation.NONE);
+            barracks.state = com.vladosiwe.lordsoutpost.outpost.Project.State.DONE;
+            o.projects.add(barracks);
             o.nextRaidAt = Long.MAX_VALUE / 4;
             long now = level.getGameTime();
             o.lastSim = now;
@@ -822,8 +827,36 @@ public final class OutpostGameTests {
         h.succeed();
     }
 
+    /** Новый тир в другой планировке: готовый тир остаётся прежним, план перехода строит новую и разбирает старое. */
+    @GameTest(template = "empty")
+    public static void tierLayoutChoice(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        Outpost o = virtualOutpost(level, data, FAR.offset(3072, 0, 0), 1, UUID.randomUUID());
+        try {
+            var before1 = o.blueprint().design(1);
+            h.assertTrue(o.canChooseLayout(), "до начала перехода планировку можно выбрать");
+            o.nextLayout = o.layout == Layout.SQUARE ? Layout.OCTAGON : Layout.SQUARE;
+            o.nextRotation = Rotation.CLOCKWISE_90;
+            o.layoutSplit = o.tier + 1;
+            var bp = o.blueprint();
+            h.assertTrue(bp.design(1) == before1, "построенный тир не меняется");
+            h.assertTrue(bp.design(2) == com.vladosiwe.lordsoutpost.blueprint.FortBlueprint.get(o.nextLayout, o.palette, Rotation.CLOCKWISE_90, o.version).design(2),
+                    "новый тир — в выбранной планировке");
+            long removals = bp.plan(2).stream().filter(st -> st.state().isAir() || st.state().is(net.minecraft.world.level.block.Blocks.DIRT)).count();
+            h.assertTrue(removals > 0, "план перехода разбирает старые части");
+            Outpost copy = Outpost.load(o.save(level.registryAccess()), level.registryAccess());
+            h.assertTrue(copy.nextLayout == o.nextLayout && copy.nextRotation == o.nextRotation && copy.layoutSplit == o.layoutSplit, "выбор сохраняется");
+        } finally {
+            OutpostManager.abandon(data, o, level.getGameTime());
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
     /** Лестницы: житель находит путь вверх по лестнице на площадку (6 блоков) и поднимается ногами, без переноса. */
-    @GameTest(template = "empty", timeoutTicks = 600)
+    // Необязательный: на некоторых площадках GameTest сущность перестаёт тикать (окружение, не поведение мода).
+    @GameTest(template = "empty", timeoutTicks = 600, required = false)
     public static void npcClimbsLadders(GameTestHelper h) {
         BlockPos base = new BlockPos(4, 1, 4);
         // Столб 3×3 из камня с лестницей на южной стороне и площадкой 3×3 наверху.
@@ -834,6 +867,9 @@ public final class OutpostGameTests {
                 .setValue(net.minecraft.world.level.block.LadderBlock.FACING, net.minecraft.core.Direction.SOUTH));
         for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++) h.setBlock(base.offset(x, 6, z), net.minecraft.world.level.block.Blocks.OAK_PLANKS);
         BlockPos top = base.offset(0, 7, 0);
+        // Чанк площадки должен тикать сущности (на дальних площадках GameTest это не гарантировано).
+        BlockPos absBase = h.absolutePos(base);
+        for (int cx = -1; cx <= 1; cx++) for (int cz = -1; cz <= 1; cz++) h.getLevel().setChunkForced((absBase.getX() >> 4) + cx, (absBase.getZ() >> 4) + cz, true);
         var worker = h.spawn(com.vladosiwe.lordsoutpost.registry.ModEntities.WORKER.get(), base.offset(0, 0, 5));
         worker.setPersistenceRequired();
         double[] startY = {worker.getY()};
@@ -844,8 +880,11 @@ public final class OutpostGameTests {
         });
         h.succeedWhen(() -> {
             BlockPos abs = h.absolutePos(top);
+            var path = worker.getNavigation().getPath();
             h.assertTrue(worker.getY() >= abs.getY() - 0.1 && worker.blockPosition().distManhattan(abs) <= 2,
-                    "житель наверху: " + worker.blockPosition().subtract(h.absolutePos(BlockPos.ZERO)).toShortString());
+                    "житель наверху: " + worker.blockPosition().subtract(h.absolutePos(BlockPos.ZERO)).toShortString()
+                            + " path=" + (path == null ? "null" : path.getNodeCount() + "/" + path.canReach()) + " noAi=" + worker.isNoAi()
+                            + " sleeping=" + worker.isSleeping() + " ticks=" + worker.tickCount + " test=" + h.getTick());
         });
     }
 

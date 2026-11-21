@@ -33,6 +33,8 @@ public final class ClientSetup {
     public static final String CATEGORY = "key.categories.lordsoutpost";
     public static final KeyMapping MAP_KEY = new KeyMapping("key.lordsoutpost.map", KeyConflictContext.IN_GAME, InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_M, CATEGORY);
     public static final KeyMapping MANAGE_KEY = new KeyMapping("key.lordsoutpost.manage", KeyConflictContext.IN_GAME, InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_O, CATEGORY);
+    /** Сводка форта на экране: полная → компактная → скрыта. */
+    public static final KeyMapping HUD_KEY = new KeyMapping("key.lordsoutpost.hud", KeyConflictContext.IN_GAME, InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_H, CATEGORY);
 
     private ClientSetup() {}
 
@@ -63,6 +65,7 @@ public final class ClientSetup {
         public static void keys(RegisterKeyMappingsEvent event) {
             event.register(MAP_KEY);
             event.register(MANAGE_KEY);
+            event.register(HUD_KEY);
         }
 
         @SubscribeEvent
@@ -82,6 +85,7 @@ public final class ClientSetup {
             Minecraft mc = Minecraft.getInstance();
             if (mc.level == null || mc.player == null) return;
             MapTiles.tick(mc);
+            while (HUD_KEY.consumeClick()) com.vladosiwe.lordsoutpost.client.hud.OutpostHud.cycleMode();
             while (MAP_KEY.consumeClick()) {
                 if (mc.screen == null) mc.setScreen(new MapScreen());
             }
