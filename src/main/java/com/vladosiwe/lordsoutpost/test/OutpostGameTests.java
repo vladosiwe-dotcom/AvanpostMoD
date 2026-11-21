@@ -837,10 +837,14 @@ public final class OutpostGameTests {
             o.setStock(Resource.WOOD, 800);
             o.setStock(Resource.STONE, 800);
             int x = o.center.getX() + Layout.radius(o.version, 3) + Layout.MARGIN + 9, z = o.center.getZ();
-            var ok = com.vladosiwe.lordsoutpost.data.Projects.OrderResult.NOT_HERE;
-            // Место без деревьев и обрывов: ищем вдоль восточной стороны.
-            for (int dz = -16; dz <= 16 && ok != com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OK; dz += 4)
-                ok = com.vladosiwe.lordsoutpost.data.Projects.orderAt(level, o, com.vladosiwe.lordsoutpost.outpost.Project.Type.HOUSE, x, z + dz, 0, now, false);
+            // Ровная площадка под дом (рельеф в случайном месте теста может быть любым).
+            int gy = com.vladosiwe.lordsoutpost.data.Projects.groundY(level, x, z);
+            for (int dx = -6; dx <= 6; dx++)
+                for (int dz = -6; dz <= 6; dz++) {
+                    level.setBlockAndUpdate(new BlockPos(x + dx, gy, z + dz), net.minecraft.world.level.block.Blocks.GRASS_BLOCK.defaultBlockState());
+                    for (int dy = 1; dy <= 8; dy++) level.setBlockAndUpdate(new BlockPos(x + dx, gy + dy, z + dz), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+                }
+            var ok = com.vladosiwe.lordsoutpost.data.Projects.orderAt(level, o, com.vladosiwe.lordsoutpost.outpost.Project.Type.HOUSE, x, z, 0, now, false);
             h.assertTrue(ok == com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OK, "дом заказан: " + ok);
             var house = o.projects.get(o.projects.size() - 1);
             int cap0 = o.populationCap();
@@ -1668,10 +1672,16 @@ public final class OutpostGameTests {
             for (Rotation rot : Rotation.values()) {
                 Outpost o = new Outpost(data.nextManualId(), FAR.offset(24000, 0, 0), layout, Palette.TIMBER, rot, Difficulty.REDOUBT, true);
                 List<com.vladosiwe.lordsoutpost.entity.ai.WorkGoal.Column> cols = com.vladosiwe.lordsoutpost.entity.ai.WorkGoal.tunnel(o);
-                h.assertTrue(cols.size() == 32 + 8 * 2 * 6 * 8, layout.id + " " + rot + ": столбцов штрека " + cols.size());
+                // Выработка площадью: кольца вокруг дна ствола, 49×49 без самого ствола.
+                h.assertTrue(cols.size() == 49 * 49 - 1, layout.id + " " + rot + ": столбцов выработки " + cols.size());
                 BlockPos shaft = o.marker(Marker.MINE_SHAFT);
+                java.util.Set<BlockPos> dug = new java.util.HashSet<>();
                 for (var c : cols) {
-                    h.assertTrue(c.stand().distManhattan(c.floor()) == 1 && c.floor().getY() == shaft.getY(), "столбец не примыкает к предыдущему: " + c);
+                    int cheb = Math.max(Math.abs(c.stand().getX() - c.floor().getX()), Math.abs(c.stand().getZ() - c.floor().getZ()));
+                    h.assertTrue(cheb == 1 && c.stand().getY() == c.floor().getY(), "столбец не примыкает к соседнему: " + c);
+                    h.assertTrue(dug.contains(c.stand()) || dug.isEmpty() || Math.abs(c.stand().getX() - c.floor().getX()) + Math.abs(c.stand().getZ() - c.floor().getZ()) <= 2,
+                            "копают с невыкопанной клетки: " + c);
+                    dug.add(c.floor());
                     h.assertTrue(!o.insideHorizontally(c.floor().getX(), c.floor().getZ(), 0) || c.floor().getY() < o.center.getY() - 4, "штрек выходит к поверхности");
                 }
             }
@@ -1793,11 +1803,17 @@ public final class OutpostGameTests {
                     }
                     // Пустой GameTest-мир не содержит природной породы: заполняем первые колонны штрека камнем,
                     // чтобы проверить реальную добычу, а не только наличие шахтёра и его маршрута.
-                    for (com.vladosiwe.lordsoutpost.entity.ai.WorkGoal.Column column
-                            : com.vladosiwe.lordsoutpost.entity.ai.WorkGoal.tunnel(o, level.getMinBuildHeight())) {
+                    // Выработка большая (кольца 49×49): камнем — только первые колонны, с породой над ними (шахтёр копает
+                    // лишь в недрах, под сплошной породой).
+                    var mineCols = com.vladosiwe.lordsoutpost.entity.ai.WorkGoal.tunnel(o, level.getMinBuildHeight());
+                    for (com.vladosiwe.lordsoutpost.entity.ai.WorkGoal.Column column : mineCols.subList(0, Math.min(40, mineCols.size()))) {
                         level.setBlockAndUpdate(column.floor(), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState());
                         level.setBlockAndUpdate(column.floor().below(), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState());
                         level.setBlockAndUpdate(column.floor().above(), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+                        for (int dy = 2; dy <= 4; dy++) {
+                            BlockPos roof = column.floor().above(dy);
+                            if (level.getBlockState(roof).isAir()) level.setBlockAndUpdate(roof, net.minecraft.world.level.block.Blocks.STONE.defaultBlockState());
+                        }
                     }
                     mark[0] = h.getTick();
                     stage[0] = 1;

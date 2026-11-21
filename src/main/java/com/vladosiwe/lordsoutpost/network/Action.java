@@ -38,7 +38,8 @@ public enum Action {
     MOVE_PROJECT,
     UPGRADE_PROJECT,
     DEMOLISH_PROJECT,
-    DEMOLISH_AT;
+    DEMOLISH_AT,
+    SET_ROLE;
 
     public static final Action[] VALUES = values();
 }

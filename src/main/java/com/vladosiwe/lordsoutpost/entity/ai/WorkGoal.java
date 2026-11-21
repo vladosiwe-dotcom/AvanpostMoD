@@ -47,6 +47,7 @@ import net.minecraft.world.level.block.FenceGateBlock;
 import net.minecraft.world.level.block.LeavesBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.neoforged.neoforge.common.Tags;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
@@ -529,7 +530,11 @@ public class WorkGoal extends Goal {
                 if (!level.getBlockState(top).is(BlockTags.LOGS)) continue;
                 BlockPos base = top;
                 while (level.getBlockState(base.below()).is(BlockTags.LOGS) && top.getY() - base.getY() < 24) base = base.below();
-                if (!level.getBlockState(base.below()).is(BlockTags.DIRT)) continue;
+                // Ствол стоит на земле — или это недорубленный ствол (нижние брёвна уже срублены, работу прервали):
+                // под ним до 3 блоков пустоты, ниже земля. Висящий остаток тоже надо дорубить.
+                BlockPos ground = base.below();
+                for (int gap = 0; gap < 3 && level.getBlockState(ground).canBeReplaced() && !level.getBlockState(ground).is(BlockTags.LOGS); gap++) ground = ground.below();
+                if (!level.getBlockState(ground).is(BlockTags.DIRT)) continue;
                 Outpost occupied = data.findAt(base);
                 if ((occupied != null && occupied != o) || (occupied == o && !o.insideWalls(base))
                         || o.claimedTrees.contains(base) || !naturalLeaves(level, top) || plantedByPlayer(data, base)
@@ -906,6 +911,13 @@ public class WorkGoal extends Goal {
         List<Column> cols = minePlan(level, o);
         while (o.mineCursor < cols.size()) {
             int idx = o.mineCursor;
+            // Выработка не подходит к поверхности ближе 4 блоков: не подкапывает деревья, постройки и землю двора.
+            BlockPos fl = cols.get(idx).floor();
+            if (!level.isLoaded(fl) || !rockAbove(level, fl)) {
+                o.mineCursor++;
+                OutpostSavedData.get(level).setDirty();
+                continue;
+            }
             int target = reachable(level, cols, idx, 12);
             if (target == idx) {
                 // Курсор сдвигается только после завершения столбца: сон/выгрузка не должны пропускать недокопанный блок.
@@ -930,6 +942,17 @@ public class WorkGoal extends Goal {
             return true;
         }
         return false;
+    }
+
+    /** Над выработкой (2 блока высотой) — три блока сплошной природной породы: значит, это недра, а не корни и не двор. */
+    private static boolean rockAbove(ServerLevel level, BlockPos floor) {
+        for (int dy = 2; dy <= 4; dy++) {
+            BlockPos p = floor.above(dy);
+            BlockState s = level.getBlockState(p);
+            if (!s.isSolidRender(level, p) || s.is(BlockTags.LOGS) || !(s.is(BlockTags.BASE_STONE_OVERWORLD) || s.is(BlockTags.DIRT)
+                    || s.is(net.minecraft.world.level.block.Blocks.GRAVEL) || s.is(BlockTags.SAND) || s.is(Tags.Blocks.ORES))) return false;
+        }
+        return true;
     }
 
     /** Какой столбец копать, чтобы стал доступен idx: он сам или завал перед ним (в пределах depth шагов назад). */

@@ -106,7 +106,7 @@ public final class Outpost {
     // --- Хозяйство ---
     private final EnumMap<Resource, Double> stock = new EnumMap<>(Resource.class);
     public final List<Resident> residents = new ArrayList<>();
-    public final Squad[] squads = {new Squad(Squad.GUARD, Squad.Order.POSTS), new Squad(Squad.WATCH, Squad.Order.PATROL), new Squad(Squad.RETINUE, Squad.Order.POSTS)};
+    public final Squad[] squads = {new Squad(Squad.GUARD, Squad.Order.PATROL), new Squad(Squad.WATCH, Squad.Order.PATROL), new Squad(Squad.RETINUE, Squad.Order.POSTS)};
     public Law law = Law.NONE;
     public long lawChangedAt = Long.MIN_VALUE / 2;
     public final AccessRules access = new AccessRules();
@@ -618,6 +618,7 @@ public final class Outpost {
         ListTag sq = new ListTag();
         for (Squad s : squads) sq.add(s.save());
         t.put("squads", sq);
+        t.putBoolean("guardPatrolDefault", true);
         t.putString("law", law.id);
         t.putLong("lawAt", lawChangedAt);
         t.put("access", access.save());
@@ -731,6 +732,8 @@ public final class Outpost {
         for (int i = 0; i < res.size(); i++) o.residents.add(Resident.load(res.getCompound(i)));
         ListTag sq = t.getList("squads", Tag.TAG_COMPOUND);
         for (int i = 0; i < Math.min(sq.size(), o.squads.length); i++) o.squads[i].load(sq.getCompound(i));
+        // Стража по умолчанию теперь обходит места работы жителей; в старых сохранениях «посты» — прежнее умолчание.
+        if (!t.getBoolean("guardPatrolDefault") && o.squads[Squad.GUARD].order == Squad.Order.POSTS) o.squads[Squad.GUARD].order = Squad.Order.PATROL;
         o.law = Law.byId(t.getString("law"));
         o.lawChangedAt = t.getLong("lawAt");
         o.access.load(t.getCompound("access"));

@@ -60,7 +60,7 @@ public final class OutpostView {
     /** Хозяйство (только для Лорда): планировщик, задачи, зоны, лавка, магия, заказанные постройки. */
     @Nullable public final Manage manage;
 
-    public record PersonInfo(String name, String role, String activity) {}
+    public record PersonInfo(String name, String role, String activity, @org.jetbrains.annotations.Nullable java.util.UUID id, int roleWait) {}
 
     public record TaskInfo(String type, String state, String who, String subject, String reason, String product) {}
 
@@ -130,7 +130,7 @@ public final class OutpostView {
             ListTag pl = m.getList("people", Tag.TAG_COMPOUND);
             for (int i = 0; i < pl.size(); i++) {
                 CompoundTag p = pl.getCompound(i);
-                people.add(new PersonInfo(p.getString("name"), p.getString("role"), p.getString("act")));
+                people.add(new PersonInfo(p.getString("name"), p.getString("role"), p.getString("act"), p.hasUUID("id") ? p.getUUID("id") : null, p.getInt("roleWait")));
             }
             ListTag zs = m.getList("zones", Tag.TAG_COMPOUND);
             for (int i = 0; i < zs.size(); i++) {

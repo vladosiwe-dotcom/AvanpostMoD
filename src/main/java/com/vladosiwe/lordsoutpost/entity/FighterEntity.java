@@ -110,6 +110,24 @@ public class FighterEntity extends OutpostNpc implements RangedAttackMob {
     }
 
     /**
+     * Приказ «Держать позицию»: боец защищает своё место — бьёт врагов в пределах 16 блоков от точки, но не уходит
+     * за ними дальше; ушедшая цель бросается, и он возвращается на позицию.
+     */
+    @Override
+    protected void customServerAiStep() {
+        super.customServerAiStep();
+        if (tickCount % 10 != 0 || getTarget() == null || hostileFaction() || !(level() instanceof net.minecraft.server.level.ServerLevel sl)) return;
+        Outpost o = outpost();
+        var r = resident();
+        if (o == null || r == null || r.squad < 0 || r.squad >= o.squads.length) return;
+        var squad = o.squads[r.squad];
+        if (squad.order != com.vladosiwe.lordsoutpost.outpost.Squad.Order.HOLD || squad.hold == null) return;
+        net.minecraft.core.BlockPos spot = com.vladosiwe.lordsoutpost.server.NpcLifecycle.holdSpot(sl, o, squad.hold);
+        double reach = ranged() ? 24 : 16;
+        if (getTarget().distanceToSqr(spot.getX() + 0.5, spot.getY(), spot.getZ() + 0.5) > reach * reach) setTarget(null);
+    }
+
+    /**
      * Добыча с мародёра (идея Guard Villagers: снаряжение бойца — его добыча). Только враги дикого форта и только
      * когда их убил игрок: каждая вещь выпадает с шансом 8,5% (+1% за уровень «Добычи»), потёртой. Свои стражи
      * ничего не роняют: их снаряжение — имущество форта, и оно выдаётся заново.

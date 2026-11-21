@@ -297,6 +297,8 @@ public final class Views {
             CompoundTag pt = new CompoundTag();
             pt.putString("name", r.name);
             pt.putString("role", r.role.id);
+            pt.putUUID("id", r.id);
+            pt.putInt("roleWait", (int) Math.max(0, (r.roleChangedAt + com.vladosiwe.lordsoutpost.outpost.Resident.ROLE_COOLDOWN - level.getGameTime() + 19) / 20));
             var body = bodies.get(r.id);
             String act;
             if (body == null) act = o.online ? "away" : "virtual";

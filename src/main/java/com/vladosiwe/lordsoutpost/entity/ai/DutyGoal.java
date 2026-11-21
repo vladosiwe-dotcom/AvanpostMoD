@@ -103,7 +103,7 @@ public class DutyGoal extends Goal {
             }
             case PATROL -> {
                 boolean custom = squad.route.size() >= 2;
-                patrol(level, o, custom ? squad.route : o.markers(squad.id == Squad.WATCH ? Marker.OUTER_PATROL : Marker.PATROL), true);
+                patrol(level, o, custom ? squad.route : squad.id == Squad.WATCH ? o.markers(Marker.OUTER_PATROL) : workRounds(o), true);
             }
             default -> post(o, r);
         }
@@ -117,6 +117,22 @@ public class DutyGoal extends Goal {
             return;
         }
         mob.approach(post, 1.0, 1.6, 240);
+    }
+
+    /**
+     * Обход стражи по умолчанию — там, где работают жители: поле, дровяной двор, загон, шахта, кузница, лавка,
+     * и точки патруля двора. Так охрана оказывается рядом, когда на жителя нападут.
+     */
+    private static List<BlockPos> workRounds(Outpost o) {
+        List<BlockPos> out = new java.util.ArrayList<>();
+        for (var z : new com.vladosiwe.lordsoutpost.outpost.WorkZone[]{com.vladosiwe.lordsoutpost.outpost.WorkZone.FARM,
+                com.vladosiwe.lordsoutpost.outpost.WorkZone.WOODYARD, com.vladosiwe.lordsoutpost.outpost.WorkZone.PEN,
+                com.vladosiwe.lordsoutpost.outpost.WorkZone.MINE, com.vladosiwe.lordsoutpost.outpost.WorkZone.SMITHY}) {
+            if (o.hasZone(z)) out.add(o.zone(z));
+        }
+        List<BlockPos> yard = o.markers(Marker.PATROL);
+        for (int i = 0; i < yard.size(); i += 2) out.add(yard.get(i));
+        return out;
     }
 
     private void patrol(ServerLevel level, Outpost o, List<BlockPos> points, boolean resolveGround) {

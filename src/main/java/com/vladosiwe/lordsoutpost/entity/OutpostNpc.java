@@ -489,8 +489,9 @@ public abstract class OutpostNpc extends PathfinderMob implements OutpostMember 
         int ix = (int) Math.round(dx / len * 3), iz = (int) Math.round(dz / len * 3);
         BlockPos inner = gate.offset(-ix, 0, -iz), outer = gate.offset(ix, 0, iz);
         BlockPos near = here ? inner : outer, far = here ? outer : inner;
-        // Уже у ворот со своей стороны — проходим насквозь.
-        return blockPosition().distSqr(near) > 2.5 * 2.5 ? near : far;
+        // Уже у ворот со своей стороны или в самом проходе (ближе к той стороне, чем точка этой) — проходим насквозь.
+        double toNear = blockPosition().distSqr(near), toFar = blockPosition().distSqr(far), span = near.distSqr(far);
+        return toNear <= 2.5 * 2.5 || toFar < span ? far : near;
     }
 
     private boolean approachDirect(BlockPos pos, double speed, double reach, int patience) {

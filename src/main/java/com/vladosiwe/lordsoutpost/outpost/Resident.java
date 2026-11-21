@@ -36,6 +36,12 @@ public final class Resident {
     public long statusUntil;
     /** Отряд бойца (индекс в Outpost.squads) или -1. */
     public int squad = -1;
+    /** Когда Лорд последний раз сменил профессию (игровой тик): следующая смена — не раньше чем через 2 минуты. */
+    public long roleChangedAt = Long.MIN_VALUE / 2;
+    public static final long ROLE_COOLDOWN = 2400;
+    /** Профессии, которые Лорд может назначить сам (управляющий, маг и капитан — особые должности). */
+    public static final Role[] ASSIGNABLE = {Role.BUILDER, Role.FARMER, Role.LUMBERJACK, Role.MINER, Role.SKOTOVOD, Role.SMITH,
+            Role.CARAVANEER, Role.SHIELDMAN, Role.BERSERKER, Role.ARCHER, Role.CROSSBOWMAN};
     public int kills;
     /** Опыт шахтёра за реально добытые блоки; сохраняется вместе с жителем. */
     public int miningXp;
@@ -91,6 +97,7 @@ public final class Resident {
         t.putByte("squad", (byte) squad);
         t.putInt("kills", kills);
         t.putInt("miningXp", miningXp);
+        t.putLong("roleAt", roleChangedAt);
         if (!pouch.isEmpty()) {
             CompoundTag pt = new CompoundTag();
             for (var e : pouch.entrySet()) if (e.getValue() > 0) pt.putInt(e.getKey(), e.getValue());
@@ -109,6 +116,7 @@ public final class Resident {
         r.squad = t.getByte("squad");
         r.kills = t.getInt("kills");
         r.miningXp = Math.max(0, t.getInt("miningXp"));
+        if (t.contains("roleAt")) r.roleChangedAt = t.getLong("roleAt");
         CompoundTag pt = t.getCompound("pouch");
         for (String k : pt.getAllKeys()) r.pouch.put(k, Math.max(0, pt.getInt(k)));
         return r;

@@ -201,6 +201,14 @@ public final class ServerEvents {
     public static void onEntityJoin(EntityJoinLevelEvent event) {
         if (event.loadedFromDisk() && event.getEntity().getPersistentData().contains(NpcLifecycle.CARAVAN_TAG)) {
             event.setCanceled(true);
+            return;
+        }
+        // Враждебные мобы (зомби, скелеты, пауки…) видят в жителях форта добычу, как в жителях деревни.
+        if (!event.getLevel().isClientSide() && event.getEntity() instanceof net.minecraft.world.entity.monster.Monster m
+                && !(m instanceof net.minecraft.world.entity.monster.Creeper)
+                && !(m instanceof net.minecraft.world.entity.monster.EnderMan)) {
+            m.targetSelector.addGoal(3, new net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal<>(m,
+                    com.vladosiwe.lordsoutpost.entity.WorkerEntity.class, true));
         }
     }
 }

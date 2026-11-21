@@ -207,6 +207,41 @@ public final class ServerActions {
             }
             case CANCEL_PROJECT -> com.vladosiwe.lordsoutpost.data.Projects.cancel(o, a.getLong("id"), now);
             case MOVE_PROJECT -> com.vladosiwe.lordsoutpost.data.Projects.move(o, a.getLong("id"), a.getBoolean("up"));
+            case SET_ROLE -> {
+                if (!a.hasUUID("resident")) return;
+                Resident r = o.resident(a.getUUID("resident"));
+                com.vladosiwe.lordsoutpost.outpost.Role to = com.vladosiwe.lordsoutpost.outpost.Role.byId(a.getString("role"));
+                if (r == null || to == null || to == r.role || !java.util.Arrays.asList(Resident.ASSIGNABLE).contains(to)
+                        || !java.util.Arrays.asList(Resident.ASSIGNABLE).contains(r.role)) {
+                    feedback(player, "lordsoutpost.msg.role.denied", ChatFormatting.YELLOW);
+                    return;
+                }
+                long wait = r.roleChangedAt + Resident.ROLE_COOLDOWN - now;
+                if (wait > 0) {
+                    player.displayClientMessage(Component.translatable("lordsoutpost.msg.role.cooldown", r.name, (wait + 19) / 20).withStyle(ChatFormatting.YELLOW), true);
+                    return;
+                }
+                boolean bodyChange = to.combat != r.role.combat;
+                net.minecraft.world.entity.Entity body = r.entity == null ? null : level.getEntity(r.entity);
+                if (bodyChange && body instanceof com.vladosiwe.lordsoutpost.entity.OutpostNpc npc) {
+                    // Тело другого вида (житель ↔ боец): ноша жителя уходит на склад, тело появится заново с новой ролью.
+                    if (npc instanceof com.vladosiwe.lordsoutpost.entity.WorkerEntity w) {
+                        w.stashFeed(r);
+                        com.vladosiwe.lordsoutpost.data.Storehouse.depositVirtually(o, w.inventory);
+                    }
+                    npc.discard();
+                    r.entity = null;
+                    r.spawnGrace = 0;
+                }
+                r.role = to;
+                r.squad = to.combat ? (r.squad < 0 ? Squad.GUARD : r.squad) : -1;
+                r.roleChangedAt = now;
+                if (!bodyChange && body instanceof com.vladosiwe.lordsoutpost.entity.OutpostNpc npc) npc.bind(o, r);
+                o.log(now, "lordsoutpost.event.role_changed", r.name, to.id);
+                o.dirtyForClients = true;
+                player.displayClientMessage(Component.translatable("lordsoutpost.msg.role.changed", r.name,
+                        Component.translatable("lordsoutpost.role." + to.id)).withStyle(ChatFormatting.GREEN), true);
+            }
             case UPGRADE_PROJECT -> {
                 var r = com.vladosiwe.lordsoutpost.data.Projects.upgrade(level, o, a.getLong("id"), now, false);
                 feedback(player, "lordsoutpost.msg.project." + r.name().toLowerCase(Locale.ROOT),

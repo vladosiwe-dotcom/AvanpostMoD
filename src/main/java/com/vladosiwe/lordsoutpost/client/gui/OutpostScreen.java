@@ -438,6 +438,9 @@ public class OutpostScreen extends Screen {
 
     // ---------- Хозяйство ----------
 
+    /** Житель, для которого открыт выбор профессии во вкладке «Хозяйство». */
+    @org.jetbrains.annotations.Nullable private java.util.UUID rolePick;
+
     private void drawEconomy(GuiGraphics g, int x, int y, int mouseX, int mouseY) {
         OutpostView.Manage m = view.manage;
         if (m == null) {
@@ -499,10 +502,34 @@ public class OutpostScreen extends Screen {
             for (OutpostView.PersonInfo p : m.people) {
                 if (ty > my - 11) break;
                 boolean idle = p.activity().equals("idle") || p.activity().equals("chore");
-                Component line = Component.literal(p.name() + " ").append(Component.translatable("lordsoutpost.role." + p.role()).withStyle(net.minecraft.ChatFormatting.DARK_GRAY))
+                boolean assignable = p.id() != null && java.util.Arrays.stream(com.vladosiwe.lordsoutpost.outpost.Resident.ASSIGNABLE).anyMatch(r -> r.id.equals(p.role()));
+                boolean open = p.id() != null && p.id().equals(rolePick);
+                Component line = Component.literal((assignable ? (open ? "▾ " : "▸ ") : "  ") + p.name() + " ")
+                        .append(Component.translatable("lordsoutpost.role." + p.role()).withStyle(net.minecraft.ChatFormatting.DARK_GRAY))
                         .append(": ").append(Component.translatable("lordsoutpost.activity." + p.activity()));
-                Ui.text(g, font, line, x, ty, colW, idle ? Ui.MUTED : Ui.TEXT);
+                Ui.text(g, font, line, x, ty, colW, open ? Ui.ACCENT : idle ? Ui.MUTED : Ui.TEXT);
+                if (assignable) hits.add(x, ty, colW, 9, () -> rolePick = open ? null : p.id(), Component.translatable("lordsoutpost.ui.role.pick.tip"));
                 ty += 9;
+                if (!open) continue;
+                // Выбор профессии: кнопки по 3 в ряд; смена не чаще раза в 2 минуты.
+                if (p.roleWait() > 0) {
+                    Ui.text(g, font, Component.translatable("lordsoutpost.ui.role.wait", p.roleWait()), x + 6, ty, colW - 6, Ui.WARN);
+                    ty += 10;
+                    continue;
+                }
+                var roles = com.vladosiwe.lordsoutpost.outpost.Resident.ASSIGNABLE;
+                int bw = (colW - 6) / 3;
+                for (int i = 0; i < roles.length; i++) {
+                    var role = roles[i];
+                    int bx = x + 6 + (i % 3) * bw, by = ty + (i / 3) * 11;
+                    boolean cur = role.id.equals(p.role());
+                    java.util.UUID rid = p.id();
+                    Ui.button(g, font, hits, bx, by, bw - 2, 10, Component.translatable("lordsoutpost.role." + role.id), !cur, cur, mouseX, mouseY, () -> {
+                        Net.action(view.id, Action.SET_ROLE, t -> { t.putUUID("resident", rid); t.putString("role", role.id); });
+                        rolePick = null;
+                    }, null);
+                }
+                ty += ((roles.length + 2) / 3) * 11 + 2;
             }
         }
         // Дань почтой: то, что ещё не легло в Сундук Дани (копится, пока форт не загружен).
