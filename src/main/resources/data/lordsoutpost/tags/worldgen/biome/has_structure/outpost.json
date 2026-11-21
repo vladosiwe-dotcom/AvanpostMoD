@@ -1,0 +1,22 @@
+{
+  "values": [
+    "#minecraft:is_forest",
+    "#minecraft:is_taiga",
+    "#minecraft:is_savanna",
+    "#minecraft:is_badlands",
+    "#minecraft:is_jungle",
+    "minecraft:plains",
+    "minecraft:sunflower_plains",
+    "minecraft:meadow",
+    "minecraft:desert",
+    "minecraft:snowy_plains",
+    "minecraft:cherry_grove",
+    "minecraft:swamp",
+    "minecraft:windswept_hills",
+    "minecraft:stony_shore",
+    {
+      "id": "#c:is_plains",
+      "required": false
+    }
+  ]
+}

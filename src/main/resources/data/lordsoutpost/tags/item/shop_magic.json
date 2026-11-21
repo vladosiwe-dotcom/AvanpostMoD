@@ -1,0 +1,65 @@
+{
+  "values": [
+    "minecraft:enchanted_book",
+    "minecraft:experience_bottle",
+    "minecraft:potion",
+    "minecraft:splash_potion",
+    "minecraft:lingering_potion",
+    {
+      "id": "irons_spellbooks:scroll",
+      "required": false
+    },
+    {
+      "id": "irons_spellbooks:arcane_essence",
+      "required": false
+    },
+    {
+      "id": "irons_spellbooks:common_ink",
+      "required": false
+    },
+    {
+      "id": "irons_spellbooks:uncommon_ink",
+      "required": false
+    },
+    {
+      "id": "irons_spellbooks:rare_ink",
+      "required": false
+    },
+    {
+      "id": "irons_spellbooks:epic_ink",
+      "required": false
+    },
+    {
+      "id": "irons_spellbooks:legendary_ink",
+      "required": false
+    },
+    {
+      "id": "irons_spellbooks:evasion_elixir",
+      "required": false
+    },
+    {
+      "id": "irons_spellbooks:greater_evasion_elixir",
+      "required": false
+    },
+    {
+      "id": "irons_spellbooks:invisibility_elixir",
+      "required": false
+    },
+    {
+      "id": "irons_spellbooks:greater_invisibility_elixir",
+      "required": false
+    },
+    {
+      "id": "irons_spellbooks:oakskin_elixir",
+      "required": false
+    },
+    {
+      "id": "irons_spellbooks:greater_oakskin_elixir",
+      "required": false
+    },
+    {
+      "id": "irons_spellbooks:greater_healing_potion",
+      "required": false
+    }
+  ]
+}

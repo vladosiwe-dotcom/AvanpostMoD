@@ -1,0 +1,20 @@
+{
+  "values": [
+    {
+      "id": "irons_spellbooks:arcane_essence",
+      "required": false
+    },
+    {
+      "id": "irons_spellbooks:common_ink",
+      "required": false
+    },
+    {
+      "id": "irons_spellbooks:uncommon_ink",
+      "required": false
+    },
+    {
+      "id": "irons_spellbooks:rare_ink",
+      "required": false
+    }
+  ]
+}

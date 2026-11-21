@@ -1,0 +1,417 @@
+package com.vladosiwe.lordsoutpost.command;
+
+import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.DoubleArgumentType;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.vladosiwe.lordsoutpost.blueprint.Layout;
+import com.vladosiwe.lordsoutpost.blueprint.Palette;
+import com.vladosiwe.lordsoutpost.data.ALifeSimulationManager;
+import com.vladosiwe.lordsoutpost.data.Discovery;
+import com.vladosiwe.lordsoutpost.data.OutpostSavedData;
+import com.vladosiwe.lordsoutpost.data.Simulation;
+import com.vladosiwe.lordsoutpost.entity.FighterEntity;
+import com.vladosiwe.lordsoutpost.outpost.Difficulty;
+import com.vladosiwe.lordsoutpost.outpost.Outpost;
+import com.vladosiwe.lordsoutpost.outpost.OutpostState;
+import com.vladosiwe.lordsoutpost.outpost.Resource;
+import com.vladosiwe.lordsoutpost.registry.ModItems;
+import com.vladosiwe.lordsoutpost.server.OutpostManager;
+import com.vladosiwe.lordsoutpost.world.OutpostSites;
+import net.minecraft.ChatFormatting;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.SharedSuggestionProvider;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.Style;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Rotation;
+import net.neoforged.fml.ModList;
+
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * Команды администратора (уровень прав 2) для проверки и настройки:
+ * /outpost nearest | list | info | create | capture | found | tier | sim | stock | raid | mine | remove | reveal
+ */
+public final class OutpostCommands {
+    private OutpostCommands() {}
+
+    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+        dispatcher.register(Commands.literal("outpost").requires(s -> s.hasPermission(2))
+                .then(Commands.literal("nearest").executes(OutpostCommands::nearest))
+                .then(Commands.literal("list").executes(OutpostCommands::list))
+                .then(Commands.literal("info").executes(OutpostCommands::info))
+                .then(Commands.literal("reveal").executes(OutpostCommands::reveal))
+                .then(Commands.literal("create")
+                        .then(Commands.argument("skulls", IntegerArgumentType.integer(1, 5))
+                                .executes(c -> create(c, null, null))
+                                .then(Commands.argument("layout", StringArgumentType.word())
+                                        .suggests((c, b) -> SharedSuggestionProvider.suggest(Arrays.stream(Layout.VALUES).map(l -> l.id), b))
+                                        .executes(c -> create(c, StringArgumentType.getString(c, "layout"), null))
+                                        .then(Commands.argument("palette", StringArgumentType.word())
+                                                .suggests((c, b) -> SharedSuggestionProvider.suggest(Arrays.stream(Palette.VALUES).map(p -> p.id), b))
+                                                .executes(c -> create(c, StringArgumentType.getString(c, "layout"), StringArgumentType.getString(c, "palette")))))))
+                .then(Commands.literal("capture").executes(OutpostCommands::capture))
+                .then(Commands.literal("found").executes(c -> found(c, null))
+                        .then(Commands.argument("name", StringArgumentType.greedyString()).executes(c -> found(c, StringArgumentType.getString(c, "name")))))
+                .then(Commands.literal("tier").then(Commands.argument("tier", IntegerArgumentType.integer(1, 3)).executes(OutpostCommands::tier)))
+                .then(Commands.literal("sim").then(Commands.argument("days", DoubleArgumentType.doubleArg(0.01, 100)).executes(OutpostCommands::sim)))
+                .then(Commands.literal("stock")
+                        .then(Commands.argument("resource", StringArgumentType.word())
+                                .suggests((c, b) -> SharedSuggestionProvider.suggest(Arrays.stream(Resource.VALUES).map(r -> r.id), b))
+                                .then(Commands.argument("amount", IntegerArgumentType.integer(0, 1_000_000)).executes(OutpostCommands::stock))))
+                .then(Commands.literal("raid").executes(OutpostCommands::raid))
+                .then(Commands.literal("workers").executes(c -> {
+                    Outpost o = here(c);
+                    if (o == null) return 0;
+                    ServerLevel level = overworld(c);
+                    int n = 0;
+                    for (var w : level.getEntitiesOfClass(com.vladosiwe.lordsoutpost.entity.WorkerEntity.class,
+                            new net.minecraft.world.phys.AABB(o.center).inflate(96, 64, 96), w -> w.outpostId() == o.id)) {
+                        String line = w.role().id + " " + w.blockPosition().toShortString() + " " + (w.workGoal == null ? "-" : w.workGoal.status())
+                                + " " + w.goalClassNames();
+                        c.getSource().sendSuccess(() -> Component.literal(line), false);
+                        n++;
+                    }
+                    return n;
+                }))
+                .then(Commands.literal("combat").executes(OutpostCommands::combat))
+                .then(Commands.literal("mine").then(Commands.argument("column", IntegerArgumentType.integer(0, 1000)).executes(c -> {
+                    Outpost o = here(c);
+                    if (o == null) return 0;
+                    o.mineCursor = IntegerArgumentType.getInteger(c, "column");
+                    OutpostSavedData.get(overworld(c)).setDirty();
+                    c.getSource().sendSuccess(() -> Component.literal("mine = " + o.mineCursor), true);
+                    return 1;
+                })))
+                .then(Commands.literal("probe").executes(OutpostCommands::probe))
+                .then(Commands.literal("remove").executes(OutpostCommands::remove)));
+    }
+
+    private static ServerLevel overworld(CommandContext<CommandSourceStack> c) {
+        return c.getSource().getServer().overworld();
+    }
+
+    /** Аванпост, в котором стоит источник команды, или его собственный. */
+    /** Проверка мест под постройку: карта двора (буква — причина отказа, '.' — можно) в лог сервера. */
+    private static int probe(CommandContext<CommandSourceStack> c) {
+        Outpost o = here(c);
+        if (o == null) return 0;
+        var level = c.getSource().getLevel();
+        var type = com.vladosiwe.lordsoutpost.outpost.Project.Type.HOUSE;
+        int r = o.radius() + 6;
+        java.util.EnumMap<com.vladosiwe.lordsoutpost.data.Projects.OrderResult, Integer> tally = new java.util.EnumMap<>(com.vladosiwe.lordsoutpost.data.Projects.OrderResult.class);
+        StringBuilder map = new StringBuilder();
+        for (int dz = -r; dz <= r; dz += 2) {
+            map.append('\n');
+            for (int dx = -r; dx <= r; dx += 2) {
+                var res = com.vladosiwe.lordsoutpost.data.Projects.orderAt(level, o, type, o.center.getX() + dx, o.center.getZ() + dz, 0, level.getGameTime(), true);
+                tally.merge(res, 1, Integer::sum);
+                if (res == com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OVERLAPS_FORT && Math.abs(dx) < 14 && Math.abs(dz) < 14 && (dx + dz) % 8 == 0) {
+                    int y = com.vladosiwe.lordsoutpost.data.Projects.groundY(level, o.center.getX() + dx, o.center.getZ() + dz);
+                    com.vladosiwe.lordsoutpost.LordsOutpost.LOGGER.info("PROBE F at {},{} y={} center.y={}: {}", dx, dz, y, o.center.getY(),
+                            com.vladosiwe.lordsoutpost.data.Projects.overlapDetail(o, type, new BlockPos(o.center.getX() + dx, y, o.center.getZ() + dz), 0));
+                }
+                map.append(switch (res) { case OK -> '.'; case OVERLAPS_FORT -> 'F'; case OCCUPIED -> 'X'; case NO_GROUND -> 'G'; case UNEVEN -> 'U'; case NOT_HERE -> 'N'; default -> '?'; });
+            }
+        }
+        com.vladosiwe.lordsoutpost.LordsOutpost.LOGGER.info("PROBE {} r={} {}{}", Long.toHexString(o.id), r, tally, map);
+        for (int t = o.tier; t <= Math.min(3, o.tier + 1); t++) {
+            java.util.Map<String, Integer> kinds = new java.util.TreeMap<>();
+            for (var e : o.blueprint().design(t).cells.entrySet()) {
+                if (e.getKey().getY() < 1 || e.getValue().state().isAir()) continue;
+                kinds.merge("st" + e.getValue().stage() + ":" + net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(e.getValue().state().getBlock()).getPath(), 1, Integer::sum);
+            }
+            final int tt = t;
+            com.vladosiwe.lordsoutpost.LordsOutpost.LOGGER.info("PROBE tier {} cells y>=1: {}", tt, kinds);
+        }
+        c.getSource().sendSuccess(() -> Component.literal("probe: " + tally), false);
+        return 1;
+    }
+
+    private static Outpost here(CommandContext<CommandSourceStack> c) {
+        OutpostSavedData data = OutpostSavedData.get(overworld(c));
+        Outpost o = c.getSource().getLevel().dimension() == Level.OVERWORLD ? data.findAt(BlockPos.containing(c.getSource().getPosition())) : null;
+        if (o == null && c.getSource().getEntity() instanceof ServerPlayer p) o = data.lordOutpost(p.getUUID());
+        if (o == null) c.getSource().sendFailure(Component.translatable("lordsoutpost.cmd.none_here"));
+        return o;
+    }
+
+    private static MutableComponent describe(Outpost o) {
+        String tp = "/tp @s " + o.center.getX() + " " + (o.center.getY() + 30) + " " + o.center.getZ();
+        return Component.literal("#" + Long.toHexString(o.id) + " ")
+                .append(o.difficulty.label())
+                .append(Component.literal(" " + "★".repeat(o.difficulty.skulls) + " " + o.state + " T" + o.tier + " " + Math.round(o.progress() * 100) + "% "
+                        + o.layout.id + "/" + o.palette.id + (o.name.isEmpty() ? "" : " \"" + o.name + "\"") + " "))
+                .append(Component.literal("[" + o.center.getX() + " " + o.center.getY() + " " + o.center.getZ() + "]")
+                        .withStyle(Style.EMPTY.withColor(ChatFormatting.AQUA).withClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, tp))));
+    }
+
+    private static int nearest(CommandContext<CommandSourceStack> c) {
+        ServerLevel level = overworld(c);
+        OutpostSavedData data = OutpostSavedData.get(level);
+        BlockPos at = BlockPos.containing(c.getSource().getPosition());
+        Discovery.ensureRecords(level, data, at.getX(), at.getZ(), 2600, level.getGameTime());
+        Optional<Outpost> best = data.near(at.getX(), at.getZ(), 4000).stream().min(Comparator.comparingDouble(o -> o.distanceSqr(at.getX(), at.getZ())));
+        if (best.isEmpty()) {
+            c.getSource().sendFailure(Component.translatable("lordsoutpost.cmd.none_near"));
+            return 0;
+        }
+        Outpost o = best.get();
+        int dist = (int) Math.sqrt(o.distanceSqr(at.getX(), at.getZ()));
+        c.getSource().sendSuccess(() -> describe(o).append(Component.literal(" (" + dist + " m)")), false);
+        return 1;
+    }
+
+    private static int list(CommandContext<CommandSourceStack> c) {
+        OutpostSavedData data = OutpostSavedData.get(overworld(c));
+        BlockPos at = BlockPos.containing(c.getSource().getPosition());
+        List<Outpost> all = data.all().stream().sorted(Comparator.comparingDouble(o -> o.distanceSqr(at.getX(), at.getZ()))).limit(20).toList();
+        c.getSource().sendSuccess(() -> Component.translatable("lordsoutpost.cmd.list", data.all().size()), false);
+        for (Outpost o : all) c.getSource().sendSuccess(() -> describe(o), false);
+        return all.size();
+    }
+
+    private static int info(CommandContext<CommandSourceStack> c) {
+        Outpost o = here(c);
+        if (o == null) return 0;
+        c.getSource().sendSuccess(() -> describe(o), false);
+        StringBuilder sb = new StringBuilder();
+        for (Resource r : Resource.VALUES) sb.append(r.id).append('=').append((int) o.stock(r)).append(' ');
+        sb.append("| pop=").append(o.residents.size()).append('/').append(o.populationCap())
+                .append(" fighters=").append(o.fighters()).append(" steps=").append(o.steps).append('/').append(o.nextPlan().size())
+                .append(" placed=").append(o.placed).append(" placedTier=").append(o.placedTier).append(" online=").append(o.online)
+                .append(" law=").append(o.law.id).append(" caravans=").append(o.caravans.size()).append(" quests=").append(o.quests.size())
+                .append(" stalled=").append(o.stalledOn).append(" roles=").append(roleCounts(o))
+                .append(" raid=").append(o.raid != null).append(" mine=").append(o.mineCursor).append(" delivered=").append(o.depositedItems)
+                .append(" pen=").append(o.penAnimals).append("@").append(o.marker(com.vladosiwe.lordsoutpost.blueprint.Marker.PEN).toShortString())
+                .append(" store@").append(o.marker(com.vladosiwe.lordsoutpost.blueprint.Marker.STORE_INSIDE).toShortString())
+                .append(" shaft@").append(o.marker(com.vladosiwe.lordsoutpost.blueprint.Marker.MINE_SHAFT).toShortString());
+        c.getSource().sendSuccess(() -> Component.literal(sb.toString()), false);
+        return 1;
+    }
+
+    private static String roleCounts(Outpost o) {
+        StringBuilder sb = new StringBuilder();
+        for (com.vladosiwe.lordsoutpost.outpost.Role r : com.vladosiwe.lordsoutpost.outpost.Role.values()) {
+            int n = o.count(r);
+            if (n > 0) sb.append(r.id).append(':').append(n).append(',');
+        }
+        return sb.toString();
+    }
+
+    /** Диагностика боевого AI и Epic Fight: цель, активные цели и наличие entity patch. */
+    private static int combat(CommandContext<CommandSourceStack> c) {
+        Outpost o = here(c);
+        if (o == null) return 0;
+        ServerLevel level = overworld(c);
+        boolean epicFight = ModList.get().isLoaded("epicfight");
+        c.getSource().sendSuccess(() -> Component.literal("Epic Fight=" + (epicFight ? "loaded" : "not loaded")), false);
+        List<FighterEntity> fighters = level.getEntitiesOfClass(FighterEntity.class,
+                new net.minecraft.world.phys.AABB(o.center).inflate(96, 64, 96), f -> f.outpostId() == o.id)
+                .stream().sorted(Comparator.comparingDouble(f -> f.distanceToSqr(o.center.getX(), o.center.getY(), o.center.getZ()))).toList();
+        for (FighterEntity f : fighters) {
+            String target = f.getTarget() == null ? "-" : f.getTarget().getName().getString();
+            String patch = epicFight ? epicFightPatchStatus(f) : "vanilla";
+            String line = f.role().id + " @" + f.blockPosition().toShortString()
+                    + " hp=" + Math.round(f.getHealth()) + "/" + Math.round(f.getMaxHealth())
+                    + " target=" + target + " " + patch + " goals=" + f.goalClassNames();
+            c.getSource().sendSuccess(() -> Component.literal(line), false);
+        }
+        if (fighters.isEmpty()) c.getSource().sendFailure(Component.literal("В радиусе аванпоста бойцы не найдены"));
+        return fighters.size();
+    }
+
+    private static String epicFightPatchStatus(FighterEntity fighter) {
+        try {
+            Class<?> compat = Class.forName("com.vladosiwe.lordsoutpost.compat.EpicFightCompat");
+            return String.valueOf(compat.getMethod("patchStatus", FighterEntity.class).invoke(null, fighter));
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return "EF patch check failed";
+        }
+    }
+
+    private static int reveal(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ServerPlayer player = c.getSource().getPlayerOrException();
+        ServerLevel level = overworld(c);
+        OutpostSavedData data = OutpostSavedData.get(level);
+        Discovery.ensureRecords(level, data, player.getBlockX(), player.getBlockZ(), 3000, level.getGameTime());
+        int n = 0;
+        for (Outpost o : data.near(player.getX(), player.getZ(), 3000)) {
+            data.knowledge(player.getUUID()).hinted.add(o.id);
+            if (data.knowledge(player.getUUID()).discovered.add(o.id)) n++;
+        }
+        data.setDirty();
+        int count = n;
+        c.getSource().sendSuccess(() -> Component.translatable("lordsoutpost.cmd.revealed", count), false);
+        return n;
+    }
+
+    private static int create(CommandContext<CommandSourceStack> c, String layoutId, String paletteId) throws CommandSyntaxException {
+        ServerPlayer player = c.getSource().getPlayerOrException();
+        if (player.level().dimension() != Level.OVERWORLD) {
+            c.getSource().sendFailure(Component.translatable("lordsoutpost.standard.outside"));
+            return 0;
+        }
+        ServerLevel level = overworld(c);
+        OutpostSavedData data = OutpostSavedData.get(level);
+        // Форт встаёт на поверхность земли под игроком, а не на высоту, где игрок летит.
+        int px = player.getBlockX(), pz = player.getBlockZ();
+        level.getChunk(px >> 4, pz >> 4);
+        int ground = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, px, pz) - 1;
+        BlockPos center = new BlockPos(px, ground, pz);
+        if (!level.getFluidState(center).isEmpty() || !level.getFluidState(center.above()).isEmpty()) {
+            c.getSource().sendFailure(Component.translatable("lordsoutpost.cmd.water"));
+            return 0;
+        }
+        for (Outpost other : data.near(center.getX(), center.getZ(), 120)) {
+            c.getSource().sendFailure(Component.translatable("lordsoutpost.cmd.too_close").append(describe(other)));
+            return 0;
+        }
+        Layout layout = layoutId == null ? Layout.VALUES[level.random.nextInt(Layout.VALUES.length)] : Layout.byId(layoutId);
+        Palette palette = paletteId == null ? OutpostSites.palette(level.getBiome(center)) : Palette.byId(paletteId);
+        Rotation rotation = switch (player.getDirection()) {
+            // Ворота смотрят на игрока, создавшего форт.
+            case NORTH -> Rotation.NONE;
+            case EAST -> Rotation.CLOCKWISE_90;
+            case SOUTH -> Rotation.CLOCKWISE_180;
+            default -> Rotation.COUNTERCLOCKWISE_90;
+        };
+        if (player.getDirection().getAxis() == Direction.Axis.Y) rotation = Rotation.NONE;
+        Outpost o = OutpostManager.createManual(data, center, layout, palette, rotation,
+                Difficulty.bySkulls(IntegerArgumentType.getInteger(c, "skulls")), level.getGameTime(), level.random);
+        data.knowledge(player.getUUID()).discovered.add(o.id);
+        c.getSource().sendSuccess(() -> Component.translatable("lordsoutpost.cmd.created").append(describe(o)), true);
+        return 1;
+    }
+
+    private static int capture(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ServerPlayer player = c.getSource().getPlayerOrException();
+        Outpost o = here(c);
+        if (o == null) return 0;
+        if (o.state != OutpostState.WILD) {
+            c.getSource().sendFailure(Component.translatable("lordsoutpost.cmd.not_wild"));
+            return 0;
+        }
+        ServerLevel level = overworld(c);
+        OutpostManager.conquer(OutpostSavedData.get(level), o, level.getGameTime());
+        ItemStack standard = new ItemStack(ModItems.LORD_STANDARD.get());
+        if (!player.getInventory().add(standard)) player.drop(standard, false);
+        c.getSource().sendSuccess(() -> Component.translatable("lordsoutpost.cmd.captured"), true);
+        return 1;
+    }
+
+    /** Сделать игрока Лордом аванпоста, в котором он стоит: гарнизон распускается, Штандарт ставится у ног. */
+    private static int found(CommandContext<CommandSourceStack> c, String name) throws CommandSyntaxException {
+        ServerPlayer player = c.getSource().getPlayerOrException();
+        Outpost o = here(c);
+        if (o == null) return 0;
+        ServerLevel level = overworld(c);
+        OutpostSavedData data = OutpostSavedData.get(level);
+        if (o.state == OutpostState.WILD) OutpostManager.conquer(data, o, level.getGameTime());
+        BlockPos pos = o.insideWalls(player.blockPosition()) ? player.blockPosition() : o.marker(com.vladosiwe.lordsoutpost.blueprint.Marker.YARD);
+        OutpostManager.FoundResult check = OutpostManager.canFound(data, o, player.getUUID(), pos);
+        if (check != OutpostManager.FoundResult.OK) {
+            c.getSource().sendFailure(Component.translatable("lordsoutpost.standard." + check.name().toLowerCase(java.util.Locale.ROOT)));
+            return 0;
+        }
+        if (level.isLoaded(pos)) level.setBlockAndUpdate(pos, com.vladosiwe.lordsoutpost.registry.ModBlocks.LORD_STANDARD.get().defaultBlockState());
+        com.vladosiwe.lordsoutpost.server.Captures.found(level, data, o, player, pos);
+        if (name != null && OutpostManager.validName(name)) o.name = name.trim();
+        c.getSource().sendSuccess(() -> describe(o), true);
+        return 1;
+    }
+
+    private static int tier(CommandContext<CommandSourceStack> c) {
+        Outpost o = here(c);
+        if (o == null) return 0;
+        int tier = IntegerArgumentType.getInteger(c, "tier");
+        if (tier < o.tier) {
+            c.getSource().sendFailure(Component.translatable("lordsoutpost.cmd.tier_down"));
+            return 0;
+        }
+        o.tier = tier;
+        o.steps = 0;
+        o.dirtyForClients = true;
+        OutpostSavedData.get(overworld(c)).setDirty();
+        c.getSource().sendSuccess(() -> describe(o), true);
+        return 1;
+    }
+
+    /** Прокручивает экономику аванпоста на заданное число игровых дней (макро-тиками, как в игре). */
+    private static int sim(CommandContext<CommandSourceStack> c) {
+        Outpost o = here(c);
+        if (o == null) return 0;
+        ServerLevel level = overworld(c);
+        OutpostSavedData data = OutpostSavedData.get(level);
+        long ticks = (long) (DoubleArgumentType.getDouble(c, "days") * Simulation.DAY);
+        long now = level.getGameTime();
+        // Сдвигаем прошлое назад: все таймеры аванпоста считаются от игрового времени.
+        o.lastSim -= ticks;
+        o.foundedAt -= ticks;
+        o.lawChangedAt -= ticks;
+        o.nextRaidAt -= ticks;
+        o.nextCaravanAt -= ticks;
+        o.conqueredAt -= ticks;
+        long savedLast = o.lastSim;
+        for (long t = savedLast + ALifeSimulationManager.SIM_INTERVAL; t <= now; t += ALifeSimulationManager.SIM_INTERVAL) {
+            o.lastSim = t - ALifeSimulationManager.SIM_INTERVAL;
+            Simulation.tick(level, data, o, t);
+        }
+        o.lastSim = now;
+        c.getSource().sendSuccess(() -> describe(o), true);
+        return 1;
+    }
+
+    private static int stock(CommandContext<CommandSourceStack> c) {
+        Outpost o = here(c);
+        if (o == null) return 0;
+        Resource r = Resource.byId(StringArgumentType.getString(c, "resource"));
+        if (r == null) {
+            c.getSource().sendFailure(Component.translatable("lordsoutpost.cmd.bad_resource"));
+            return 0;
+        }
+        o.setStock(r, Math.min(o.capacity(r), IntegerArgumentType.getInteger(c, "amount")));
+        o.dirtyForClients = true;
+        c.getSource().sendSuccess(() -> Component.literal(r.id + " = " + (int) o.stock(r)), true);
+        return 1;
+    }
+
+    private static int raid(CommandContext<CommandSourceStack> c) {
+        Outpost o = here(c);
+        if (o == null) return 0;
+        if (o.state != OutpostState.OWNED) {
+            c.getSource().sendFailure(Component.translatable("lordsoutpost.cmd.not_owned"));
+            return 0;
+        }
+        o.nextRaidAt = 1;
+        o.lastSim = Math.min(o.lastSim, overworld(c).getGameTime() - ALifeSimulationManager.SIM_INTERVAL);
+        c.getSource().sendSuccess(() -> Component.translatable("lordsoutpost.cmd.raid"), true);
+        return 1;
+    }
+
+    private static int remove(CommandContext<CommandSourceStack> c) {
+        Outpost o = here(c);
+        if (o == null) return 0;
+        OutpostSavedData data = OutpostSavedData.get(overworld(c));
+        if (o.state == OutpostState.OWNED) OutpostManager.abandon(data, o, overworld(c).getGameTime());
+        o.residents.clear();
+        data.remove(o);
+        if (!o.manual) data.markRegionEmpty(OutpostSavedData.regionOf(o.center.getX()), OutpostSavedData.regionOf(o.center.getZ()));
+        c.getSource().sendSuccess(() -> Component.translatable("lordsoutpost.cmd.removed"), true);
+        return 1;
+    }
+}
