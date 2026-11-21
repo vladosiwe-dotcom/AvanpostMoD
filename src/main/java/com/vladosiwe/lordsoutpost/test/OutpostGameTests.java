@@ -854,6 +854,36 @@ public final class OutpostGameTests {
         h.succeed();
     }
 
+    /** Донжон Лорда: личные сундуки на каждом тире, рамка портала на тире 3; Зеркало Лорда — одно и привязано к аванпосту. */
+    @GameTest(template = "empty")
+    public static void lordKeepAndMirror(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        Outpost o = virtualOutpost(level, data, FAR.offset(3328, 0, 0), 1, UUID.randomUUID());
+        o.tier = 3;
+        try {
+            var bp = o.blueprint();
+            for (int t = 1; t <= 3; t++) h.assertTrue(!bp.design(t).markers(Marker.LORD_CHEST).isEmpty(), "нет личного сундука Лорда на тире " + t);
+            h.assertTrue(bp.design(2).markers(Marker.PORTAL_FRAME).isEmpty(), "рамка только на тире 3");
+            h.assertTrue(bp.design(3).markers(Marker.PORTAL_FRAME).size() == 1, "нет рамки портала на тире 3");
+            o.mirrorSerial = 1;
+            var mirror = com.vladosiwe.lordsoutpost.server.LordMirror.create(o);
+            h.assertTrue(com.vladosiwe.lordsoutpost.server.LordMirror.valid(data, mirror, null), "новое зеркало действует");
+            o.mirrorSerial++;
+            h.assertTrue(!com.vladosiwe.lordsoutpost.server.LordMirror.valid(data, mirror, null), "старое зеркало рассыпается после выдачи нового");
+            var fresh = com.vladosiwe.lordsoutpost.server.LordMirror.create(o);
+            o.tier = 2;
+            h.assertTrue(!com.vladosiwe.lordsoutpost.server.LordMirror.valid(data, fresh, null), "ниже тира 3 зеркало не действует");
+            o.tier = 3;
+            Outpost copy = Outpost.load(o.save(level.registryAccess()), level.registryAccess());
+            h.assertTrue(copy.mirrorSerial == o.mirrorSerial, "номер зеркала сохраняется");
+        } finally {
+            OutpostManager.abandon(data, o, level.getGameTime());
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
     /** Лестницы: житель находит путь вверх по лестнице на площадку (6 блоков) и поднимается ногами, без переноса. */
     // Необязательный: на некоторых площадках GameTest сущность перестаёт тикать (окружение, не поведение мода).
     @GameTest(template = "empty", timeoutTicks = 600, required = false)

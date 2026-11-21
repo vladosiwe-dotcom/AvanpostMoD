@@ -24,6 +24,9 @@ public final class ModItems {
     public static final DeferredItem<net.minecraft.world.item.DoubleHighBlockItem> STOREHOUSE_DOOR = ITEMS.registerItem("storehouse_door",
             p -> new net.minecraft.world.item.DoubleHighBlockItem(ModBlocks.STOREHOUSE_DOOR.get(), p));
 
+    public static final DeferredItem<com.vladosiwe.lordsoutpost.item.LordMirrorItem> LORD_MIRROR = ITEMS.registerItem("lord_mirror",
+            com.vladosiwe.lordsoutpost.item.LordMirrorItem::new, new Item.Properties().stacksTo(1).rarity(Rarity.EPIC).fireResistant());
+
     public static final DeferredHolder<CreativeModeTab, CreativeModeTab> TAB = TABS.register("main", () -> CreativeModeTab.builder()
             .title(Component.translatable("itemGroup.lordsoutpost"))
             .icon(() -> LORD_STANDARD.get().getDefaultInstance())

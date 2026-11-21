@@ -51,6 +51,7 @@ public final class ProtectionEvents {
         if (player.isCreative() && player.hasPermissions(2)) return true;
         AccessLevel level = Access.level(data, o, player.getUUID());
         if (level == AccessLevel.LORD) return true;
+        if (o.markers(Marker.LORD_CHEST).contains(pos)) return false;
         if (level != AccessLevel.ALLY) return false;
         return o.access.alliesTribute || !pos.equals(o.marker(Marker.TRIBUTE));
     }
@@ -86,7 +87,9 @@ public final class ProtectionEvents {
             }
             return;
         }
-        if (!canBuild(data, o, player)) {
+        boolean lordChest = o.state == OutpostState.OWNED && !o.isLord(player.getUUID()) && !(player.isCreative() && player.hasPermissions(2))
+                && o.markers(Marker.LORD_CHEST).contains(event.getPos());
+        if (lordChest || !canBuild(data, o, player)) {
             event.setCanceled(true);
             deny(player, "lordsoutpost.msg.protected");
         }
@@ -118,7 +121,7 @@ public final class ProtectionEvents {
         boolean interactive = state.hasBlockEntity() || state.getMenuProvider(level, pos) != null;
         if (interactive && !canUse(data, o, player, pos)) {
             event.setUseBlock(TriState.FALSE);
-            deny(player, "lordsoutpost.msg.locked");
+            deny(player, o.markers(Marker.LORD_CHEST).contains(pos) ? "lordsoutpost.msg.lord_chest" : "lordsoutpost.msg.locked");
         }
         // Вёдра, огниво и прочие предметы, меняющие мир, подчиняются тем же правилам, что и блоки.
         if (!canBuild(data, o, player) && !event.getItemStack().isEmpty() && !event.getItemStack().has(net.minecraft.core.component.DataComponents.FOOD)) {

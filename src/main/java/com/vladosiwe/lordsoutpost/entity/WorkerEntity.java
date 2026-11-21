@@ -121,6 +121,7 @@ public class WorkerEntity extends OutpostNpc implements net.minecraft.world.item
         goalSelector.addGoal(1, new com.vladosiwe.lordsoutpost.entity.ai.OpenGateGoal(this));
         goalSelector.addGoal(1, new ShelterGoal(this));
         goalSelector.addGoal(2, new CaravanGoal(this));
+        goalSelector.addGoal(2, new com.vladosiwe.lordsoutpost.entity.ai.CourierGoal(this));
         goalSelector.addGoal(3, new BuildGoal(this));
         // Придворный маг без Iron's Spells работает в этом теле теми же рецептами (запасной вариант).
         goalSelector.addGoal(3, new com.vladosiwe.lordsoutpost.entity.ai.MageWorkGoal(this,

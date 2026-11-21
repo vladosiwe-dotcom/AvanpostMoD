@@ -157,6 +157,10 @@ public abstract class OutpostNpc extends PathfinderMob implements OutpostMember 
         for (EquipmentSlot slot : EquipmentSlot.values()) setDropChance(slot, 0f);
     }
 
+    /** Кому житель сейчас несёт вещь лично (см. CourierGoal); не сохраняется. */
+    public java.util.UUID courierTarget;
+    public long courierUntil;
+
     @Override
     public long outpostId() {
         return outpostId;

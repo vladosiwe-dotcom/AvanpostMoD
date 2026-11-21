@@ -620,6 +620,9 @@ public final class FortDesigner {
         c.mark(Marker.TRIBUTE, 2, 1, -2);
         c.set(-2, 1, 1, Blocks.CRAFTING_TABLE);
         c.set(2, 1, 1, Blocks.BARREL);
+        c.set(-2, 1, 0, facing(Blocks.CHEST, Direction.EAST));
+        c.mark(Marker.LORD_CHEST, -2, 1, 0);
+        c.set(2, 1, 0, Blocks.BREWING_STAND);
         c.mark(Marker.KEEP_DOOR, 0, 1, 4);
     }
 
@@ -666,13 +669,42 @@ public final class FortDesigner {
         c.set(hw - 1, 1, -hw + 1, facing(Blocks.CHEST, Direction.SOUTH));
         c.mark(Marker.TRIBUTE, hw - 1, 1, -hw + 1);
         c.set(hw - 1, 1, hw - 1, Blocks.CRAFTING_TABLE);
-        // Покои на втором этаже.
+        // Зал: наковальня, зельеварка и котёл у восточной стены, ковры у трона.
+        c.set(hw - 1, 1, hw - 2, facing(Blocks.ANVIL, Direction.WEST));
+        c.set(hw - 1, 1, -hw + 3, Blocks.BREWING_STAND);
+        c.set(-hw + 1, 1, hw - 1, Blocks.CAULDRON);
+        for (int z = -hw + 3; z <= hw - 2; z++) c.set(0, 1, z, Blocks.RED_CARPET);
+        // Покои на втором этаже: кровать, личные сундуки Лорда и столы Iron's Spells.
         if (floors >= 2) {
             bed(1, 6, -hw + 3, Direction.NORTH);
             c.set(2, 6, -hw + 1, Blocks.BOOKSHELF);
             c.set(3, 6, -hw + 1, Blocks.BOOKSHELF);
             c.set(-1, 6, -hw + 1, facing(Blocks.CHEST, Direction.SOUTH));
             c.mark(Marker.LOOT_CHEST, -1, 6, -hw + 1);
+            c.set(-hw + 1, 6, -hw + 1, facing(Blocks.CHEST, Direction.SOUTH));
+            c.mark(Marker.LORD_CHEST, -hw + 1, 6, -hw + 1);
+            c.set(-hw + 2, 6, -hw + 1, facing(Blocks.CHEST, Direction.SOUTH));
+            c.mark(Marker.LORD_CHEST, -hw + 2, 6, -hw + 1);
+            c.set(-2, 6, hw - 1, issFacing("inscription_table", Blocks.CARTOGRAPHY_TABLE.defaultBlockState(), Direction.NORTH));
+            c.set(-1, 6, hw - 1, issFacing("scroll_forge", Blocks.SMITHING_TABLE.defaultBlockState(), Direction.NORTH));
+            c.set(1, 6, hw - 1, issFacing("arcane_anvil", Blocks.ANVIL.defaultBlockState(), Direction.NORTH));
+            c.set(2, 6, hw - 1, iss("alchemist_cauldron", Blocks.CAULDRON.defaultBlockState()));
+            c.set(0, 6, 0, Blocks.BLUE_CARPET);
+        }
+        // Тир 3: верхний этаж — святилище с рамкой портала Iron's Spells, куда ведёт Зеркало Лорда.
+        if (floors >= 3) {
+            int y = 11;
+            c.set(0, y, -hw + 1, issFacing("portal_frame", Blocks.CRYING_OBSIDIAN.defaultBlockState(), Direction.SOUTH));
+            c.mark(Marker.PORTAL_FRAME, 0, y, -hw + 1);
+            c.set(-1, y, -hw + 1, iss("pedestal", Blocks.CHISELED_STONE_BRICKS.defaultBlockState()));
+            c.set(1, y, -hw + 1, iss("pedestal", Blocks.CHISELED_STONE_BRICKS.defaultBlockState()));
+            c.set(-2, y, -hw + 1, iss("brazier_soul", Blocks.SOUL_CAMPFIRE.defaultBlockState()));
+            c.set(2, y, -hw + 1, iss("brazier_soul", Blocks.SOUL_CAMPFIRE.defaultBlockState()));
+            c.set(-2, y, hw - 1, iss("wisewood_bookshelf", Blocks.BOOKSHELF.defaultBlockState()));
+            c.set(2, y, hw - 1, iss("wisewood_bookshelf", Blocks.BOOKSHELF.defaultBlockState()));
+            c.set(-1, y, hw - 1, Blocks.ENCHANTING_TABLE);
+            c.set(1, y, hw - 1, facing(Blocks.LECTERN, Direction.NORTH));
+            for (int z = -hw + 2; z <= hw - 2; z++) c.set(0, y, z, Blocks.PURPLE_CARPET);
         }
         c.mark(Marker.GUARD_POST, 0, top + 1, 0);
     }

@@ -58,6 +58,7 @@ public final class ServerEvents {
     @SubscribeEvent
     public static void onServerStopping(ServerStoppingEvent event) {
         ALifeSimulationManager.reset(event.getServer());
+        LordMirror.reset();
     }
 
     @SubscribeEvent

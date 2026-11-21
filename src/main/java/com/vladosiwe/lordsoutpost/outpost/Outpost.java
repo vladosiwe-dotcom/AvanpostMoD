@@ -122,6 +122,8 @@ public final class Outpost {
     public boolean autoCaravans = true;
     public final List<Quest> quests = new ArrayList<>();
     public int questCounter;
+    /** Номер действующего Зеркала Лорда: зеркала со старым номером рассыпаются (одно зеркало на аванпост). */
+    public int mirrorSerial;
     /** Дань, которая ещё не легла в сундук (накоплена, пока чанки были выгружены или сундук полон). */
     public final List<ItemStack> tribute = new ArrayList<>();
     /** Постройки, заказанные Лордом сверх плана тиров (сохраняются). */
@@ -664,6 +666,7 @@ public final class Outpost {
         t.put("squads", sq);
         t.putBoolean("guardPatrolDefault", true);
         t.putInt("mineLevel", mineLevel);
+        t.putInt("mirrorSerial", mirrorSerial);
         t.putInt("mineExtra", mineExtra);
         t.putString("law", law.id);
         t.putLong("lawAt", lawChangedAt);
@@ -786,6 +789,7 @@ public final class Outpost {
         // Стража по умолчанию теперь обходит места работы жителей; в старых сохранениях «посты» — прежнее умолчание.
         if (!t.getBoolean("guardPatrolDefault") && o.squads[Squad.GUARD].order == Squad.Order.POSTS) o.squads[Squad.GUARD].order = Squad.Order.PATROL;
         o.mineLevel = Math.max(0, t.getInt("mineLevel"));
+        o.mirrorSerial = t.getInt("mirrorSerial");
         o.mineExtra = Math.max(0, t.getInt("mineExtra"));
         o.law = Law.byId(t.getString("law"));
         o.lawChangedAt = t.getLong("lawAt");
