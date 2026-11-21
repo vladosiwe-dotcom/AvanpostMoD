@@ -156,7 +156,7 @@ public final class MageCraft {
     public static BlockPos forge(ServerLevel level, BlockPos at) {
         var forgeBlock = BuiltInRegistries.BLOCK.get(ResourceLocation.fromNamespaceAndPath(MagicLoot.IRONS, "scroll_forge"));
         if (forgeBlock == net.minecraft.world.level.block.Blocks.AIR) return null;
-        for (BlockPos p : BlockPos.betweenClosed(at.offset(-8, -3, -8), at.offset(8, 4, 8))) {
+        for (BlockPos p : BlockPos.betweenClosed(at.offset(-8, -3, -8), at.offset(8, 10, 8))) {
             if (level.isLoaded(p) && level.getBlockState(p).is(forgeBlock)) return p.immutable();
         }
         return null;

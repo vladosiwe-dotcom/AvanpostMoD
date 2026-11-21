@@ -678,8 +678,24 @@ public final class FortDesigner {
     }
 
     /** Тир 3: башня Придворного Мага. */
+    /** Блок Iron's Spells 'n Spellbooks (если мод установлен) или замена из ванили. */
+    private static BlockState iss(String id, BlockState fallback) {
+        var block = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getOptional(net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("irons_spellbooks", id));
+        return block.map(Block::defaultBlockState).orElse(fallback);
+    }
+
+    private static BlockState issFacing(String id, BlockState fallback, Direction dir) {
+        BlockState st = iss(id, fallback);
+        return st.hasProperty(BlockStateProperties.HORIZONTAL_FACING) ? st.setValue(BlockStateProperties.HORIZONTAL_FACING, dir) : st;
+    }
+
+    /**
+     * Башня мага: три этажа под одной лестницей. Первый — зал зачарований (стол зачарований, стол начертания
+     * заклинаний Iron's Spells, кафедра, книги), второй — мастерская (кузня свитков, тайная наковальня, котёл
+     * алхимика), третий — обсерватория с пьедесталами и жаровнями. Без Iron's Spells — ванильные замены.
+     */
     private void mageTower() {
-        int half = 3, height = 14;
+        int half = 3, height = 19;
         for (int x = -half; x <= half; x++)
             for (int z = -half; z <= half; z++) {
                 int ax = Math.abs(x), az = Math.abs(z);
@@ -688,38 +704,55 @@ public final class FortDesigner {
                 c.set(x, 0, z, Blocks.DEEPSLATE_TILES);
                 if (shell) {
                     for (int y = 1; y <= height; y++) {
-                        Block b = (y == 5 || y == 10) ? Blocks.AMETHYST_BLOCK : (y % 5 == 0 ? Blocks.CHISELED_DEEPSLATE : Blocks.DEEPSLATE_BRICKS);
+                        Block b = (y == 6 || y == 12 || y == 18) ? Blocks.AMETHYST_BLOCK : (y % 6 == 0 ? Blocks.CHISELED_DEEPSLATE : y % 3 == 0 ? Blocks.POLISHED_DEEPSLATE : Blocks.DEEPSLATE_BRICKS);
                         c.set(x, y, z, b);
                     }
                 } else {
                     c.set(x, 7, z, Blocks.DARK_OAK_PLANKS);
+                    c.set(x, 13, z, Blocks.DARK_OAK_PLANKS);
                     c.set(x, height, z, Blocks.DARK_OAK_PLANKS);
                 }
             }
+        // Вход и окна по этажам.
         c.clear(0, 1, half, 0, 2, half);
-        for (int y : new int[]{3, 9, 12}) {
+        for (int y : new int[]{3, 9, 10, 15, 16}) {
             c.set(-half, y, 0, Blocks.PURPLE_STAINED_GLASS_PANE);
             c.set(half, y, 0, Blocks.PURPLE_STAINED_GLASS_PANE);
             c.set(0, y, -half, Blocks.PURPLE_STAINED_GLASS_PANE);
         }
-        c.set(0, 12, half, Blocks.PURPLE_STAINED_GLASS_PANE);
+        c.set(0, 9, half, Blocks.PURPLE_STAINED_GLASS_PANE);
+        c.set(0, 15, half, Blocks.PURPLE_STAINED_GLASS_PANE);
         pyramidRoof(0, height + 1, 0, half + 1, Blocks.PURPUR_STAIRS, Blocks.PURPUR_SLAB, Blocks.PURPUR_BLOCK);
         c.set(0, height + 6, 0, Blocks.END_ROD);
-        // Первый этаж: стол зачарований и книги.
+        // Первый этаж — зал зачарований.
         c.set(0, 1, -1, Blocks.ENCHANTING_TABLE);
         for (int y = 1; y <= 2; y++) {
             c.set(-2, y, -1, Blocks.BOOKSHELF);
-            c.set(2, y, -1, Blocks.BOOKSHELF);
             c.set(-1, y, -2, Blocks.BOOKSHELF);
             c.set(1, y, -2, Blocks.BOOKSHELF);
         }
         c.set(-2, 1, 1, facing(Blocks.LECTERN, Direction.EAST));
-        c.set(2, 1, 1, Blocks.BREWING_STAND);
+        c.set(1, 1, -1, issFacing("inscription_table", Blocks.CARTOGRAPHY_TABLE.defaultBlockState(), Direction.SOUTH));
+        c.set(-1, 3, -2, issFacing("book_stack", Blocks.CANDLE.defaultBlockState(), Direction.SOUTH));
         c.set(0, 6, 0, Blocks.SOUL_LANTERN.defaultBlockState().setValue(LanternBlock.HANGING, true));
-        c.fill(2, 1, 0, 2, 7, 0, facing(Blocks.LADDER, Direction.WEST));
-        c.set(0, 8, -1, Blocks.AMETHYST_CLUSTER);
-        c.set(-1, 8, 0, Blocks.CAULDRON);
-        c.set(0, 13, 0, Blocks.SOUL_LANTERN.defaultBlockState().setValue(LanternBlock.HANGING, true));
+        // Второй этаж — мастерская: свитки, наковальня, алхимия.
+        c.set(0, 8, -2, issFacing("scroll_forge", Blocks.SMITHING_TABLE.defaultBlockState(), Direction.SOUTH));
+        c.set(-2, 8, 0, issFacing("arcane_anvil", Blocks.ANVIL.defaultBlockState(), Direction.EAST));
+        c.set(-1, 8, 1, iss("alchemist_cauldron", Blocks.CAULDRON.defaultBlockState()));
+        c.set(1, 8, -1, Blocks.BREWING_STAND);
+        c.set(-1, 8, -2, Blocks.BOOKSHELF);
+        c.set(1, 8, -2, Blocks.AMETHYST_CLUSTER);
+        c.set(0, 12, 0, Blocks.SOUL_LANTERN.defaultBlockState().setValue(LanternBlock.HANGING, true));
+        // Третий этаж — обсерватория: пьедесталы, жаровни, книги.
+        c.set(0, 14, -1, iss("pedestal", Blocks.CHISELED_DEEPSLATE.defaultBlockState()));
+        c.set(-1, 14, 1, iss("pedestal", Blocks.CHISELED_DEEPSLATE.defaultBlockState()));
+        c.set(-2, 14, 0, iss("brazier_soul", Blocks.SOUL_CAMPFIRE.defaultBlockState()));
+        c.set(1, 14, -2, iss("wisewood_bookshelf", Blocks.BOOKSHELF.defaultBlockState()));
+        c.set(-1, 14, -2, iss("wisewood_bookshelf", Blocks.BOOKSHELF.defaultBlockState()));
+        c.set(0, 15, -1, Blocks.AMETHYST_CLUSTER);
+        c.set(0, 18, 0, Blocks.SOUL_LANTERN.defaultBlockState().setValue(LanternBlock.HANGING, true));
+        // Лестница насквозь на все этажи (у восточной стены).
+        c.fill(2, 1, 0, 2, 14, 0, facing(Blocks.LADDER, Direction.WEST));
         c.mark(Marker.MAGE, 0, 1, 1);
     }
 

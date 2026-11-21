@@ -822,6 +822,33 @@ public final class OutpostGameTests {
         h.succeed();
     }
 
+    /** Лестницы: житель находит путь вверх по лестнице на площадку (6 блоков) и поднимается ногами, без переноса. */
+    @GameTest(template = "empty", timeoutTicks = 600)
+    public static void npcClimbsLadders(GameTestHelper h) {
+        BlockPos base = new BlockPos(4, 1, 4);
+        // Столб 3×3 из камня с лестницей на южной стороне и площадкой 3×3 наверху.
+        for (int y = 0; y < 6; y++)
+            for (int x = -1; x <= 1; x++)
+                for (int z = -1; z <= 1; z++) h.setBlock(base.offset(x, y, z), net.minecraft.world.level.block.Blocks.STONE);
+        for (int y = 0; y < 7; y++) h.setBlock(base.offset(0, y, 2), net.minecraft.world.level.block.Blocks.LADDER.defaultBlockState()
+                .setValue(net.minecraft.world.level.block.LadderBlock.FACING, net.minecraft.core.Direction.SOUTH));
+        for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++) h.setBlock(base.offset(x, 6, z), net.minecraft.world.level.block.Blocks.OAK_PLANKS);
+        BlockPos top = base.offset(0, 7, 0);
+        var worker = h.spawn(com.vladosiwe.lordsoutpost.registry.ModEntities.WORKER.get(), base.offset(0, 0, 5));
+        worker.setPersistenceRequired();
+        double[] startY = {worker.getY()};
+        h.onEachTick(() -> {
+            BlockPos abs = h.absolutePos(top);
+            if (worker.tickCount % 20 == 1 && !worker.onClimbable())
+                worker.getNavigation().moveTo(abs.getX() + 0.5, abs.getY(), abs.getZ() + 0.5, 1.0);
+        });
+        h.succeedWhen(() -> {
+            BlockPos abs = h.absolutePos(top);
+            h.assertTrue(worker.getY() >= abs.getY() - 0.1 && worker.blockPosition().distManhattan(abs) <= 2,
+                    "житель наверху: " + worker.blockPosition().subtract(h.absolutePos(BlockPos.ZERO)).toShortString());
+        });
+    }
+
     /** Постройки RTS: дом строится, улучшается до второго уровня (4 кровати) и сносится мгновенно с возвратом материала. */
     @GameTest(template = "empty", timeoutTicks = 200)
     public static void buildingsUpgradeAndDemolish(GameTestHelper h) {

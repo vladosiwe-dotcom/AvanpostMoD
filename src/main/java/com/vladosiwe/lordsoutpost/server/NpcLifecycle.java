@@ -81,11 +81,17 @@ public final class NpcLifecycle {
      * Точка удержания отряда: если Лорд указал место у башни, вышки или на стене — пост наверху (стрелки поднимаются
      * по лестнице), иначе земля в этой точке.
      */
-    public static BlockPos holdSpot(ServerLevel level, Outpost o, BlockPos hold) {
+    /** Посты наверху (башни форта, вышки, боевой ход) — их показывает карта при выборе места для стрелков. */
+    public static List<BlockPos> highPosts(Outpost o) {
         List<BlockPos> high = new ArrayList<>(o.markers(Marker.GUARD_POST));
         for (com.vladosiwe.lordsoutpost.outpost.Project p : o.projects) {
             if (p.type == com.vladosiwe.lordsoutpost.outpost.Project.Type.WATCHTOWER && p.state == com.vladosiwe.lordsoutpost.outpost.Project.State.DONE) high.add(p.post());
         }
+        return high;
+    }
+
+    public static BlockPos holdSpot(ServerLevel level, Outpost o, BlockPos hold) {
+        List<BlockPos> high = highPosts(o);
         BlockPos ground = groundAt(level, o, hold.getX(), hold.getZ());
         BlockPos best = null;
         double bestD = 3.5 * 3.5;

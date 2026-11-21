@@ -129,6 +129,7 @@ public class MapScreen extends Screen implements Ui.Projection {
         drawTerrain(g);
         if (ow) {
             drawOutlines(g, phase);
+            drawPosts(g, mouseX, mouseY);
             drawSquads(g, phase);
             drawCaravans(g, phase);
             drawMarkers(g, mouseX, mouseY);
@@ -214,6 +215,37 @@ public class MapScreen extends Screen implements Ui.Projection {
         }
         // Пунктир — периметр следующего тира, который сейчас строится.
         if (ClientState.nextOutline.length >= 6) Ui.polygon(g, ClientState.nextOutline, this, 1f, 0xFFE2B44C, true, phase);
+    }
+
+    /** Посты наверху: всегда — мелким значком, в режиме удержания — крупно и с подсветкой ближайшего к курсору. */
+    private void drawPosts(GuiGraphics g, int mouseX, int mouseY) {
+        long near = nearestPost(mouseX, mouseY);
+        for (long l : ClientState.posts) {
+            BlockPos p = BlockPos.of(l);
+            if (!onScreen(p.getX(), p.getZ(), 10)) continue;
+            int px = (int) x(p.getX() + 0.5), py = (int) y(p.getZ() + 0.5);
+            int r = mode == HOLD ? 4 : 2;
+            int color = mode == HOLD && l == near ? Ui.GOOD : 0xFFE2B44C;
+            g.fill(px - r - 1, py - r - 1, px + r + 2, py + r + 2, 0xFF10141C);
+            g.fill(px - r, py - r, px + r + 1, py + r + 1, color);
+            // Зубец башни.
+            if (mode == HOLD) g.fill(px - 1, py - r - 3, px + 2, py - r - 1, color);
+        }
+    }
+
+    /** Ближайший к курсору пост (в пределах 10 пикселей экрана) или Long.MIN_VALUE. */
+    private long nearestPost(double mouseX, double mouseY) {
+        long best = Long.MIN_VALUE;
+        double bestD = 10 * 10;
+        for (long l : ClientState.posts) {
+            BlockPos p = BlockPos.of(l);
+            double dx = x(p.getX() + 0.5) - mouseX, dy = y(p.getZ() + 0.5) - mouseY;
+            if (dx * dx + dy * dy < bestD) {
+                bestD = dx * dx + dy * dy;
+                best = l;
+            }
+        }
+        return best;
     }
 
     private void drawSquads(GuiGraphics g, double phase) {
@@ -498,7 +530,9 @@ public class MapScreen extends Screen implements Ui.Projection {
         }
         if (mode == HOLD && button == 0) {
             ClientState.Marker own = ClientState.ownMarker();
-            long pos = new BlockPos((int) Math.floor(worldX(mouseX)), 0, (int) Math.floor(worldZ(mouseY))).asLong();
+            // Щелчок рядом с постом — точно на пост (стрелки поднимутся туда), иначе точка на земле.
+            long post = nearestPost(mouseX, mouseY);
+            long pos = post != Long.MIN_VALUE ? post : new BlockPos((int) Math.floor(worldX(mouseX)), 0, (int) Math.floor(worldZ(mouseY))).asLong();
             if (own != null) Net.action(own.id, Action.SQUAD_HOLD, t -> { t.putInt("squad", modeSquad); t.putLong("pos", pos); });
             mode = NONE;
             return true;

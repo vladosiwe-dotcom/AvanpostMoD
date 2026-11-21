@@ -331,8 +331,28 @@ public abstract class OutpostNpc extends PathfinderMob implements OutpostMember 
 
     // ============================== Дороги и застревание ==============================
 
+    /**
+     * Подъём и спуск по лестнице по пути: следующий узел выше — лезет вверх (как игрок с прыжком), ниже — спускается,
+     * держась оси лестницы; у верхнего края шагает на площадку к следующему узлу.
+     */
+    private void climbLadder() {
+        if (!onClimbable()) return;
+        var path = getNavigation().getPath();
+        if (path == null || path.isDone()) return;
+        var node = path.getNextNode();
+        double cx = node.x + 0.5, cz = node.z + 0.5;
+        double dy = node.y - getY();
+        double hx = (cx - getX()) * 0.25, hz = (cz - getZ()) * 0.25;
+        if (dy > 0.1) setDeltaMovement(hx, 0.2, hz);
+        else if (dy < -0.5) setDeltaMovement(hx, -0.15, hz);
+        else return;
+        fallDistance = 0;
+        getLookControl().setLookAt(cx, getEyeY(), cz);
+    }
+
     @Override
     public void aiStep() {
+        if (!level().isClientSide) climbLadder();
         super.aiStep();
         if (!level().isClientSide && tickCount % 5 == 0) {
             AttributeInstance speed = getAttribute(Attributes.MOVEMENT_SPEED);

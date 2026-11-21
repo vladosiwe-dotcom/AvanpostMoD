@@ -115,6 +115,7 @@ public final class Views {
             squads.add(st);
         }
         tag.put("squads", squads);
+        tag.putLongArray("posts", com.vladosiwe.lordsoutpost.server.NpcLifecycle.highPosts(own).stream().mapToLong(BlockPos::asLong).toArray());
         ListTag caravans = new ListTag();
         for (Caravan c : own.caravans) {
             CompoundTag ct = new CompoundTag();
