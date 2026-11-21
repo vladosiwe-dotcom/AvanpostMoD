@@ -496,7 +496,7 @@ public class RtsScreen extends Screen {
         }
         y += 4;
         if (selected == null) {
-            Ui.wrapped(g, font, Component.translatable("lordsoutpost.rts.pick"), x + 2, y, w - 4, Ui.MUTED, 4);
+            if (!demolish) Ui.wrapped(g, font, Component.translatable("lordsoutpost.rts.pick"), x + 2, y, w - 4, Ui.MUTED, 4);
         } else {
             g.drawString(font, Component.translatable("lordsoutpost.project." + selected.id), x + 2, y, Ui.ACCENT, false);
             g.drawString(font, rot * 90 + "°", x + w - 4 - font.width(rot * 90 + "°"), y, Ui.MUTED, false);

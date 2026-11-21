@@ -264,13 +264,13 @@ public final class Projects {
             // поверх неё. Из стоящего над землёй мешают постройки текущего тира и стены, ворота и башни следующего.
             // Место будущих домов, мастерских и украшений следующего тира занимать можно: чертёж уступит постройке
             // Лорда (ChunkReconciliation.yieldToPlayer), как любой постройке игрока.
+            // Уже стоящие блоки форта не дают поставить постройку (проверка занятости ниже), а место ещё не
+            // построенных домов и мастерских тира уступается Лорду. Зарезервированы только стены, ворота и донжон.
             if (s.pos().getY() >= 1) {
-                var now = bp.design(o.tier).cells.get(s.pos());
-                if (now != null && !now.state().isAir()) return OrderResult.OVERLAPS_FORT;
-                if (o.tier < FortBlueprint.MAX_TIER) {
-                    var next = bp.design(o.tier + 1).cells.get(s.pos());
-                    if (next != null && !next.state().isAir()
-                            && (next.stage() == FortDesigner.ST_WALLS || next.stage() == FortDesigner.ST_GATE)) return OrderResult.OVERLAPS_FORT;
+                for (int t = o.tier; t <= Math.min(FortBlueprint.MAX_TIER, o.tier + 1); t++) {
+                    var cell = bp.design(t).cells.get(s.pos());
+                    if (cell != null && !cell.state().isAir() && (cell.stage() == FortDesigner.ST_WALLS || cell.stage() == FortDesigner.ST_GATE
+                            || cell.stage() == FortDesigner.ST_KEEP)) return OrderResult.OVERLAPS_FORT;
                 }
             }
             if (taken.contains(s.pos())) return OrderResult.OCCUPIED;
