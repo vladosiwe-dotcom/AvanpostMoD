@@ -25,12 +25,16 @@ import net.minecraft.world.item.Items;
  */
 public class FighterRenderer extends HumanoidMobRenderer<FighterEntity, MarauderModel<FighterEntity>> {
     public static final ModelLayerLocation LAYER = new ModelLayerLocation(LordsOutpost.id("fighter"), "main");
+    public static final ModelLayerLocation PLAYER_SKIN_LAYER = new ModelLayerLocation(LordsOutpost.id("fighter"), "player_skin");
+    /** Модель для скинов в раскладке игрока (стража со скином Guard Villagers без Epic Fight). */
+    private final MarauderModel<FighterEntity> playerSkinModel;
     private static final ResourceLocation PILLAGER = ResourceLocation.withDefaultNamespace("textures/entity/illager/pillager.png");
     private static final ResourceLocation VINDICATOR = ResourceLocation.withDefaultNamespace("textures/entity/illager/vindicator.png");
     private static final ResourceLocation VILLAGER = ResourceLocation.withDefaultNamespace("textures/entity/villager/villager.png");
 
     public FighterRenderer(EntityRendererProvider.Context ctx) {
         super(ctx, new MarauderModel<>(ctx.bakeLayer(LAYER)), 0.5f);
+        playerSkinModel = new MarauderModel<>(ctx.bakeLayer(PLAYER_SKIN_LAYER));
         // Ванильный слой брони Epic Fight подменяет на WearableItemLayer по своему biped-скелету.
         // С Epic Fight голова скелета обычная (8 px) — шлем не растягивается; без него — под голову разбойника (10 px).
         addLayer(EPIC_FIGHT
@@ -48,6 +52,8 @@ public class FighterRenderer extends HumanoidMobRenderer<FighterEntity, Marauder
 
     @Override
     public ResourceLocation getTextureLocation(FighterEntity entity) {
+        ResourceLocation guardSkin = GuardVillagersSkins.texture(entity);
+        if (guardSkin != null) return guardSkin;
         // Epic Fight рисует бойца своим скелетом игрока: нужна текстура в раскладке игрока, а не разбойника.
         if (EPIC_FIGHT) {
             if (entity.role() == Role.CAPTAIN) return entity.hostileFaction() ? MARAUDER_SKIN : CAPTAIN_SKIN;
@@ -57,12 +63,16 @@ public class FighterRenderer extends HumanoidMobRenderer<FighterEntity, Marauder
         return entity.hostileFaction() ? PILLAGER : VINDICATOR;
     }
 
+    /** Гибрид (тело разбойника + голова жителя) — стража без скина Guard Villagers. */
     private static boolean hybrid(FighterEntity entity) {
-        return !entity.hostileFaction();
+        return !entity.hostileFaction() && GuardVillagersSkins.texture(entity) == null;
     }
 
     @Override
     public void render(FighterEntity entity, float yaw, float partialTick, PoseStack pose, MultiBufferSource buffer, int light) {
+        MarauderModel<FighterEntity> base = model;
+        // Скин Guard Villagers — в раскладке игрока: без Epic Fight рисуем его моделью игрока.
+        if (!EPIC_FIGHT && GuardVillagersSkins.texture(entity) != null) model = playerSkinModel;
         ItemStack main = entity.getMainHandItem();
         boolean aggressive = entity.isAggressive();
         model.rightArmPose = main.is(Items.BOW) && aggressive ? HumanoidModel.ArmPose.BOW_AND_ARROW
@@ -77,14 +87,19 @@ public class FighterRenderer extends HumanoidMobRenderer<FighterEntity, Marauder
         model.nose.visible = entity.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.HEAD).isEmpty();
         // У гибрида голову разбойника не рисуем: её заменит голова жителя.
         model.head.visible = !hybrid(entity);
+        tallHead = model != playerSkinModel;
         super.render(entity, yaw, partialTick, pose, buffer, light);
         model.head.visible = true;
+        model = base;
     }
 
     /**
      * Модель брони для головы высотой 10 пикселей (у разбойника и жителя), а не 8, как у игрока: шлем вытягивается
      * от шеи вверх, чтобы голова не торчала сквозь него.
      */
+    /** Голова текущей модели — разбойничья (10 px): шлем растягивается. У модели игрока — нет. Только поток отрисовки. */
+    private static boolean tallHead = true;
+
     private static final class TallHeadArmorModel extends HumanoidModel<FighterEntity> {
         TallHeadArmorModel(net.minecraft.client.model.geom.ModelPart root) {
             super(root);
@@ -92,6 +107,10 @@ public class FighterRenderer extends HumanoidMobRenderer<FighterEntity, Marauder
 
         @Override
         public void renderToBuffer(PoseStack pose, com.mojang.blaze3d.vertex.VertexConsumer buffer, int light, int overlay, int color) {
+            if (!tallHead) {
+                super.renderToBuffer(pose, buffer, light, overlay, color);
+                return;
+            }
             float hx = head.xScale, hy = head.yScale, hz = head.zScale;
             head.yScale = hy * 1.25f;
             head.xScale = hx * 1.04f;

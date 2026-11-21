@@ -109,6 +109,31 @@ public class FighterEntity extends OutpostNpc implements RangedAttackMob {
         return role().ranged();
     }
 
+    /**
+     * Добыча с мародёра (идея Guard Villagers: снаряжение бойца — его добыча). Только враги дикого форта и только
+     * когда их убил игрок: каждая вещь выпадает с шансом 8,5% (+1% за уровень «Добычи»), потёртой. Свои стражи
+     * ничего не роняют: их снаряжение — имущество форта, и оно выдаётся заново.
+     */
+    @Override
+    protected void dropCustomDeathLoot(net.minecraft.server.level.ServerLevel level, DamageSource source, boolean recentlyHit) {
+        super.dropCustomDeathLoot(level, source, recentlyHit);
+        if (!hostileFaction() || !recentlyHit || !(source.getEntity() instanceof Player)) return;
+        float chance = 0.085f + 0.01f * net.minecraft.world.item.enchantment.EnchantmentHelper.getEnchantmentLevel(
+                level.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.ENCHANTMENT)
+                        .getOrThrow(net.minecraft.world.item.enchantment.Enchantments.LOOTING), (LivingEntity) source.getEntity());
+        for (EquipmentSlot slot : EquipmentSlot.values()) {
+            ItemStack stack = getItemBySlot(slot);
+            if (stack.isEmpty() || random.nextFloat() >= chance) continue;
+            ItemStack drop = stack.copy();
+            if (drop.isDamageableItem()) {
+                int max = drop.getMaxDamage();
+                drop.setDamageValue(Math.max(0, max - 1 - random.nextInt(Math.max(1, max / 2))));
+            }
+            spawnAtLocation(drop);
+            setItemSlot(slot, ItemStack.EMPTY);
+        }
+    }
+
     private static String describe(Object goal) {
         Class<?> c = goal.getClass();
         return c.isAnonymousClass() ? c.getName() + "<" + c.getSuperclass().getSimpleName() + ">" : c.getName();
@@ -139,6 +164,7 @@ public class FighterEntity extends OutpostNpc implements RangedAttackMob {
             }
         });
         createRangedGoals();
+        goalSelector.addGoal(1, new com.vladosiwe.lordsoutpost.entity.ai.ShieldLineGoal(this));
         goalSelector.addGoal(2, rangedGoal);
         goalSelector.addGoal(2, bowGoal);
         goalSelector.addGoal(4, new DutyGoal(this));

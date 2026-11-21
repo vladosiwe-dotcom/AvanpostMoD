@@ -56,6 +56,7 @@ public final class ClientSetup {
         @SubscribeEvent
         public static void layers(EntityRenderersEvent.RegisterLayerDefinitions event) {
             event.registerLayerDefinition(FighterRenderer.LAYER, MarauderModel::createBodyLayer);
+            event.registerLayerDefinition(FighterRenderer.PLAYER_SKIN_LAYER, MarauderModel::createPlayerSkinLayer);
         }
 
         @SubscribeEvent

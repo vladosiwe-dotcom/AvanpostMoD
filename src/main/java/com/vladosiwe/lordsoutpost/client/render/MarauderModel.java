@@ -36,6 +36,31 @@ public class MarauderModel<T extends OutpostNpc> extends HumanoidModel<T> {
      */
     private static final boolean EPIC_FIGHT = net.neoforged.fml.ModList.get().isLoaded("epicfight");
 
+    /**
+     * Модель в раскладке скина игрока 64×64 (с внешними слоями: шляпа, куртка, рукава, штанины) — для скинов стражи
+     * из Guard Villagers без Epic Fight. Внешние слои — дочерние части, поэтому их рисует обычная модель человека.
+     */
+    public static LayerDefinition createPlayerSkinLayer() {
+        MeshDefinition mesh = HumanoidModel.createMesh(CubeDeformation.NONE, 0f);
+        PartDefinition root = mesh.getRoot();
+        CubeDeformation over = new CubeDeformation(0.25f);
+        PartDefinition head = root.addOrReplaceChild("head", CubeListBuilder.create().texOffs(0, 0).addBox(-4f, -8f, -4f, 8f, 8f, 8f), PartPose.ZERO);
+        head.addOrReplaceChild("nose", CubeListBuilder.create(), PartPose.ZERO);
+        root.addOrReplaceChild("hat", CubeListBuilder.create().texOffs(32, 0).addBox(-4f, -8f, -4f, 8f, 8f, 8f, new CubeDeformation(0.5f)), PartPose.ZERO);
+        PartDefinition body = root.addOrReplaceChild("body", CubeListBuilder.create().texOffs(16, 16).addBox(-4f, 0f, -2f, 8f, 12f, 4f), PartPose.ZERO);
+        body.addOrReplaceChild("robe", CubeListBuilder.create(), PartPose.ZERO);
+        body.addOrReplaceChild("jacket", CubeListBuilder.create().texOffs(16, 32).addBox(-4f, 0f, -2f, 8f, 12f, 4f, over), PartPose.ZERO);
+        root.addOrReplaceChild("right_arm", CubeListBuilder.create().texOffs(40, 16).addBox(-3f, -2f, -2f, 4f, 12f, 4f), PartPose.offset(-5f, 2f, 0f))
+                .addOrReplaceChild("right_sleeve", CubeListBuilder.create().texOffs(40, 32).addBox(-3f, -2f, -2f, 4f, 12f, 4f, over), PartPose.ZERO);
+        root.addOrReplaceChild("left_arm", CubeListBuilder.create().texOffs(32, 48).addBox(-1f, -2f, -2f, 4f, 12f, 4f), PartPose.offset(5f, 2f, 0f))
+                .addOrReplaceChild("left_sleeve", CubeListBuilder.create().texOffs(48, 48).addBox(-1f, -2f, -2f, 4f, 12f, 4f, over), PartPose.ZERO);
+        root.addOrReplaceChild("right_leg", CubeListBuilder.create().texOffs(0, 16).addBox(-2f, 0f, -2f, 4f, 12f, 4f), PartPose.offset(-1.9f, 12f, 0f))
+                .addOrReplaceChild("right_pants", CubeListBuilder.create().texOffs(0, 32).addBox(-2f, 0f, -2f, 4f, 12f, 4f, over), PartPose.ZERO);
+        root.addOrReplaceChild("left_leg", CubeListBuilder.create().texOffs(16, 48).addBox(-2f, 0f, -2f, 4f, 12f, 4f), PartPose.offset(1.9f, 12f, 0f))
+                .addOrReplaceChild("left_pants", CubeListBuilder.create().texOffs(0, 48).addBox(-2f, 0f, -2f, 4f, 12f, 4f, over), PartPose.ZERO);
+        return LayerDefinition.create(mesh, 64, 64);
+    }
+
     public static LayerDefinition createBodyLayer() {
         MeshDefinition mesh = HumanoidModel.createMesh(CubeDeformation.NONE, 0f);
         PartDefinition root = mesh.getRoot();
