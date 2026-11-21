@@ -378,6 +378,14 @@ public class WorkGoal extends Goal {
                         yield true;
                     }
                     boolean col = claimColumn(level, o);
+                    if (!col && site.exists() && site.ready() && site.bottom().getY() - Outpost.MINE_LEVEL_STEP > level.getMinBuildHeight() + 4) {
+                        // Уровень выработан целиком — ствол вниз, следующий уровень.
+                        o.mineLevel++;
+                        OutpostSavedData.get(level).setDirty();
+                        sinking = true;
+                        timer = -1;
+                        yield true;
+                    }
                     if (col && countCarried(Items.TORCH) == 0 && now >= torchRetryAt) needTorches = true;
                     yield col;
                 }
@@ -915,7 +923,7 @@ public class WorkGoal extends Goal {
     private List<Column> minePlan(ServerLevel level, Outpost o) {
         int minY = level.getMinBuildHeight();
         // Шахту перенесли (или прокопали новый ствол): штрек строится заново от нового дна.
-        int key = o.zones.version() * 31 + o.zones.mineDepth;
+        int key = (o.zones.version() * 31 + o.zones.mineDepth) * 97 + o.mineLevel;
         if (cachedMineOutpost != o || cachedMineMinY != minY || cachedMineKey != key) {
             cachedMinePlan = tunnel(o, minY);
             cachedMineOutpost = o;
@@ -1203,6 +1211,7 @@ public class WorkGoal extends Goal {
             sinking = false;
             return true;
         }
+        if (o.baseMine().ready()) return sinkDeeper(level, o, r, now);
         int depth = o.zones.mineDepth;
         if (site.top().getY() - com.vladosiwe.lordsoutpost.outpost.WorkZones.MINE_DEPTH - 1 <= level.getMinBuildHeight()) {
             o.zones.report(WorkZone.MINE, "too close to bedrock");
@@ -1296,6 +1305,96 @@ public class WorkGoal extends Goal {
             o.mineCursor = 0;
             o.zones.clearProblem(WorkZone.MINE);
             o.log(now, "lordsoutpost.event.mine_ready");
+            sinking = false;
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Следующий уровень выработки: ствол продолжается вниз от прежнего дна на 4 блока — шахтёр копает клетку, ставит
+     * лестницу у стены и спускается; на новом дне начинает такую же выработку кольцами. До бедрока.
+     */
+    private boolean sinkDeeper(ServerLevel level, Outpost o, Resident r, long now) {
+        Outpost.MineSite base = o.baseMine();
+        int target = Outpost.MINE_LEVEL_STEP * o.mineLevel;
+        if (timer < 0) {
+            Supply tool = pickaxe(level, o, r, now);
+            if (tool == Supply.BUSY) return false;
+            if (tool == Supply.NONE) {
+                o.zones.report(WorkZone.MINE, "no pickaxe");
+                noJobUntil = now + 1200;
+                return true;
+            }
+            Supply lad = ladders(level, o, r, Math.max(1, target - o.mineExtra), now);
+            if (lad == Supply.BUSY) return false;
+            if (lad == Supply.NONE) {
+                o.zones.report(WorkZone.MINE, "no ladders");
+                noJobUntil = now + 1200;
+                return true;
+            }
+            // Спуститься на текущее дно ствола.
+            BlockPos stand = base.bottom().below(o.mineExtra);
+            if (!go(o, stand, 1.2, 600)) return false;
+            timer = 30;
+        }
+        ItemStack pick = carriedPickaxe(WorkerEntity.minerToolTier(o, r));
+        if (pick == null) {
+            timer = -1;
+            return false;
+        }
+        showPickaxe(pick);
+        BlockPos dir = base.dir().subtract(base.bottom());
+        Direction facing = Direction.getNearest(dir.getX(), 0, dir.getZ());
+        BlockPos cell = base.bottom().below(o.mineExtra + 1);
+        if (--timer > 0) {
+            if (timer % 5 == 0) {
+                mob.swing(InteractionHand.MAIN_HAND);
+                level.playSound(null, cell, SoundEvents.STONE_HIT, SoundSource.BLOCKS, 0.6f, 0.9f);
+            }
+            return false;
+        }
+        timer = 30;
+        BlockState st = level.getBlockState(cell);
+        if (st.getDestroySpeed(level, cell) < 0 || cell.getY() <= level.getMinBuildHeight() + 3) {
+            // Бедрок: глубже некуда — последний уровень остаётся прежним.
+            o.mineLevel = Math.max(0, o.mineLevel - 1);
+            o.zones.report(WorkZone.MINE, "bedrock");
+            sinking = false;
+            noJobUntil = now + 6000;
+            return true;
+        }
+        for (Direction d : Direction.values()) {
+            BlockPos n = cell.relative(d);
+            if (n.equals(cell.above()) || level.getFluidState(n).isEmpty()) continue;
+            BlockState seal = takeSealBlock();
+            if (seal == null) {
+                o.zones.report(WorkZone.MINE, "water in the shaft");
+                noJobUntil = now + 1200;
+                return true;
+            }
+            level.setBlockAndUpdate(n, seal);
+        }
+        if (!st.isAir()) dig(level, r, cell, st, pick, now);
+        BlockPos wall = cell.relative(facing.getOpposite());
+        if (!level.getBlockState(wall).isFaceSturdy(level, wall, facing)) {
+            BlockState seal = takeSealBlock();
+            if (seal != null) level.setBlockAndUpdate(wall, seal);
+        }
+        placeLadder(level, cell, facing);
+        mob.getNavigation().stop();
+        mob.setPos(cell.getX() + 0.5, cell.getY(), cell.getZ() + 0.5);
+        o.mineExtra++;
+        OutpostSavedData.get(level).setDirty();
+        if (o.mineExtra >= target) {
+            BlockPos floor = cell.below();
+            if (!level.getBlockState(floor).isFaceSturdy(level, floor, Direction.UP)) {
+                BlockState seal = takeSealBlock();
+                if (seal != null) level.setBlockAndUpdate(floor, seal);
+            }
+            o.mineCursor = 0;
+            o.zones.clearProblem(WorkZone.MINE);
+            o.log(now, "lordsoutpost.event.mine_level", o.mineLevel + 1);
             sinking = false;
             return true;
         }

@@ -680,14 +680,17 @@ public final class ChunkReconciliation {
         Iterator<BlockPos> it = cells.keySet().iterator();
         int skip = o.repairCursor;
         while (it.hasNext() && skip-- > 0) it.next();
-        while (it.hasNext() && n++ < 48) {
+        while (it.hasNext() && n++ < 400) {
             BlockPos rel = it.next();
             o.repairCursor++;
             var cell = cells.get(rel);
             Block want = cell.state().getBlock();
             boolean ladder = want instanceof net.minecraft.world.level.block.LadderBlock;
             // Под землёй чинится только лестница ствола шахты; всё прочее — над уровнем двора.
-            if (cell.state().isAir() || (rel.getY() <= 0 && !ladder) || overridden(o, rel) || o.removedByPlayer(o.world(rel))) continue;
+            // Ниже двора чинится только лестница ствола; на уровне двора — пол построек (доски, камень), но не земля и дорожки.
+            boolean floor = rel.getY() == 0 && !cell.state().is(net.minecraft.tags.BlockTags.DIRT) && !cell.state().is(Blocks.DIRT_PATH)
+                    && !cell.state().is(Blocks.FARMLAND) && cell.state().getFluidState().isEmpty();
+            if (cell.state().isAir() || (rel.getY() <= 0 && !ladder && !floor) || overridden(o, rel) || o.removedByPlayer(o.world(rel))) continue;
             if (!(ladder || want == Blocks.COBBLESTONE || FortBlueprint.costOf(cell.state()) != null)) continue;
             if (o.repairs.contains(rel) || o.repairs.size() >= 64) continue;
             if (repairDone(level, o, rel)) continue;

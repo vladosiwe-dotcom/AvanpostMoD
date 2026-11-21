@@ -202,6 +202,7 @@
   "lordsoutpost.map.legend.enemy": "Враг",
   "lordsoutpost.map.legend.wild": "Дикий форт",
   "lordsoutpost.map.legend.posts": "Посты для стрелков (приблизьте)",
+  "lordsoutpost.event.mine_level": "Шахтёр прокопал ствол глубже: начат %s-й уровень выработки.",
   "lordsoutpost.hover.forging": "Кует: %s ×%s — %s%%",
   "lordsoutpost.hover.arrows": "Стрел в колчане: %s",
   "lordsoutpost.hover.no_arrows": "Стрел нет — идёт на склад",

@@ -372,7 +372,21 @@ public final class Outpost {
      */
     public record MineSite(BlockPos entry, BlockPos top, BlockPos bottom, BlockPos dir, int groundY, boolean ready, boolean exists) {}
 
+    /** Уровень выработки (0 — у дна ствола; каждый следующий — на 4 блока ниже) и сколько блоков ствола прокопано ниже исходного дна. */
+    public int mineLevel, mineExtra;
+    public static final int MINE_LEVEL_STEP = 4;
+
+    /** Шахта с учётом уровней: дно ствола опускается на 4 блока за уровень; уровень готов, когда ствол прокопан. */
     public MineSite mine() {
+        MineSite base = baseMine();
+        if (mineLevel <= 0 || !base.exists()) return base;
+        int down = MINE_LEVEL_STEP * mineLevel;
+        return new MineSite(base.entry(), base.top(), base.bottom().below(down), base.dir().below(down), base.groundY(),
+                base.ready() && mineExtra >= down, true);
+    }
+
+    /** Ствол как построен (без углубления по уровням). */
+    public MineSite baseMine() {
         Long link = zones.link(WorkZone.MINE);
         if (link != null) {
             for (Project p : projects) {
@@ -649,6 +663,8 @@ public final class Outpost {
         for (Squad s : squads) sq.add(s.save());
         t.put("squads", sq);
         t.putBoolean("guardPatrolDefault", true);
+        t.putInt("mineLevel", mineLevel);
+        t.putInt("mineExtra", mineExtra);
         t.putString("law", law.id);
         t.putLong("lawAt", lawChangedAt);
         t.put("access", access.save());
@@ -769,6 +785,8 @@ public final class Outpost {
         for (int i = 0; i < Math.min(sq.size(), o.squads.length); i++) o.squads[i].load(sq.getCompound(i));
         // Стража по умолчанию теперь обходит места работы жителей; в старых сохранениях «посты» — прежнее умолчание.
         if (!t.getBoolean("guardPatrolDefault") && o.squads[Squad.GUARD].order == Squad.Order.POSTS) o.squads[Squad.GUARD].order = Squad.Order.PATROL;
+        o.mineLevel = Math.max(0, t.getInt("mineLevel"));
+        o.mineExtra = Math.max(0, t.getInt("mineExtra"));
         o.law = Law.byId(t.getString("law"));
         o.lawChangedAt = t.getLong("lawAt");
         o.access.load(t.getCompound("access"));

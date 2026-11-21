@@ -202,6 +202,7 @@
   "lordsoutpost.map.legend.enemy": "Enemy",
   "lordsoutpost.map.legend.wild": "Wild fort",
   "lordsoutpost.map.legend.posts": "Archer posts (zoom in)",
+  "lordsoutpost.event.mine_level": "The miner sank the shaft deeper: level %s of the mine has begun.",
   "lordsoutpost.hover.forging": "Forging: %s ×%s — %s%%",
   "lordsoutpost.hover.arrows": "Arrows in quiver: %s",
   "lordsoutpost.hover.no_arrows": "Out of arrows — heading to storage",

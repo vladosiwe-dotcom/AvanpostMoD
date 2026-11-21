@@ -1495,7 +1495,7 @@ public final class OutpostGameTests {
      * Полный цикл в загруженных чанках: форт встаёт блоками, появляется гарнизон с Капитаном, Капитан гибнет — форт захвачен
      * и падает Штандарт; игрок основывает владение — приходят жители, и стройка продвигается настоящими блоками.
      */
-    @GameTest(template = "empty", timeoutTicks = 900)
+    @GameTest(template = "empty", timeoutTicks = 3000)
     public static void fortLifecycleInWorld(GameTestHelper h) {
         ServerLevel level = h.getLevel();
         OutpostSavedData data = OutpostSavedData.get(level);
@@ -1508,6 +1508,8 @@ public final class OutpostGameTests {
         UUID lord = UUID.randomUUID();
         AABB area = new AABB(o.center).inflate(60, 40, 60);
         int[] stage = {0};
+        BlockPos[] broken = new BlockPos[2];
+        net.minecraft.world.level.block.Block[] wanted = new net.minecraft.world.level.block.Block[2];
         int[] stepsAtFounding = {0};
         long[] mark = {0};
         net.minecraft.server.level.ServerPlayer[] viewer = {null};
@@ -1591,6 +1593,37 @@ public final class OutpostGameTests {
                     }
                     h.assertTrue(all.size() <= o.residents.size(), "сущностей больше, чем жителей: дубли");
                     LordsOutpost.LOGGER.info("Форт в мире: жителей {}, сущностей {}, уложено блоков тира 2: {}", o.residents.size(), all.size(), o.placed);
+                    // Ремонт: ломаем блок стены и блок пола — строитель обязан восстановить оба.
+                    for (var e : o.design().cells.entrySet()) {
+                        var cell = e.getValue();
+                        BlockPos w = o.world(e.getKey());
+                        if (cell.state().isAir() || !level.getBlockState(w).is(cell.state().getBlock()) || o.placedByPlayer(w)) continue;
+                        // Клетка остаётся и в следующем тире (иначе её перестроит переход, а не ремонт).
+                        var nextCell = o.blueprint().design(o.tier + 1).cells.get(e.getKey());
+                        if (nextCell == null || nextCell.state() != cell.state()) continue;
+                        if (broken[0] == null && e.getKey().getY() == 2 && cell.stage() == com.vladosiwe.lordsoutpost.blueprint.FortDesigner.ST_WALLS
+                                && com.vladosiwe.lordsoutpost.blueprint.FortBlueprint.costOf(cell.state()) != null) broken[0] = w;
+                        if (broken[1] == null && e.getKey().getY() == 0 && !cell.state().is(net.minecraft.tags.BlockTags.DIRT)
+                                && !cell.state().is(net.minecraft.world.level.block.Blocks.DIRT_PATH)
+                                && com.vladosiwe.lordsoutpost.blueprint.FortBlueprint.costOf(cell.state()) != null) broken[1] = w;
+                    }
+                    h.assertTrue(broken[0] != null, "не нашлось стены для проверки ремонта");
+                    // Пол проверяется, если в форте есть пол, который переход на следующий тир не перестраивает.
+                    if (broken[1] == null) broken[1] = broken[0];
+                    wanted[0] = level.getBlockState(broken[0]).getBlock();
+                    wanted[1] = level.getBlockState(broken[1]).getBlock();
+                    level.setBlockAndUpdate(broken[0], net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+                    level.setBlockAndUpdate(broken[1], net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+                    o.setStock(Resource.WOOD, Math.max(o.stock(Resource.WOOD), 200));
+                    o.setStock(Resource.STONE, Math.max(o.stock(Resource.STONE), 200));
+                    stage[0] = 4;
+                }
+                case 4 -> {
+                    boolean wall = level.getBlockState(broken[0]).is(wanted[0]), floor = level.getBlockState(broken[1]).is(wanted[1]);
+                    if (h.getTick() % 200 == 0) LordsOutpost.LOGGER.info("Ремонт: стена {} пол {} очередь {} {}", wall, floor, o.repairs.size(),
+                            o.repairs.stream().limit(3).map(BlockPos::toShortString).toList());
+                    if (!wall || !floor) return;
+                    List<OutpostNpc> all = level.getEntitiesOfClass(OutpostNpc.class, area);
                     stage[0] = 3;
                     OutpostManager.abandon(data, o, level.getGameTime());
                     data.remove(o);
