@@ -1,6 +1,7 @@
 package com.vladosiwe.lordsoutpost.data;
 
 import com.vladosiwe.lordsoutpost.blueprint.FortBlueprint;
+import com.vladosiwe.lordsoutpost.blueprint.FortDesigner;
 import com.vladosiwe.lordsoutpost.blueprint.Layout;
 import com.vladosiwe.lordsoutpost.blueprint.ProjectDesigner;
 import com.vladosiwe.lordsoutpost.blueprint.Step;
@@ -38,7 +39,7 @@ public final class Projects {
     public static final int EXTENT = 24;
     private static final long CLAIM_TIME = 240;
 
-    public enum OrderResult { OK, NOT_HERE, OVERLAPS_FORT, OCCUPIED, TOO_MANY, NO_GROUND, UNEVEN, NO_RESOURCES }
+    public enum OrderResult { OK, NOT_HERE, OVERLAPS_FORT, OCCUPIED, TOO_MANY, NO_GROUND, UNEVEN, NO_RESOURCES, MAX_LEVEL, NOT_FOUND, PROTECTED }
 
     // ============================== Стоимость и резерв ==============================
 
@@ -229,22 +230,48 @@ public final class Projects {
         return OrderResult.NO_GROUND;
     }
 
+    /** Отладка: какая клетка чертежа мешает заказу (для /outpost probe). */
+    public static String overlapDetail(Outpost o, Project.Type type, BlockPos origin, int rot) {
+        Project p = new Project(-1, type, origin, Rotation.values()[Math.floorMod(rot, 4)]);
+        FortBlueprint bp = o.blueprint();
+        for (Step s : p.steps(o)) {
+            if (s.pos().getY() < 1) continue;
+            for (int t = o.tier; t <= Math.min(FortBlueprint.MAX_TIER, o.tier + 1); t++) {
+                var cell = bp.design(t).cells.get(s.pos());
+                if (cell != null && !cell.state().isAir()) return "t" + t + " rel " + s.pos().toShortString() + " st" + cell.stage() + " " + cell.state();
+            }
+        }
+        return "-";
+    }
+
     static OrderResult check(ServerLevel level, Outpost o, Project p) {
         FortBlueprint bp = o.blueprint();
         Set<BlockPos> taken = new HashSet<>();
+        Set<BlockPos> own = footprint(o, p.replaces);
         for (Project other : o.projects) {
-            if (!other.active() && other.state != Project.State.DONE) continue;
+            if (other.id == p.replaces || (!other.active() && other.state != Project.State.DONE)) continue;
             for (Step s : other.steps(o)) taken.add(s.pos());
         }
         int limit = Layout.radius(o.version, FortBlueprint.MAX_TIER) + Layout.MARGIN + EXTENT;
         for (Step s : p.steps(o)) {
             BlockPos pos = o.world(s.pos());
             if (!o.insideHorizontally(pos.getX(), pos.getZ(), limit) || level.isOutsideBuildHeight(pos)) return OrderResult.NOT_HERE;
+            // Улучшение перестраивает свою же постройку: её клетки заняты законно.
+            if (own.contains(s.pos())) continue;
             // Мешает только то, что форт уже поставил или поставит в ближайшем тире (не пустые клетки);
             // дальние тиры на заказ не влияют: место под дома Лорда есть и во дворе.
-            for (int t = o.tier; t <= Math.min(FortBlueprint.MAX_TIER, o.tier + 1); t++) {
-                var cell = bp.design(t).cells.get(s.pos());
-                if (cell != null && !cell.state().isAir()) return OrderResult.OVERLAPS_FORT;
+            // Земля чертежа (дорожки, подсыпка, выравнивание двора на уровне 0 и ниже) не мешает: пол постройки ляжет
+            // поверх неё. Из стоящего над землёй мешают постройки текущего тира и стены, ворота и башни следующего.
+            // Место будущих домов, мастерских и украшений следующего тира занимать можно: чертёж уступит постройке
+            // Лорда (ChunkReconciliation.yieldToPlayer), как любой постройке игрока.
+            if (s.pos().getY() >= 1) {
+                var now = bp.design(o.tier).cells.get(s.pos());
+                if (now != null && !now.state().isAir()) return OrderResult.OVERLAPS_FORT;
+                if (o.tier < FortBlueprint.MAX_TIER) {
+                    var next = bp.design(o.tier + 1).cells.get(s.pos());
+                    if (next != null && !next.state().isAir()
+                            && (next.stage() == FortDesigner.ST_WALLS || next.stage() == FortDesigner.ST_GATE)) return OrderResult.OVERLAPS_FORT;
+                }
             }
             if (taken.contains(s.pos())) return OrderResult.OCCUPIED;
             if (!level.isLoaded(pos)) return OrderResult.OCCUPIED;
@@ -433,6 +460,8 @@ public final class Projects {
         Step s = step(o, key);
         if (s == null) return true;
         BlockPos pos = o.world(s.pos());
+        Project owner = project(o, key);
+        if (owner != null && owner.replaces >= 0 && level.getBlockEntity(pos) == null && footprint(o, owner.replaces).contains(s.pos())) return false;
         BlockState here = level.getBlockState(pos);
         // Природный рельеф под заказом (камень, снег, кусты) строитель заменяет; уступает только постройкам и игроку.
         if (ChunkReconciliation.naturalTerrain(here) && level.getBlockEntity(pos) == null && !o.placedByPlayer(pos)) return false;
@@ -454,6 +483,7 @@ public final class Projects {
                 if (p.floor(o, i) && !s.state().isAir()) foundation(level, o, pos);
                 // Заказ Лорда — его постройка: ремонт, лесоруб и чертежи тиров её не трогают.
                 if (!s.state().isAir()) o.notePlayerPlaced(pos);
+                else o.clearPlayerMarks(pos);
                 p.placed.set(i);
                 o.projectClaims.remove(key(p, i));
             }
@@ -491,6 +521,23 @@ public final class Projects {
         if (p.placed.cardinality() >= p.size(o) && p.paid >= p.size(o)) {
             p.state = Project.State.DONE;
             o.log(now, "lordsoutpost.event.project_done", p.type.id);
+            if (p.replaces >= 0) {
+                // Улучшение достроено: прежняя запись уходит, эта становится постройкой нового уровня целиком.
+                Project old = byId(o, p.replaces);
+                if (old != null) {
+                    o.projects.remove(old);
+                    if (old.type.relocates != null && java.util.Objects.equals(o.zones.link(old.type.relocates), old.id))
+                        o.zones.rebind(old.type.relocates, p.zoneAnchor(), p.id, old.zoneAnchor());
+                }
+                p.replaces = -1;
+                p.fromLevel = 0;
+                p.resetSteps();
+                p.paid = p.size(o);
+                p.placed.set(0, p.size(o));
+                o.log(now, "lordsoutpost.event.project_upgraded", p.type.id, p.level);
+                o.dirtyForClients = true;
+                return;
+            }
             // Новое место рабочего объекта готово: зона и привязки профессии переезжают сюда.
             if (p.type.relocates != null) {
                 var zone = p.type.relocates;
@@ -508,7 +555,8 @@ public final class Projects {
         o.projectClaims.clear();
         o.projectDeferred.clear();
         o.projectFailures.clear();
-        for (Project p : o.projects) {
+        // Копия: достроенное улучшение убирает из списка прежнюю постройку.
+        for (Project p : new java.util.ArrayList<>(o.projects)) {
             if (!p.active()) continue;
             List<Step> steps = p.steps(o);
             for (int i = 0; i < Math.min(p.paid, steps.size()); i++) {
@@ -538,6 +586,173 @@ public final class Projects {
             return true;
         }
         return false;
+    }
+
+    // ============================== Улучшение и снос ==============================
+
+    @Nullable
+    public static Project byId(Outpost o, long id) {
+        if (id < 0) return null;
+        for (Project p : o.projects) if (p.id == id) return p;
+        return null;
+    }
+
+    /** Клетки постройки (относительно центра форта); пусто, если id < 0 или такой нет. */
+    static Set<BlockPos> footprint(Outpost o, long id) {
+        Project p = byId(o, id);
+        if (p == null) return Set.of();
+        Set<BlockPos> out = new HashSet<>();
+        for (Step s : p.steps(o)) out.add(s.pos());
+        return out;
+    }
+
+    /** Улучшение, которое сейчас строится для этой постройки, или null. */
+    @Nullable
+    public static Project upgradeOf(Outpost o, long id) {
+        for (Project p : o.projects) if (p.active() && p.replaces == id) return p;
+        return null;
+    }
+
+    /** Стоимость улучшения постройки до следующего уровня (только меняющиеся блоки). */
+    public static java.util.EnumMap<Resource, Integer> upgradeCost(Outpost o, Project done) {
+        java.util.EnumMap<Resource, Integer> out = new java.util.EnumMap<>(Resource.class);
+        if (done.level >= done.type.maxLevel) return out;
+        Project probe = new Project(0, done.type, done.origin, done.rotation);
+        probe.level = done.level + 1;
+        probe.fromLevel = done.level;
+        for (Step s : probe.steps(o)) if (s.cost() != null) out.merge(s.cost(), 1, Integer::sum);
+        return out;
+    }
+
+    /**
+     * Заказ улучшения: та же постройка на уровень выше. Строители ставят только разницу (новые и изменённые блоки,
+     * разбирают лишнее); пока улучшение идёт, постройка работает как прежде. Ресурсы резервируются как у заказа.
+     */
+    public static OrderResult upgrade(ServerLevel level, Outpost o, long id, long now, boolean dryRun) {
+        Project old = byId(o, id);
+        if (old == null || old.state != Project.State.DONE) return OrderResult.NOT_FOUND;
+        if (old.level >= old.type.maxLevel) return OrderResult.MAX_LEVEL;
+        int active = 0;
+        for (Project p : o.projects) if (p.active()) active++;
+        if (active >= MAX_ACTIVE || upgradeOf(o, id) != null) return OrderResult.TOO_MANY;
+        Project up = new Project(o.projectCounter + 1, old.type, old.origin, old.rotation);
+        up.level = old.level + 1;
+        up.fromLevel = old.level;
+        up.replaces = old.id;
+        OrderResult check = check(level, o, up);
+        if (check != OrderResult.OK) return check;
+        for (var e : upgradeCost(o, old).entrySet()) if (e.getValue() > o.available(e.getKey()) + 1e-6) return OrderResult.NO_RESOURCES;
+        if (dryRun) return OrderResult.OK;
+        o.projectCounter++;
+        up.orderedAt = now;
+        o.projects.add(up);
+        o.log(now, "lordsoutpost.event.project_upgrade_ordered", old.type.id, up.level);
+        o.dirtyForClients = true;
+        return OrderResult.OK;
+    }
+
+    /** Итог сноса: сколько блоков разобрано и что вернулось на склад. */
+    public record Demolition(OrderResult result, int blocks, java.util.EnumMap<Resource, Integer> refund) {
+        static Demolition of(OrderResult r) {
+            return new Demolition(r, 0, new java.util.EnumMap<>(Resource.class));
+        }
+    }
+
+    /** Убирает блок постройки: содержимое сундуков и бочек — на склад (что не влезло — на землю), блок — в ресурс. */
+    private static void takeDown(ServerLevel level, Outpost o, BlockPos pos, @Nullable Resource cost, java.util.EnumMap<Resource, Integer> refund) {
+        if (level.getBlockEntity(pos) instanceof net.minecraft.world.Container c) {
+            Storehouse.deposit(level, o, c);
+            net.minecraft.world.Containers.dropContents(level, pos, c);
+        }
+        level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS);
+        if (cost != null) refund.merge(cost, 1, Integer::sum);
+    }
+
+    /**
+     * Мгновенный снос постройки Лорда: стоящие блоки разбираются, их материал и оплаченное, но не поставленное,
+     * возвращаются на склад. Зона, которую постройка переносила, возвращается на место по чертежу; жители
+     * сами находят другие кровати и места работы.
+     */
+    public static Demolition demolish(ServerLevel level, Outpost o, long id, long now) {
+        Project p = byId(o, id);
+        if (p == null || p.state == Project.State.CANCELLED) return Demolition.of(OrderResult.NOT_FOUND);
+        Project pending = upgradeOf(o, id);
+        if (pending != null) cancel(o, pending.id, now);
+        List<Step> steps = p.steps(o);
+        java.util.EnumMap<Resource, Integer> refund = new java.util.EnumMap<>(Resource.class);
+        int blocks = 0;
+        // Сверху вниз: сначала крыша и кровати, потом стены и пол.
+        for (int i = steps.size() - 1; i >= 0; i--) {
+            Step s = steps.get(i);
+            if (s.state().isAir()) continue;
+            if (!p.placed.get(i)) {
+                if (i < p.paid && s.cost() != null) refund.merge(s.cost(), 1, Integer::sum);
+                continue;
+            }
+            BlockPos pos = o.world(s.pos());
+            if (!level.isLoaded(pos) || level.getBlockState(pos).getBlock() != s.state().getBlock()) continue;
+            takeDown(level, o, pos, s.cost(), refund);
+            o.clearPlayerMarks(pos);
+            blocks++;
+        }
+        for (var e : refund.entrySet()) o.addPhysical(e.getKey(), e.getValue());
+        if (p.type.relocates != null && java.util.Objects.equals(o.zones.link(p.type.relocates), p.id)) o.zones.relocate(p.type.relocates, null);
+        o.projects.remove(p);
+        o.projectClaims.keySet().removeIf(k -> (k >>> 20) == id);
+        o.log(now, "lordsoutpost.event.project_demolished", p.type.id);
+        o.dirtyForClients = true;
+        return new Demolition(OrderResult.OK, blocks, refund);
+    }
+
+    /**
+     * Снос постройки форта по клику: дом, мастерская, украшение двора (стены, ворота, донжон и склад — нельзя).
+     * Постройка — блоки той же части чертежа текущего тира, что и выбранный. Они разбираются сразу, материал идёт
+     * на склад; клетки помечаются разобранными Лордом, поэтому ремонт и следующие тиры их не восстанавливают.
+     */
+    public static Demolition demolishFort(ServerLevel level, Outpost o, BlockPos at, long now, boolean dryRun) {
+        var design = o.design();
+        BlockPos rel = at.subtract(o.center);
+        var cell = design.cells.get(rel);
+        if (cell == null || cell.state().isAir() || rel.getY() < 1) return Demolition.of(OrderResult.NOT_FOUND);
+        int st = cell.stage();
+        if (st != FortDesigner.ST_WORKS && st != FortDesigner.ST_HOUSING && st != FortDesigner.ST_DECOR && st != FortDesigner.ST_MAGE)
+            return Demolition.of(OrderResult.PROTECTED);
+        List<BlockPos> part = new java.util.ArrayList<>();
+        for (var e : design.cells.entrySet()) {
+            if (e.getValue().group() == cell.group() && e.getValue().stage() == st && e.getKey().getY() >= 1 && !e.getValue().state().isAir()) part.add(e.getKey());
+        }
+        Set<BlockPos> partSet = new HashSet<>(part);
+        for (var m : new com.vladosiwe.lordsoutpost.blueprint.Marker[]{com.vladosiwe.lordsoutpost.blueprint.Marker.STOCKPILE,
+                com.vladosiwe.lordsoutpost.blueprint.Marker.STORE_INSIDE, com.vladosiwe.lordsoutpost.blueprint.Marker.THRONE}) {
+            for (BlockPos mp : design.markers(m)) {
+                if (partSet.contains(mp) || partSet.contains(mp.below()) || partSet.contains(mp.above())) return Demolition.of(OrderResult.PROTECTED);
+            }
+        }
+        java.util.EnumMap<Resource, Integer> refund = new java.util.EnumMap<>(Resource.class);
+        int blocks = 0;
+        part.sort((a, b) -> Integer.compare(b.getY(), a.getY()));
+        for (BlockPos r : part) {
+            BlockPos pos = o.world(r);
+            if (!level.isLoaded(pos) || o.placedByPlayer(pos)) continue;
+            BlockState here = level.getBlockState(pos);
+            var c = design.cells.get(r);
+            if (here.isAir() || here.getBlock() != c.state().getBlock()) continue;
+            blocks++;
+            if (dryRun) {
+                Resource cost = FortBlueprint.costOf(c.state());
+                if (cost != null) refund.merge(cost, 1, Integer::sum);
+                continue;
+            }
+            takeDown(level, o, pos, FortBlueprint.costOf(c.state()), refund);
+            o.notePlayerRemoved(pos, true);
+        }
+        if (blocks == 0) return Demolition.of(OrderResult.NOT_FOUND);
+        if (!dryRun) {
+            for (var e : refund.entrySet()) o.addPhysical(e.getKey(), e.getValue());
+            o.log(now, "lordsoutpost.event.fort_demolished", blocks);
+            o.dirtyForClients = true;
+        }
+        return new Demolition(OrderResult.OK, blocks, refund);
     }
 
     /** Чистит историю: из завершённых и отменённых проектов хранятся последние 8 (постройки нужны для подсчёта домов). */

@@ -207,6 +207,27 @@ public final class ServerActions {
             }
             case CANCEL_PROJECT -> com.vladosiwe.lordsoutpost.data.Projects.cancel(o, a.getLong("id"), now);
             case MOVE_PROJECT -> com.vladosiwe.lordsoutpost.data.Projects.move(o, a.getLong("id"), a.getBoolean("up"));
+            case UPGRADE_PROJECT -> {
+                var r = com.vladosiwe.lordsoutpost.data.Projects.upgrade(level, o, a.getLong("id"), now, false);
+                feedback(player, "lordsoutpost.msg.project." + r.name().toLowerCase(Locale.ROOT),
+                        r == com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OK ? ChatFormatting.GREEN : ChatFormatting.YELLOW);
+            }
+            case DEMOLISH_PROJECT, DEMOLISH_AT -> {
+                var d = action == Action.DEMOLISH_PROJECT
+                        ? com.vladosiwe.lordsoutpost.data.Projects.demolish(level, o, a.getLong("id"), now)
+                        : com.vladosiwe.lordsoutpost.data.Projects.demolishFort(level, o, new net.minecraft.core.BlockPos(a.getInt("x"), a.getInt("y"), a.getInt("z")), now, false);
+                if (d.result() == com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OK) {
+                    StringBuilder sb = new StringBuilder();
+                    for (var e : d.refund().entrySet()) {
+                        if (sb.length() > 0) sb.append(", ");
+                        sb.append(e.getKey().label().getString()).append(" +").append(e.getValue());
+                    }
+                    player.displayClientMessage(Component.translatable("lordsoutpost.msg.demolished", d.blocks(), sb.length() == 0 ? "—" : sb.toString())
+                            .withStyle(ChatFormatting.GREEN), true);
+                } else {
+                    feedback(player, "lordsoutpost.msg.project." + d.result().name().toLowerCase(Locale.ROOT), ChatFormatting.YELLOW);
+                }
+            }
             case ORDER_PROJECT_AT, CHECK_PROJECT -> {
                 var type = com.vladosiwe.lordsoutpost.outpost.Project.Type.byId(a.getString("type"));
                 if (type == null) return;

@@ -380,6 +380,15 @@ public final class Views {
             pt.putInt("y", p.origin.getY());
             pt.putInt("z", p.origin.getZ());
             pt.putByte("rot", (byte) p.rotation.ordinal());
+            pt.putByte("level", (byte) p.level);
+            pt.putByte("maxLevel", (byte) p.type.maxLevel);
+            pt.putBoolean("upgrade", p.replaces >= 0);
+            if (p.state == com.vladosiwe.lordsoutpost.outpost.Project.State.DONE) {
+                pt.putBoolean("upgrading", com.vladosiwe.lordsoutpost.data.Projects.upgradeOf(o, p.id) != null);
+                CompoundTag uc = new CompoundTag();
+                for (var e : com.vladosiwe.lordsoutpost.data.Projects.upgradeCost(o, p).entrySet()) uc.putInt(e.getKey().id, e.getValue());
+                pt.put("upCost", uc);
+            }
             if (p.active()) {
                 pt.putInt("builders", com.vladosiwe.lordsoutpost.data.Projects.builders(o, p));
                 // Нехватка: остатка стоимости больше, чем лежит на складе этого аванпоста.

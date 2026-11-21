@@ -56,6 +56,13 @@ public class RtsScreen extends Screen {
     private final EnumMap<Resource, Integer> missing = new EnumMap<>(Resource.class);
     private boolean dragging;
     private double lastDragX, lastDragY;
+    /** Режим сноса: ЛКМ по постройке выбирает её, кнопка «Снести» — подтверждает. */
+    private boolean demolish;
+    @Nullable private BlockPos demolishAt;
+    /** Выбранная под снос постройка Лорда (id) или -1 — постройка форта по клетке demolishAt. */
+    private long demolishProject = -1;
+    /** Подтверждение сноса из списка построек: id и время первого нажатия. */
+    private long confirmId = -1, confirmAt;
 
     /** Для отрисовки призрака постройки в мире (RtsRender). */
     @Nullable static RtsScreen current;
@@ -153,6 +160,18 @@ public class RtsScreen extends Screen {
         }
         if (button == 1) {
             if (selected != null) cancelSelection();
+            if (demolish) {
+                demolish = false;
+                demolishAt = null;
+            }
+            return true;
+        }
+        if (button == 0 && demolish) {
+            BlockPos hit = pickBlock(mx, my);
+            if (hit != null) {
+                demolishAt = hit;
+                demolishProject = projectAt(hit);
+            }
             return true;
         }
         if (button == 0 && selected != null && hover != null) {
@@ -217,6 +236,67 @@ public class RtsScreen extends Screen {
         return q.immutable();
     }
 
+    /** Блок под курсором (без спуска к земле) — для выбора постройки под снос. */
+    @Nullable
+    private BlockPos pickBlock(double mx, double my) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return null;
+        Camera cam = mc.gameRenderer.getMainCamera();
+        double fov = Math.toRadians(mc.options.fov().get());
+        double aspect = (double) width / Math.max(1, height);
+        double nx = mx / width * 2 - 1, ny = 1 - my / height * 2;
+        double th = Math.tan(fov / 2);
+        Vector3f f = cam.getLookVector(), u = cam.getUpVector(), l = cam.getLeftVector();
+        Vec3 dir = new Vec3(f.x() + u.x() * ny * th - l.x() * nx * th * aspect,
+                f.y() + u.y() * ny * th - l.y() * nx * th * aspect,
+                f.z() + u.z() * ny * th - l.z() * nx * th * aspect).normalize();
+        Vec3 from = cam.getPosition();
+        BlockHitResult hit = mc.level.clip(new ClipContext(from, from.add(dir.scale(256)), ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, CollisionContext.empty()));
+        return hit.getType() == HitResult.Type.BLOCK ? hit.getBlockPos() : null;
+    }
+
+    /** Постройка Лорда, которой принадлежит блок, или -1. */
+    private long projectAt(BlockPos pos) {
+        if (view.manage == null) return -1;
+        for (var p : view.manage.projects) {
+            if (!p.done() && !p.active()) continue;
+            if (p.upgrade()) continue;
+            if (projectCells(p).contains(pos)) return p.id();
+        }
+        return -1;
+    }
+
+    private List<BlockPos> projectCells(OutpostView.ProjectInfo p) {
+        List<BlockPos> out = new ArrayList<>();
+        Project.Type type = Project.Type.byId(p.type());
+        if (type == null || view.manage == null) return out;
+        Palette palette = Palette.byId(view.manage.palette);
+        Rotation rotation = Rotation.values()[Math.floorMod(p.rot(), 4)];
+        BlockPos origin = new BlockPos(p.x(), p.y(), p.z());
+        for (ProjectDesigner.Cell c : ProjectDesigner.design(type, palette, p.level())) {
+            if (c.state().isAir()) continue;
+            out.add(origin.offset(c.pos().rotate(rotation)));
+        }
+        return out;
+    }
+
+    private void confirmDemolish() {
+        if (demolishAt == null) return;
+        if (demolishProject >= 0) {
+            long id = demolishProject;
+            Net.action(view.id, Action.DEMOLISH_PROJECT, t -> t.putLong("id", id));
+        } else {
+            BlockPos at = demolishAt;
+            Net.action(view.id, Action.DEMOLISH_AT, t -> {
+                t.putInt("x", at.getX());
+                t.putInt("y", at.getY());
+                t.putInt("z", at.getZ());
+            });
+        }
+        demolishAt = null;
+        demolishProject = -1;
+    }
+
     private String key() {
         return selected == null || hover == null ? "" : selected.id + "/" + hover.getX() + "/" + hover.getZ() + "/" + rot;
     }
@@ -231,6 +311,8 @@ public class RtsScreen extends Screen {
     }
 
     private void select(Project.Type type) {
+        demolish = false;
+        demolishAt = null;
         selected = type;
         result = null;
         checkKey = null;
@@ -300,6 +382,12 @@ public class RtsScreen extends Screen {
     /** Клетки выбранной постройки в мире (для предпросмотра), null — нечего показывать. */
     @Nullable
     List<BlockPos> ghostCells() {
+        if (demolish && demolishAt != null && view.manage != null) {
+            if (demolishProject >= 0) {
+                for (var p : view.manage.projects) if (p.id() == demolishProject) return projectCells(p);
+            }
+            return List.of(demolishAt);
+        }
         if (selected == null || hover == null || view.manage == null) return null;
         return cells(selected, hover, rot);
     }
@@ -317,6 +405,7 @@ public class RtsScreen extends Screen {
 
     /** 1 — можно (сервер подтвердил), 0 — нельзя, -1 — ждём ответа. */
     int ghostState() {
+        if (demolish && demolishAt != null) return 0;
         if (!key().equals(checkKey) || result == null) return -1;
         return "ok".equals(result) ? 1 : 0;
     }
@@ -372,6 +461,27 @@ public class RtsScreen extends Screen {
             Ui.button(g, font, hits, x, y, w, 11, Component.translatable("lordsoutpost.project." + type.id), true, sel, mx, my,
                     () -> select(type), Component.translatable("lordsoutpost.project." + type.id + ".desc"));
             y += 12;
+        }
+        Ui.button(g, font, hits, x, y, w, 11, Component.translatable("lordsoutpost.rts.demolish"), true, demolish, mx, my, () -> {
+            cancelSelection();
+            demolish = !demolish;
+            demolishAt = null;
+        }, Component.translatable("lordsoutpost.rts.demolish.tip"));
+        y += 12;
+        if (demolish) {
+            y += 2;
+            if (demolishAt == null) {
+                y += Ui.wrapped(g, font, Component.translatable("lordsoutpost.rts.demolish.pick"), x + 2, y, w - 4, Ui.MUTED, 3) + 2;
+            } else {
+                Component what = demolishProject >= 0 ? Component.translatable("lordsoutpost.rts.demolish.project")
+                        : Component.translatable("lordsoutpost.rts.demolish.fort");
+                y += Ui.wrapped(g, font, what, x + 2, y, w - 4, Ui.BAD, 3) + 2;
+                Ui.button(g, font, hits, x, y, w / 2 - 1, 12, Component.translatable("lordsoutpost.rts.demolish.confirm"), true, false, mx, my,
+                        this::confirmDemolish, Component.translatable("lordsoutpost.rts.demolish.confirm.tip"));
+                Ui.button(g, font, hits, x + w / 2 + 1, y, w / 2 - 1, 12, Component.translatable("lordsoutpost.rts.cancel_pick"), true, false, mx, my,
+                        () -> demolishAt = null, null);
+                y += 14;
+            }
         }
         y += 4;
         // Склад: в наличии и в резерве под заказы.
@@ -436,6 +546,53 @@ public class RtsScreen extends Screen {
     }
 
     private void drawOrders(GuiGraphics g, OutpostView.Manage m, int mx, int my) {
+        int bottom = drawOrderList(g, m, mx, my);
+        drawBuilt(g, m, mx, my, bottom + 6);
+    }
+
+    /** Готовые постройки Лорда: уровень, улучшение (со стоимостью) и снос (двойным нажатием). */
+    private void drawBuilt(GuiGraphics g, OutpostView.Manage m, int mx, int my, int y) {
+        int w = RIGHT_W, x = width - w - 6;
+        List<OutpostView.ProjectInfo> built = new ArrayList<>();
+        for (var p : m.projects) if (p.done()) built.add(p);
+        if (built.isEmpty()) return;
+        int rows = Math.min(built.size(), Math.max(1, (height - y - 22) / 13));
+        int ph = 14 + rows * 13;
+        Ui.panel(g, x - 2, y - 2, w + 4, ph);
+        rightBottom = y + ph + 2;
+        g.drawString(font, Component.translatable("lordsoutpost.rts.built", built.size()), x + 2, y + 2, Ui.ACCENT, false);
+        y += 13;
+        for (int i = built.size() - rows; i < built.size(); i++) {
+            OutpostView.ProjectInfo p = built.get(i);
+            Component name = Component.translatable("lordsoutpost.project." + p.type()).append(p.maxLevel() > 1 ? " " + p.level() + "/" + p.maxLevel() : "");
+            Ui.text(g, font, name, x + 3, y + 2, w - 36, Ui.TEXT);
+            hits.add(x, y, w - 34, 12, () -> RtsCamera.focusOn(p.x() + 0.5, p.z() + 0.5), Component.translatable("lordsoutpost.rts.show"));
+            boolean canUp = p.level() < p.maxLevel() && !p.upgrading();
+            StringBuilder sb = new StringBuilder();
+            for (var e : p.upCost().entrySet()) {
+                if (sb.length() > 0) sb.append(", ");
+                sb.append(e.getKey().label().getString()).append(" ").append(e.getValue());
+            }
+            Component upTip = p.upgrading() ? Component.translatable("lordsoutpost.rts.upgrading")
+                    : p.level() >= p.maxLevel() ? Component.translatable("lordsoutpost.rts.max_level")
+                    : Component.translatable("lordsoutpost.rts.upgrade.tip", p.level() + 1, sb.length() == 0 ? "—" : sb.toString());
+            Ui.button(g, font, hits, x + w - 32, y, 14, 11, Component.literal("▲"), canUp, false, mx, my,
+                    () -> Net.action(view.id, Action.UPGRADE_PROJECT, t -> t.putLong("id", p.id())), upTip);
+            boolean armed = confirmId == p.id() && System.currentTimeMillis() - confirmAt < 3000;
+            Ui.button(g, font, hits, x + w - 16, y, 14, 11, Component.literal(armed ? "!" : "✕"), true, armed, mx, my, () -> {
+                if (confirmId == p.id() && System.currentTimeMillis() - confirmAt < 3000) {
+                    Net.action(view.id, Action.DEMOLISH_PROJECT, t -> t.putLong("id", p.id()));
+                    confirmId = -1;
+                } else {
+                    confirmId = p.id();
+                    confirmAt = System.currentTimeMillis();
+                }
+            }, Component.translatable(armed ? "lordsoutpost.rts.demolish.again" : "lordsoutpost.rts.demolish.one"));
+            y += 13;
+        }
+    }
+
+    private int drawOrderList(GuiGraphics g, OutpostView.Manage m, int mx, int my) {
         int w = RIGHT_W, x = width - w - 6, y = 24;
         List<OutpostView.ProjectInfo> orders = activeOrders();
         int ph = orders.isEmpty() ? 34 : 16 + orders.size() * 46;
@@ -445,12 +602,13 @@ public class RtsScreen extends Screen {
         y += 14;
         if (orders.isEmpty()) {
             Ui.wrapped(g, font, Component.translatable("lordsoutpost.rts.no_orders"), x + 2, y, w - 4, Ui.MUTED, 3);
-            return;
+            return rightBottom;
         }
         for (int i = 0; i < orders.size(); i++) {
             OutpostView.ProjectInfo p = orders.get(i);
             g.fill(x, y, x + w, y + 43, 0xFF151B26);
-            g.drawString(font, Component.translatable("lordsoutpost.project." + p.type()), x + 3, y + 3, Ui.TEXT, false);
+            g.drawString(font, p.upgrade() ? Component.translatable("lordsoutpost.rts.upgrade_order", Component.translatable("lordsoutpost.project." + p.type()), p.level())
+                    : Component.translatable("lordsoutpost.project." + p.type()), x + 3, y + 3, Ui.TEXT, false);
             int bx = x + w - 48;
             boolean first = i == 0, last = i == orders.size() - 1;
             Ui.button(g, font, hits, bx, y + 2, 14, 10, Component.literal("▲"), !first, false, mx, my,
@@ -489,6 +647,7 @@ public class RtsScreen extends Screen {
             hits.add(x, y + 12, w - 50, 30, () -> RtsCamera.focusOn(p.x() + 0.5, p.z() + 0.5), Component.translatable("lordsoutpost.rts.show"));
             y += 46;
         }
+        return rightBottom;
     }
 
     private void renderIcon(GuiGraphics g, Resource r, int x, int y) {

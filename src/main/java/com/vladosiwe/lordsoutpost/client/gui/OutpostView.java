@@ -67,9 +67,14 @@ public final class OutpostView {
     public record ZoneInfo(String id, boolean relocatable, boolean moved, String problem) {}
 
     public record ProjectInfo(long id, String type, int state, float progress, int paid, int size,
-                              int x, int y, int z, int rot, int builders, EnumMap<Resource, Integer> lack, EnumMap<Resource, Integer> remaining) {
+                              int x, int y, int z, int rot, int builders, EnumMap<Resource, Integer> lack, EnumMap<Resource, Integer> remaining,
+                              int level, int maxLevel, boolean upgrade, boolean upgrading, EnumMap<Resource, Integer> upCost) {
         public boolean active() {
             return state <= 1;
+        }
+
+        public boolean done() {
+            return state == 2;
         }
     }
 
@@ -169,7 +174,9 @@ public final class OutpostView {
                 CompoundTag p = ps.getCompound(i);
                 projects.add(new ProjectInfo(p.getLong("id"), p.getString("type"), p.getByte("state"), p.getFloat("progress"), p.getInt("paid"), p.getInt("size"),
                         p.getInt("x"), p.getInt("y"), p.getInt("z"), p.getByte("rot"), p.getInt("builders"),
-                        resources(p.getCompound("lack")), resources(p.getCompound("remaining"))));
+                        resources(p.getCompound("lack")), resources(p.getCompound("remaining")),
+                        Math.max(1, p.getByte("level")), Math.max(1, p.getByte("maxLevel")), p.getBoolean("upgrade"), p.getBoolean("upgrading"),
+                        resources(p.getCompound("upCost"))));
             }
             CompoundTag cs = m.getCompound("costs");
             for (String type : cs.getAllKeys()) {

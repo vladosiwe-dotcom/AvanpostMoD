@@ -22,18 +22,36 @@ import java.util.List;
  */
 public final class Project {
     public enum Type {
-        HOUSE("house", null), WATCHTOWER("watchtower", null), WALL("wall", null),
+        HOUSE("house", null, 3), WATCHTOWER("watchtower", null, 1), WALL("wall", null, 1),
         /** Новые места рабочих объектов: после постройки соответствующая зона переезжает сюда. */
-        PEN("pen", WorkZone.PEN), SMITHY("smithy", WorkZone.SMITHY), MINE("mine", WorkZone.MINE);
+        PEN("pen", WorkZone.PEN, 1), SMITHY("smithy", WorkZone.SMITHY, 1), MINE("mine", WorkZone.MINE, 1),
+        /** Казарма: койки гарнизона (население форта), улучшается до второго уровня. */
+        BARRACKS("barracks", null, 2),
+        /** Поле фермера 7×7 с водой — переносит пашню. */
+        FARM("farm", WorkZone.FARM, 1),
+        /** Дровяной двор: колода, поленница — сюда лесоруб сносит дрова. */
+        WOODYARD("woodyard", WorkZone.WOODYARD, 1);
 
         public static final Type[] VALUES = values();
         public final String id;
         /** Зона, которую переносит эта постройка (null — обычная постройка). */
         @Nullable public final WorkZone relocates;
+        /** Сколько уровней у постройки (1 — не улучшается). */
+        public final int maxLevel;
 
-        Type(String id, @Nullable WorkZone relocates) {
+        Type(String id, @Nullable WorkZone relocates, int maxLevel) {
             this.id = id;
             this.relocates = relocates;
+            this.maxLevel = maxLevel;
+        }
+
+        /** Кроватей в постройке этого уровня (население). */
+        public int beds(int level) {
+            return switch (this) {
+                case HOUSE -> 2 * level;
+                case BARRACKS -> 4 * level;
+                default -> 0;
+            };
         }
 
         public Component label() {
@@ -63,6 +81,15 @@ public final class Project {
     /** Какие шаги уже стоят в мире. */
     public final BitSet placed = new BitSet();
     public long orderedAt;
+    /** Уровень постройки (1 — базовый). */
+    public int level = 1;
+    /**
+     * Улучшение: id прежней постройки, которую эта заменяет (-1 — новая постройка), и её уровень. Пока улучшение
+     * строится, шаги — только разница между уровнями (что добавить, заменить или убрать); готовое улучшение
+     * становится обычной постройкой нового уровня, прежняя запись удаляется.
+     */
+    public long replaces = -1;
+    public int fromLevel;
 
     private transient List<Step> steps;
     private transient BitSet floors;
@@ -78,7 +105,8 @@ public final class Project {
     /** Шаги в координатах относительно центра аванпоста (как у плана тиров), снизу вверх. */
     public List<Step> steps(Outpost o) {
         if (steps == null || cachedPalette != o.palette) {
-            List<ProjectDesigner.Cell> cells = ProjectDesigner.design(type, o.palette);
+            List<ProjectDesigner.Cell> cells = fromLevel > 0 ? ProjectDesigner.upgrade(type, o.palette, fromLevel, level)
+                    : ProjectDesigner.design(type, o.palette, level);
             steps = new ArrayList<>(cells.size());
             floors = new BitSet();
             for (int i = 0; i < cells.size(); i++) {
@@ -91,6 +119,12 @@ public final class Project {
             cachedPalette = o.palette;
         }
         return steps;
+    }
+
+    /** Сбросить кэш шагов (улучшение достроено — шаги снова весь чертёж уровня). */
+    public void resetSteps() {
+        steps = null;
+        floors = null;
     }
 
     public boolean floor(Outpost o, int index) {
@@ -141,6 +175,9 @@ public final class Project {
         t.putInt("paid", paid);
         t.putLongArray("placed", placed.toLongArray());
         t.putLong("ordered", orderedAt);
+        t.putByte("level", (byte) level);
+        t.putLong("replaces", replaces);
+        t.putByte("fromLevel", (byte) fromLevel);
         return t;
     }
 
@@ -153,6 +190,9 @@ public final class Project {
         p.paid = Math.max(0, t.getInt("paid"));
         p.placed.or(BitSet.valueOf(t.getLongArray("placed")));
         p.orderedAt = t.getLong("ordered");
+        p.level = Math.max(1, Math.min(type.maxLevel, t.contains("level") ? t.getByte("level") : 1));
+        p.replaces = t.contains("replaces") ? t.getLong("replaces") : -1;
+        p.fromLevel = Math.max(0, t.getByte("fromLevel"));
         return p;
     }
 }

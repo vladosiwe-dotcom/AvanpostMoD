@@ -476,8 +476,10 @@ public final class Outpost {
 
     public int populationCap() {
         int base = switch (tier) { case 1 -> 10; case 2 -> 18; default -> 28; };
-        // Каждый построенный по заказу дом — ещё две кровати (не больше восьми домов).
-        return base + 2 * Math.min(8, builtProjects(Project.Type.HOUSE));
+        // Кровати построек Лорда (дома и казармы, по уровню), всего не больше 40.
+        int beds = 0;
+        for (Project p : projects) if (p.replaces < 0 && p.built(this)) beds += p.type.beds(p.level);
+        return base + Math.min(40, beds);
     }
 
     public int builtProjects(Project.Type type) {

@@ -178,6 +178,11 @@ add(P + 'event.pyromancer_died', 'Пиромант пал. Новый придё
 add(P + 'event.project_ordered', 'Лорд заказал постройку: %s.', 'The Lord ordered a building: %s.')
 add(P + 'event.project_done', 'Достроено: %s.', 'Completed: %s.')
 add(P + 'event.project_cancelled', 'Заказ отменён: %s.', 'Order cancelled: %s.')
+add(P + 'event.project_upgraded', 'Улучшено: %s, уровень %s.', 'Upgraded: %s, level %s.')
+add(P + 'event.project_upgrade_ordered', 'Лорд заказал улучшение: %s до уровня %s.', 'The Lord ordered an upgrade: %s to level %s.')
+add(P + 'event.project_demolished', 'Снесено: %s, материалы на складе.', 'Demolished: %s, materials returned to storage.')
+add(P + 'event.fort_demolished', 'Лорд снёс постройку форта (%s блоков), материалы на складе.', 'The Lord demolished a fort building (%s blocks), materials returned to storage.')
+add(P + 'msg.demolished', 'Снесено блоков: %s. На склад: %s.', 'Blocks removed: %s. To storage: %s.')
 add(P + 'event.caravan_goods_lost', 'Вьючное животное каравана пало — груз остался на дороге.', 'The caravan\'s pack animal fell — its cargo lies on the road.')
 add(P + 'event.mine_ready', 'Новый шахтный ствол прокопан: шахтёр начинает новый штрек.', 'The new mine shaft is dug: the miner starts a new tunnel.')
 add(P + 'event.zone_moved', 'Рабочая зона «%s» перенесена в %s.', 'Work zone "%s" moved to %s.')
@@ -335,7 +340,10 @@ add(P + 'ui.build.cancel', 'Отменить', 'Cancel')
 add(P + 'ui.build.cancel.tip', 'Построенное останется, неистраченные материалы вернутся на склад.', 'What is built stays; unused materials go back to storage.')
 add(P + 'ui.build.hint', 'Постройки оплачиваются из тех же ресурсов и строятся теми же строителями, что и форт, но после работ по плану тира. Пока вас нет, оплаченное встанет при возвращении. При голоде стройка ждёт.', 'Orders use the same resources and builders as the fort, after the tier plan work. While you are away, what is paid for is placed when you return. During famine construction waits.')
 for k, ru, en, d_ru, d_en in [
-        ('house', 'Дом', 'House', '+2 места для жителей, две кровати.', '+2 resident places, two beds.'),
+        ('house', 'Дом', 'House', 'Жильё: 2 кровати. Улучшается: 4 кровати (ур. 2), 8 кроватей (ур. 3).', 'Housing: 2 beds. Upgrades: 4 beds (lv. 2), 8 beds (lv. 3).'),
+        ('barracks', 'Казарма', 'Barracks', 'Каменная казарма: 8 коек. Улучшается до 12 коек (ур. 2).', 'Stone barracks: 8 bunks. Upgrades to 12 bunks (lv. 2).'),
+        ('farm', 'Поле', 'Field', 'Пашня 7×7 с водой и фонарями. Когда готово, фермер переходит сюда.', 'A 7×7 field with water and lanterns. When done, the farmer moves here.'),
+        ('woodyard', 'Дровяной двор', 'Woodyard', 'Колода и поленница. Лесоруб переносит свой двор сюда.', 'Chopping block and woodpile. The lumberjack moves his yard here.'),
         ('watchtower', 'Сторожевая башня', 'Watchtower', 'Пост для стрелка, +5% к обороне.', 'A post for an archer, +5% defence.'),
         ('wall', 'Участок стены', 'Wall section', 'Стена 11 блоков, +3% к обороне.', '11-block wall, +3% defence.'),
         ('pen', 'Новый загон', 'New pen', 'Загон 7×7. Когда готов, скотовод переводит туда скот.', 'A 7×7 pen. When done, the rancher moves the herd there.'),
@@ -364,6 +372,9 @@ for k, ru, en in [('ok', 'Заказ принят: строители возьм
                   ('too_many', 'Слишком много заказов одновременно.', 'Too many orders at once.'),
                   ('no_ground', 'Здесь нет ровной земли рядом с фортом.', 'There is no level ground near the fort here.'),
                   ('uneven', 'Слишком неровная земля: под полом обрыв или холм.', 'The ground is too uneven: a drop or a hill under the floor.'),
+                  ('max_level', 'Постройка уже максимального уровня.', 'The building is already at maximum level.'),
+                  ('not_found', 'Здесь нет постройки, которую можно снести.', 'There is no building here that can be demolished.'),
+                  ('protected', 'Стены, ворота, донжон и склад сносить нельзя.', 'Walls, gates, keep and storehouse cannot be demolished.'),
                   ('no_resources', 'Не хватает ресурсов на складе (с учётом резерва других заказов).', 'Not enough resources in the storehouse (other orders\' reserve included).')]:
     add(P + 'msg.project.' + k, ru, en)
 add(P + 'rts.title', 'Режим строительства', 'Construction mode')
@@ -382,6 +393,20 @@ add(P + 'rts.missing', 'Не хватает: %s', 'Missing: %s')
 add(P + 'rts.confirm', 'Заказать', 'Order')
 add(P + 'rts.confirm.tip', 'Ресурсы резервируются на складе; строители принесут материал и поставят постройку блок за блоком.', 'Resources are reserved in the storehouse; builders bring materials and place the building block by block.')
 add(P + 'rts.cancel_pick', 'Отменить выбор', 'Cancel')
+add(P + 'rts.demolish', 'Снос', 'Demolish')
+add(P + 'rts.demolish.tip', 'Выберите постройку ЛКМ и подтвердите. Снос мгновенный, материалы возвращаются на склад. Стены, ворота, донжон и склад сносить нельзя.', 'Pick a building with LMB and confirm. Demolition is instant, materials go back to storage. Walls, gates, keep and storehouse cannot be demolished.')
+add(P + 'rts.demolish.pick', 'Нажмите ЛКМ по постройке, которую снести.', 'Click a building to demolish.')
+add(P + 'rts.demolish.project', 'Снести вашу постройку целиком?', 'Demolish your building entirely?')
+add(P + 'rts.demolish.fort', 'Снести эту постройку форта? Следующие тиры её не восстановят.', 'Demolish this fort building? Later tiers will not rebuild it.')
+add(P + 'rts.demolish.confirm', 'Снести', 'Demolish')
+add(P + 'rts.demolish.confirm.tip', 'Сразу: блоки исчезнут, материалы и содержимое сундуков — на склад.', 'Immediately: blocks vanish, materials and chest contents go to storage.')
+add(P + 'rts.demolish.one', 'Снести (нажмите ещё раз для подтверждения)', 'Demolish (click again to confirm)')
+add(P + 'rts.demolish.again', 'Нажмите ещё раз — постройка будет снесена', 'Click again to demolish')
+add(P + 'rts.built', 'Постройки (%s)', 'Buildings (%s)')
+add(P + 'rts.upgrade.tip', 'Улучшить до уровня %s. Стоимость: %s', 'Upgrade to level %s. Cost: %s')
+add(P + 'rts.upgrading', 'Улучшение уже строится', 'Upgrade under construction')
+add(P + 'rts.max_level', 'Максимальный уровень', 'Maximum level')
+add(P + 'rts.upgrade_order', '%s → ур. %s', '%s → lv. %s')
 add(P + 'rts.rotation', 'Поворот: %s° (колесо мыши)', 'Rotation: %s° (mouse wheel)')
 add(P + 'rts.exit', 'Выйти из режима строительства (Esc)', 'Leave construction mode (Esc)')
 add(P + 'rts.exit_short', 'Выход', 'Exit')

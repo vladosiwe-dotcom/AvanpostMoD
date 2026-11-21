@@ -97,6 +97,7 @@ public final class OutpostCommands {
                     c.getSource().sendSuccess(() -> Component.literal("mine = " + o.mineCursor), true);
                     return 1;
                 })))
+                .then(Commands.literal("probe").executes(OutpostCommands::probe))
                 .then(Commands.literal("remove").executes(OutpostCommands::remove)));
     }
 
@@ -105,6 +106,42 @@ public final class OutpostCommands {
     }
 
     /** Аванпост, в котором стоит источник команды, или его собственный. */
+    /** Проверка мест под постройку: карта двора (буква — причина отказа, '.' — можно) в лог сервера. */
+    private static int probe(CommandContext<CommandSourceStack> c) {
+        Outpost o = here(c);
+        if (o == null) return 0;
+        var level = c.getSource().getLevel();
+        var type = com.vladosiwe.lordsoutpost.outpost.Project.Type.HOUSE;
+        int r = o.radius() + 6;
+        java.util.EnumMap<com.vladosiwe.lordsoutpost.data.Projects.OrderResult, Integer> tally = new java.util.EnumMap<>(com.vladosiwe.lordsoutpost.data.Projects.OrderResult.class);
+        StringBuilder map = new StringBuilder();
+        for (int dz = -r; dz <= r; dz += 2) {
+            map.append('\n');
+            for (int dx = -r; dx <= r; dx += 2) {
+                var res = com.vladosiwe.lordsoutpost.data.Projects.orderAt(level, o, type, o.center.getX() + dx, o.center.getZ() + dz, 0, level.getGameTime(), true);
+                tally.merge(res, 1, Integer::sum);
+                if (res == com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OVERLAPS_FORT && Math.abs(dx) < 14 && Math.abs(dz) < 14 && (dx + dz) % 8 == 0) {
+                    int y = com.vladosiwe.lordsoutpost.data.Projects.groundY(level, o.center.getX() + dx, o.center.getZ() + dz);
+                    com.vladosiwe.lordsoutpost.LordsOutpost.LOGGER.info("PROBE F at {},{} y={} center.y={}: {}", dx, dz, y, o.center.getY(),
+                            com.vladosiwe.lordsoutpost.data.Projects.overlapDetail(o, type, new BlockPos(o.center.getX() + dx, y, o.center.getZ() + dz), 0));
+                }
+                map.append(switch (res) { case OK -> '.'; case OVERLAPS_FORT -> 'F'; case OCCUPIED -> 'X'; case NO_GROUND -> 'G'; case UNEVEN -> 'U'; case NOT_HERE -> 'N'; default -> '?'; });
+            }
+        }
+        com.vladosiwe.lordsoutpost.LordsOutpost.LOGGER.info("PROBE {} r={} {}{}", Long.toHexString(o.id), r, tally, map);
+        for (int t = o.tier; t <= Math.min(3, o.tier + 1); t++) {
+            java.util.Map<String, Integer> kinds = new java.util.TreeMap<>();
+            for (var e : o.blueprint().design(t).cells.entrySet()) {
+                if (e.getKey().getY() < 1 || e.getValue().state().isAir()) continue;
+                kinds.merge("st" + e.getValue().stage() + ":" + net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(e.getValue().state().getBlock()).getPath(), 1, Integer::sum);
+            }
+            final int tt = t;
+            com.vladosiwe.lordsoutpost.LordsOutpost.LOGGER.info("PROBE tier {} cells y>=1: {}", tt, kinds);
+        }
+        c.getSource().sendSuccess(() -> Component.literal("probe: " + tally), false);
+        return 1;
+    }
+
     private static Outpost here(CommandContext<CommandSourceStack> c) {
         OutpostSavedData data = OutpostSavedData.get(overworld(c));
         Outpost o = c.getSource().getLevel().dimension() == Level.OVERWORLD ? data.findAt(BlockPos.containing(c.getSource().getPosition())) : null;

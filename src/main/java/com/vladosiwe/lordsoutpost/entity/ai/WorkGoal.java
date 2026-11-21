@@ -212,6 +212,8 @@ public class WorkGoal extends Goal {
         herdStage = 0;
         prey = null;
         farmTarget = null;
+        grassTarget = null;
+        grassBroken = 0;
         farmHarvest = false;
         farmTill = false;
         if (task != null && task.active() && o != null) Logistics.cancel(o, task, "interrupted", mob.level().getGameTime());
@@ -254,11 +256,14 @@ public class WorkGoal extends Goal {
                 phase = Phase.DEPOSIT;
                 return;
             }
+            // Ночь: путь к дому и поиск свободной кровати (перебор сотен блоков) — раз в полсекунды, а не каждый тик;
+            // раньше каждый неуснувший житель (чаще всего скотовод, вернувшийся с охоты последним) перебирал их ночь напролёт.
+            if ((mob.tickCount + mob.getId()) % 10 != 0) return;
             release();
             List<BlockPos> beds = new ArrayList<>(o.markers(Marker.HOUSING));
             // Дома, построенные по заказу Лорда, — тоже жильё.
             for (com.vladosiwe.lordsoutpost.outpost.Project p : o.projects) {
-                if (p.type == com.vladosiwe.lordsoutpost.outpost.Project.Type.HOUSE && p.state == com.vladosiwe.lordsoutpost.outpost.Project.State.DONE) beds.add(p.origin.above());
+                if (p.type.beds(p.level) > 0 && p.state == com.vladosiwe.lordsoutpost.outpost.Project.State.DONE) beds.add(p.origin.above());
             }
             BlockPos bed = beds.isEmpty() ? o.marker(Marker.YARD) : beds.get(Math.floorMod(r.id.hashCode(), beds.size()));
             if (go(o, bed, 2.0, 400)) {
@@ -833,20 +838,26 @@ public class WorkGoal extends Goal {
         Outpost.MineSite site = o.mine();
         BlockPos shaft = site.bottom(), dirPos = site.dir();
         int dx = Integer.signum(dirPos.getX() - shaft.getX()), dz = Integer.signum(dirPos.getZ() - shaft.getZ());
-        int lx = -dz, lz = dx;
-        BlockPos prev = shaft;
-        // Поколение 0 — главный ход с короткими отвилками; каждое следующее удлиняет все отвилки ещё на BRANCH_LENGTH.
-        // Так штрек не кончается за пару дней, а уже выданные номера столбцов (mineCursor) остаются прежними.
-        for (int k = 1; k <= MAIN_TUNNEL; k++) {
-            BlockPos main = shaft.offset(dx * k, 0, dz * k);
-            out.add(new Column(main, prev, k % 6 == 0));
-            prev = main;
-            if (k % BRANCH_EVERY == 0) branch(out, main, lx, lz, 0);
+        // Выработка всей площадью: кольца вокруг дна ствола, всё подряд, а не штрек с отвилками. Каждая клетка копается
+        // с соседней клетки предыдущего кольца (уже выкопанной); кольцо начинается со стороны штрека шахты.
+        for (int k = 1; k <= MINE_RINGS; k++) {
+            List<int[]> ring = new ArrayList<>();
+            for (int x = -k; x <= k; x++)
+                for (int z = -k; z <= k; z++) if (Math.max(Math.abs(x), Math.abs(z)) == k) ring.add(new int[]{x, z});
+            double start = Math.atan2(dz, dx);
+            ring.sort(java.util.Comparator.comparingDouble(c -> Math.floorMod((long) Math.round((Math.atan2(c[1], c[0]) - start) * 1000), Math.round(Math.PI * 2000))));
+            for (int[] c : ring) {
+                BlockPos b = shaft.offset(c[0], 0, c[1]);
+                BlockPos stand = shaft.offset(c[0] - Integer.signum(c[0]) * (Math.abs(c[0]) == k ? 1 : 0),
+                        0, c[1] - Integer.signum(c[1]) * (Math.abs(c[1]) == k ? 1 : 0));
+                out.add(new Column(b, stand, Math.floorMod(c[0], 5) == 0 && Math.floorMod(c[1], 5) == 0));
+            }
         }
-        for (int g = 1; g < GENERATIONS; g++)
-            for (int k = BRANCH_EVERY; k <= MAIN_TUNNEL; k += BRANCH_EVERY) branch(out, shaft.offset(dx * k, 0, dz * k), lx, lz, g);
         return out;
     }
+
+    /** Колец выработки вокруг ствола: площадь до 49×49. */
+    private static final int MINE_RINGS = 24;
 
     private static void branch(List<Column> out, BlockPos main, int lx, int lz, int generation) {
         for (int side = -1; side <= 1; side += 2) {
@@ -1514,7 +1525,7 @@ public class WorkGoal extends Goal {
 
     // ============================== Скотовод ==============================
 
-    private static final int CULL = 1, SHEAR = 2, BREED = 3, FETCH = 4, MILK = 5, EGGS = 6;
+    private static final int CULL = 1, SHEAR = 2, BREED = 3, FETCH = 4, MILK = 5, EGGS = 6, CULL_STRAY = 7;
     /** Корм по ванильным правилам: что подходит животному, решает оно само (Animal.isFood). */
     private static final Item[] FEEDS = {Items.WHEAT, Items.CARROT, Items.POTATO, Items.BEETROOT,
             Items.WHEAT_SEEDS, Items.BEETROOT_SEEDS, Items.MELON_SEEDS, Items.PUMPKIN_SEEDS};
@@ -1675,6 +1686,27 @@ public class WorkGoal extends Goal {
             herdAction = CULL;
             if (animal != null) return true;
         }
+        // 1б. Загон полон, а скот бродит по двору (расплодился, сбежал, забрёл): лишних — на мясо, начиная с ближних.
+        if (inside.size() >= cap) {
+            AABB yard = new AABB(o.center).inflate(o.radius(), 8, o.radius());
+            Animal stray = null;
+            double best = Double.MAX_VALUE;
+            for (Animal a : level.getEntitiesOfClass(Animal.class, yard, a -> a.isAlive() && !a.isBaby()
+                    && (a instanceof Cow || a instanceof Sheep || a instanceof Pig || a instanceof Chicken))) {
+                if (inside.contains(a) || !o.insideWalls(a.blockPosition()) || a.isLeashed() || a.hasCustomName()
+                        || a.getPersistentData().contains(NpcLifecycle.CARAVAN_TAG) || unreachableAnimals.containsKey(a.getUUID())) continue;
+                double d = a.distanceToSqr(mob);
+                if (d < best) {
+                    best = d;
+                    stray = a;
+                }
+            }
+            if (stray != null) {
+                animal = stray;
+                herdAction = CULL_STRAY;
+                return true;
+            }
+        }
         // 2. Яйца в загоне.
         egg = level.getEntitiesOfClass(ItemEntity.class, penBox(o).inflate(0.5, 1, 0.5), e -> e.isAlive() && e.getItem().is(Items.EGG))
                 .stream().findFirst().orElse(null);
@@ -1771,6 +1803,15 @@ public class WorkGoal extends Goal {
             herdStage = 1;
         }
         if (herdAction == FETCH) return lure(level, o, r, gate, outside, now);
+        if (herdAction == CULL_STRAY) {
+            // Лишний скот во дворе: подойти и забить, калитку загона не трогать.
+            if (targetGone) return true;
+            if (!walkTo(animal.blockPosition(), 2.0)) return false;
+            mob.swing(InteractionHand.MAIN_HAND);
+            animal.hurt(mob.damageSources().mobAttack(mob), Float.MAX_VALUE);
+            r.lastRealWork = now;
+            return true;
+        }
 
         // Действия внутри загона: войти через калитку, сделать дело рядом с животным, выйти и закрыть калитку.
         if (herdStage == 1) {
@@ -2442,7 +2483,9 @@ public class WorkGoal extends Goal {
         double plantDistance = Double.MAX_VALUE;
         double tillDistance = Double.MAX_VALUE;
         // Просторная планировка: поле 9×9 с водой в центре; первая — пятачок 5×5 вокруг воды.
-        int fr = o.version >= 2 && o.zones.override(WorkZone.FARM) == null ? com.vladosiwe.lordsoutpost.blueprint.FortDesigner.FIELD_HALF : 2;
+        // Поле по чертежу второй планировки и поле-постройка Лорда — 7×7; поле, просто перенесённое в точку, — 5×5.
+        int fr = (o.version >= 2 && o.zones.override(WorkZone.FARM) == null) || o.zones.link(WorkZone.FARM) != null
+                ? com.vladosiwe.lordsoutpost.blueprint.FortDesigner.FIELD_HALF : 2;
         for (int dx = -fr; dx <= fr; dx++) {
             for (int dz = -fr; dz <= fr; dz++) {
                 if (dx == 0 && dz == 0) continue;
@@ -2488,6 +2531,8 @@ public class WorkGoal extends Goal {
 
     private boolean farm(ServerLevel level, Outpost o, Resident r, long now) {
         if (farmTarget == null) return true;
+        // Идёт сбор семян в траве — продолжить его, а не возвращаться к полю.
+        if (grassTarget != null || grassBroken > 0) return gatherSeeds(level, o, r, now);
         if (!go(o, farmTarget, 2.2, 300)) return false;
         BlockState crop = level.getBlockState(farmTarget);
         // Каждое действие занимает время, как у игрока: вспахать, посадить, сжать — а не всё поле за секунду.
@@ -2524,10 +2569,7 @@ public class WorkGoal extends Goal {
                 // Семян в ноше нет: запрос на склад. Неприкосновенный запас семян не выдаётся.
                 if (task == null) {
                     int spare = Logistics.available(level, o, Items.WHEAT_SEEDS, null) - FARM_SEED_RESERVE;
-                    if (spare <= 0) {
-                        noJobUntil = now + 600;
-                        return true;
-                    }
+                    if (spare <= 0) return gatherSeeds(level, o, r, now);
                     task = Logistics.request(level, o, r, OutpostTask.Type.FETCH_SEEDS, java.util.Map.of(Items.WHEAT_SEEDS, Math.min(8, spare)), now);
                     if (task == null) {
                         noJobUntil = now + 600;
@@ -2555,6 +2597,64 @@ public class WorkGoal extends Goal {
             return true;
         }
         return true;
+    }
+
+    @Nullable private BlockPos grassTarget;
+    private int grassBroken;
+
+    /**
+     * Семян нет ни в ноше, ни на складе: фермер идёт за стены рвать траву (семена выпадают, как у игрока, примерно
+     * из каждого восьмого куста). Собирает с запасом на поле (до 12 семян) и не дольше 40 кустов за раз — потом сажает.
+     */
+    private boolean gatherSeeds(ServerLevel level, Outpost o, Resident r, long now) {
+        int have = countCarried(Items.WHEAT_SEEDS);
+        if (have >= 12 || grassBroken >= 40) {
+            grassBroken = 0;
+            grassTarget = null;
+            if (have == 0) noJobUntil = now + 1200;
+            return have == 0;
+        }
+        if (grassTarget == null || !isGrass(level.getBlockState(grassTarget))) {
+            grassTarget = null;
+            BlockPos center = o.zone(WorkZone.FARM);
+            var rnd = mob.getRandom();
+            int inner = o.radius() + 4;
+            for (int i = 0; i < 48 && grassTarget == null; i++) {
+                double ang = rnd.nextDouble() * Math.PI * 2;
+                int dist = inner + rnd.nextInt(24);
+                int x = o.center.getX() + (int) Math.round(Math.cos(ang) * dist), z = o.center.getZ() + (int) Math.round(Math.sin(ang) * dist);
+                if (!level.hasChunk(x >> 4, z >> 4)) continue;
+                BlockPos top = new BlockPos(x, level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z), z);
+                for (int dy = 0; dy >= -1 && grassTarget == null; dy--) if (isGrass(level.getBlockState(top.above(dy)))) grassTarget = top.above(dy);
+            }
+            // За стенами травы нет — пробуем двор вокруг поля.
+            for (int i = 0; i < 24 && grassTarget == null; i++) {
+                int x = center.getX() + rnd.nextInt(25) - 12, z = center.getZ() + rnd.nextInt(25) - 12;
+                BlockPos top = new BlockPos(x, level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z), z);
+                if (isGrass(level.getBlockState(top))) grassTarget = top;
+            }
+            if (grassTarget == null) {
+                noJobUntil = now + 1200;
+                return true;
+            }
+        }
+        if (!go(o, grassTarget, 2.0, 400)) return false;
+        mob.swing(InteractionHand.MAIN_HAND);
+        BlockState grass = level.getBlockState(grassTarget);
+        for (ItemStack drop : Block.getDrops(grass, level, grassTarget, null, mob, mob.getMainHandItem())) {
+            if (!drop.is(Items.WHEAT_SEEDS)) continue;
+            ItemStack left = mob.collect(drop);
+            if (!left.isEmpty()) mob.spawnAtLocation(left);
+        }
+        level.destroyBlock(grassTarget, false, mob);
+        grassBroken++;
+        grassTarget = null;
+        r.lastRealWork = now;
+        return false;
+    }
+
+    private static boolean isGrass(BlockState s) {
+        return s.is(Blocks.SHORT_GRASS) || s.is(Blocks.TALL_GRASS) || s.is(Blocks.FERN) || s.is(Blocks.LARGE_FERN);
     }
 
     /** Есть ли место для предмета в ноше, включая объединение с существующей стопкой. */

@@ -822,6 +822,63 @@ public final class OutpostGameTests {
         h.succeed();
     }
 
+    /** Постройки RTS: дом строится, улучшается до второго уровня (4 кровати) и сносится мгновенно с возвратом материала. */
+    @GameTest(template = "empty", timeoutTicks = 200)
+    public static void buildingsUpgradeAndDemolish(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        BlockPos base = FAR.offset(2816, 0, 0);
+        for (int cx = -3; cx <= 6; cx++) for (int cz = -4; cz <= 4; cz++) level.getChunk((base.getX() >> 4) + cx, (base.getZ() >> 4) + cz);
+        BlockPos ground = new BlockPos(base.getX(), level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, base.getX(), base.getZ()) - 1, base.getZ());
+        Outpost o = virtualOutpost(level, data, ground, 1, UUID.randomUUID());
+        try {
+            long now = level.getGameTime();
+            var P = com.vladosiwe.lordsoutpost.data.Projects.class;
+            o.setStock(Resource.WOOD, 800);
+            o.setStock(Resource.STONE, 800);
+            int x = o.center.getX() + Layout.radius(o.version, 3) + Layout.MARGIN + 9, z = o.center.getZ();
+            var ok = com.vladosiwe.lordsoutpost.data.Projects.OrderResult.NOT_HERE;
+            // Место без деревьев и обрывов: ищем вдоль восточной стороны.
+            for (int dz = -16; dz <= 16 && ok != com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OK; dz += 4)
+                ok = com.vladosiwe.lordsoutpost.data.Projects.orderAt(level, o, com.vladosiwe.lordsoutpost.outpost.Project.Type.HOUSE, x, z + dz, 0, now, false);
+            h.assertTrue(ok == com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OK, "дом заказан: " + ok);
+            var house = o.projects.get(o.projects.size() - 1);
+            int cap0 = o.populationCap();
+            house.paid = house.size(o);
+            com.vladosiwe.lordsoutpost.data.Projects.arrive(level, o);
+            h.assertTrue(house.state == com.vladosiwe.lordsoutpost.outpost.Project.State.DONE, "дом построен");
+            h.assertTrue(o.populationCap() == cap0 + 2, "дом даёт 2 места: " + (o.populationCap() - cap0));
+            var up = com.vladosiwe.lordsoutpost.data.Projects.upgrade(level, o, house.id, now, false);
+            h.assertTrue(up == com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OK, "улучшение заказано: " + up);
+            var upgrade = o.projects.get(o.projects.size() - 1);
+            h.assertTrue(upgrade.replaces == house.id && upgrade.level == 2, "это улучшение дома");
+            upgrade.paid = upgrade.size(o);
+            com.vladosiwe.lordsoutpost.data.Projects.arrive(level, o);
+            h.assertTrue(upgrade.state == com.vladosiwe.lordsoutpost.outpost.Project.State.DONE && !o.projects.contains(house), "улучшение достроено, прежняя запись ушла");
+            h.assertTrue(upgrade.level == 2 && upgrade.replaces < 0, "дом второго уровня");
+            h.assertTrue(o.populationCap() == cap0 + 4, "дом 2 уровня даёт 4 места: " + (o.populationCap() - cap0));
+            int beds = 0;
+            for (var s : upgrade.steps(o)) {
+                var st = level.getBlockState(o.world(s.pos()));
+                if (st.getBlock() instanceof net.minecraft.world.level.block.BedBlock
+                        && st.getValue(net.minecraft.world.level.block.BedBlock.PART) == net.minecraft.world.level.block.state.properties.BedPart.HEAD) beds++;
+            }
+            h.assertTrue(beds == 4, "в доме 4 кровати: " + beds);
+            double wood = o.stock(Resource.WOOD);
+            var d = com.vladosiwe.lordsoutpost.data.Projects.demolish(level, o, upgrade.id, now);
+            h.assertTrue(d.result() == com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OK && d.blocks() > 50, "снос: " + d);
+            h.assertTrue(o.stock(Resource.WOOD) > wood + 30, "материал вернулся на склад");
+            h.assertTrue(!o.projects.contains(upgrade) && o.populationCap() == cap0, "постройки больше нет");
+            int left = 0;
+            for (var s : upgrade.steps(o)) if (!s.state().isAir() && level.getBlockState(o.world(s.pos())).getBlock() == s.state().getBlock()) left++;
+            h.assertTrue(left == 0, "блоков не осталось: " + left);
+        } finally {
+            OutpostManager.abandon(data, o, level.getGameTime());
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
     /**
      * Временное хранилище: склада нет (снесён при смене тира) — жители пользуются бочкой, которую поставил Лорд
      * внутри стен; когда склад снова стоит, временное хранилище больше не используется.
@@ -900,11 +957,13 @@ public final class OutpostGameTests {
         Outpost o = virtualOutpost(level, data, ground, 1, UUID.randomUUID());
         try {
             long now = level.getGameTime();
-            var fort = com.vladosiwe.lordsoutpost.data.Projects.order(level, o, com.vladosiwe.lordsoutpost.outpost.Project.Type.HOUSE,
-                    o.center, net.minecraft.core.Direction.EAST, now);
+            // На донжон (постройка текущего тира) заказ не встанет; свободный двор и место будущих домов — можно.
+            BlockPos throne = o.marker(Marker.THRONE);
+            var fort = com.vladosiwe.lordsoutpost.data.Projects.orderAt(level, o, com.vladosiwe.lordsoutpost.outpost.Project.Type.HOUSE,
+                    throne.getX(), throne.getZ(), 0, now, true);
             h.assertTrue(fort == com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OVERLAPS_FORT
                             || fort == com.vladosiwe.lordsoutpost.data.Projects.OrderResult.OCCUPIED,
-                    "внутри чертежа форта заказ невозможен, получено " + fort);
+                    "на донжон заказ невозможен, получено " + fort);
             int edge = Layout.RADIUS[3] + Layout.MARGIN + 3;
             BlockPos stand = o.center.offset(edge, 0, 0);
             for (int dx = -2; dx <= 16; dx++)

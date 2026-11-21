@@ -452,6 +452,48 @@ public abstract class OutpostNpc extends PathfinderMob implements OutpostMember 
      * раньше счётчик рос каждый тик, и любой долгий, но нормальный переход заканчивался телепортом.
      */
     public boolean approach(BlockPos pos, double speed, double reach, int patience) {
+        if (!level().isClientSide && distanceToSqr(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5) > reach * reach) {
+            BlockPos via = gateWaypoint(pos);
+            if (via != null) {
+                approachDirect(via, speed, 1.2, patience);
+                return false;
+            }
+        }
+        return approachDirect(pos, speed, reach, patience);
+    }
+
+    /**
+     * Цель по другую сторону стены форта: точка у ближайших ворот (сначала с этой стороны, потом с той), иначе null.
+     * Поиск пути видит лишь ограниченную область и через весь двор в обход стен ворот не находит — раньше житель
+     * упирался в стену в сторону цели и, застряв, переносился. Теперь он идёт через ворота ногами.
+     */
+    @Nullable
+    private BlockPos gateWaypoint(BlockPos target) {
+        Outpost o = outpost();
+        if (o == null) return null;
+        boolean here = o.insideWalls(blockPosition()), there = o.insideWalls(target);
+        if (here == there) return null;
+        BlockPos gate = null;
+        double best = Double.MAX_VALUE;
+        for (BlockPos rel : o.design().markers(com.vladosiwe.lordsoutpost.blueprint.Marker.GATE)) {
+            BlockPos g = o.world(rel);
+            double d = g.distSqr(blockPosition()) + g.distSqr(target);
+            if (d < best) {
+                best = d;
+                gate = g;
+            }
+        }
+        if (gate == null) return null;
+        double dx = gate.getX() - o.center.getX(), dz = gate.getZ() - o.center.getZ();
+        double len = Math.max(1, Math.sqrt(dx * dx + dz * dz));
+        int ix = (int) Math.round(dx / len * 3), iz = (int) Math.round(dz / len * 3);
+        BlockPos inner = gate.offset(-ix, 0, -iz), outer = gate.offset(ix, 0, iz);
+        BlockPos near = here ? inner : outer, far = here ? outer : inner;
+        // Уже у ворот со своей стороны — проходим насквозь.
+        return blockPosition().distSqr(near) > 2.5 * 2.5 ? near : far;
+    }
+
+    private boolean approachDirect(BlockPos pos, double speed, double reach, int patience) {
         double dist = distanceToSqr(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5);
         if (dist <= reach * reach) {
             stuckTicks = 0;

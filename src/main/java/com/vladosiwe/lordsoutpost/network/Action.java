@@ -35,7 +35,10 @@ public enum Action {
     /** RTS: проверить место {type, x, z, rot, seq} — ответ пакетом PlacementCheck. */
     CHECK_PROJECT,
     /** Приоритет заказа: {id, up}. */
-    MOVE_PROJECT;
+    MOVE_PROJECT,
+    UPGRADE_PROJECT,
+    DEMOLISH_PROJECT,
+    DEMOLISH_AT;
 
     public static final Action[] VALUES = values();
 }

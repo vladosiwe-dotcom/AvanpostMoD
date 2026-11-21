@@ -463,6 +463,8 @@ public final class ChunkReconciliation {
         List<Step> plan = o.nextPlan();
         if (index < 0 || index >= plan.size()) return true;
         Step step = plan.get(index);
+        // Клетку разобрал Лорд (снос постройки или своими руками): следующий тир её не восстанавливает.
+        if (!step.state().isAir() && o.removedByPlayer(o.world(step.pos()))) return true;
         return !mayOverwrite(level, o, o.world(step.pos()), step.pos(), step.state(), o.design());
     }
 

@@ -32,15 +32,61 @@ public final class ProjectDesigner {
     private ProjectDesigner() {}
 
     public static List<Cell> design(Project.Type type, Palette p) {
+        return design(type, p, 1);
+    }
+
+    public static List<Cell> design(Project.Type type, Palette p, int level) {
         List<Cell> out = new ArrayList<>();
         switch (type) {
-            case HOUSE -> house(out, p);
+            // Дом: 5×5 на 2 кровати → 7×5 на 4 → 7×7 на 8.
+            case HOUSE -> dorm(out, p, level >= 2 ? 3 : 2, level >= 3 ? 3 : 2, false);
+            // Казарма: каменная, 7×7 на 8 коек → 9×7 на 12.
+            case BARRACKS -> dorm(out, p, level >= 2 ? 4 : 3, 3, true);
             case WATCHTOWER -> tower(out, p);
             case WALL -> wall(out, p);
             case PEN -> pen(out, p);
             case SMITHY -> smithy(out, p);
             case MINE -> mine(out, p);
+            case FARM -> farm(out, p);
+            case WOODYARD -> woodyard(out, p);
         }
+        return sorted(out);
+    }
+
+    /**
+     * Улучшение с уровня from на to: только то, что меняется. Новые и изменённые клетки ставятся, клетки старого
+     * уровня, которых нет в новом, разбираются (воздух). Совпадающее остаётся как есть и не стоит ресурсов.
+     */
+    public static List<Cell> upgrade(Project.Type type, Palette p, int from, int to) {
+        java.util.Map<BlockPos, BlockState> old = new java.util.HashMap<>();
+        for (Cell c : design(type, p, from)) old.put(c.pos(), c.state());
+        List<Cell> neu = design(type, p, to);
+        java.util.Set<BlockPos> covered = new java.util.HashSet<>();
+        List<Cell> out = new ArrayList<>();
+        boolean prevKept = false;
+        for (Cell c : neu) {
+            covered.add(c.pos());
+            BlockState was = old.get(c.pos());
+            boolean same = was != null ? was.equals(c.state()) : c.state().isAir();
+            if (same) {
+                prevKept = false;
+                continue;
+            }
+            out.add(new Cell(c.pos(), c.state(), c.chain() && prevKept, c.floor()));
+            prevKept = true;
+        }
+        for (var e : old.entrySet()) {
+            if (!covered.contains(e.getKey()) && !e.getValue().isAir()) out.add(new Cell(e.getKey(), Blocks.AIR.defaultBlockState(), false, false));
+        }
+        return sorted(out);
+    }
+
+    private static List<Cell> sorted(List<Cell> in) {
+        // Одна клетка — один шаг: из повторов остаётся последний (кровать поверх расчищенного воздуха и т.п.).
+        java.util.Set<BlockPos> seen = new java.util.HashSet<>();
+        List<Cell> out = new ArrayList<>(in.size());
+        for (int i = in.size() - 1; i >= 0; i--) if (seen.add(in.get(i).pos())) out.add(in.get(i));
+        java.util.Collections.reverse(out);
         // Снизу вверх, чтобы ничего не висело в воздухе; связанные половины (дверь, кровать) остаются рядом.
         List<List<Cell>> groups = new ArrayList<>();
         for (Cell c : out) {
@@ -75,29 +121,37 @@ public final class ProjectDesigner {
         out.add(new Cell(new BlockPos(x, y + 1, z), d.setValue(DoorBlock.HALF, DoubleBlockHalf.UPPER), true, false));
     }
 
-    /** Дом 5×5 на две кровати: пол, бревенчатые углы, стены из досок, окна, дверь на юг, плоская крыша. */
-    private static void house(List<Cell> out, Palette p) {
-        for (int x = -2; x <= 2; x++) for (int z = -2; z <= 2; z++) put(out, x, 0, z, p.planks.defaultBlockState());
+    /**
+     * Жилой дом или казарма: пол, бревенчатые углы, стены (у казармы снизу камень), окна, дверь на юг, плоская
+     * крыша; внутри проход по оси x = 0 и ряды кроватей изголовьем на север.
+     */
+    private static void dorm(List<Cell> out, Palette p, int hx, int hz, boolean barracks) {
+        for (int x = -hx; x <= hx; x++) for (int z = -hz; z <= hz; z++) put(out, x, 0, z, (barracks ? p.stone : p.planks).defaultBlockState());
         for (int y = 1; y <= 3; y++)
-            for (int x = -2; x <= 2; x++)
-                for (int z = -2; z <= 2; z++) {
-                    boolean edgeX = Math.abs(x) == 2, edgeZ = Math.abs(z) == 2;
+            for (int x = -hx; x <= hx; x++)
+                for (int z = -hz; z <= hz; z++) {
+                    boolean edgeX = Math.abs(x) == hx, edgeZ = Math.abs(z) == hz;
                     if (!edgeX && !edgeZ) {
                         put(out, x, y, z, Blocks.AIR.defaultBlockState());
                         continue;
                     }
-                    if (x == 0 && z == 2 && y <= 2) continue;
-                    boolean window = y == 2 && ((edgeX && z == 0) || (x == 0 && z == -2));
-                    put(out, x, y, z, edgeX && edgeZ ? log(p) : window ? Blocks.GLASS_PANE.defaultBlockState() : p.planks.defaultBlockState());
+                    if (x == 0 && z == hz && y <= 2) continue;
+                    boolean window = y == 2 && ((edgeX && Math.floorMod(z, 2) == 0 && !edgeZ) || (edgeZ && z == -hz && Math.floorMod(x, 2) == 0 && !edgeX));
+                    BlockState wall = barracks && y == 1 ? p.stone.defaultBlockState() : p.planks.defaultBlockState();
+                    put(out, x, y, z, edgeX && edgeZ ? log(p) : window ? Blocks.GLASS_PANE.defaultBlockState() : wall);
                 }
-        door(out, p, 0, 1, 2);
-        for (int x = -2; x <= 2; x++) for (int z = -2; z <= 2; z++) put(out, x, 4, z, p.roof.defaultBlockState());
-        for (int bx : new int[]{-1, 1}) {
-            BlockState bed = p.bed.defaultBlockState().setValue(BedBlock.FACING, Direction.NORTH);
-            out.add(new Cell(new BlockPos(bx, 1, 0), bed.setValue(BedBlock.PART, BedPart.FOOT), false, false));
-            out.add(new Cell(new BlockPos(bx, 1, -1), bed.setValue(BedBlock.PART, BedPart.HEAD), true, false));
-        }
-        put(out, 0, 2, -1, Blocks.WALL_TORCH.defaultBlockState().setValue(WallTorchBlock.FACING, Direction.SOUTH));
+        door(out, p, 0, 1, hz);
+        for (int x = -hx; x <= hx; x++) for (int z = -hz; z <= hz; z++) put(out, x, 4, z, p.roof.defaultBlockState());
+        BlockState bed = p.bed.defaultBlockState().setValue(BedBlock.FACING, Direction.NORTH);
+        // Ряды кроватей: изножье на z, изголовье на z-1; первый ряд у задней стены, второй — у входа (если дом глубокий).
+        int[] rows = hz >= 3 ? new int[]{-hz + 2, hz - 1} : new int[]{0};
+        for (int row : rows)
+            for (int bx = -(hx - 1); bx <= hx - 1; bx++) {
+                if (bx == 0) continue;
+                out.add(new Cell(new BlockPos(bx, 1, row), bed.setValue(BedBlock.PART, BedPart.FOOT), false, false));
+                out.add(new Cell(new BlockPos(bx, 1, row - 1), bed.setValue(BedBlock.PART, BedPart.HEAD), true, false));
+            }
+        put(out, 0, 2, -hz + 1, Blocks.WALL_TORCH.defaultBlockState().setValue(WallTorchBlock.FACING, Direction.SOUTH));
     }
 
     /** Сторожевая башня: сруб 3×3 с лестницей внутри, площадка 5×5 на высоте 6, ограждение. */
@@ -185,6 +239,51 @@ public final class ProjectDesigner {
         for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++) put(out, x, 3, z, p.slab.defaultBlockState());
     }
 
+    /** Поле 7×7 под пашню с водой в центре (увлажняет всё поле), по углам — фонари на столбиках, компостер у края. */
+    private static void farm(List<Cell> out, Palette p) {
+        for (int x = -4; x <= 4; x++)
+            for (int z = -4; z <= 4; z++) {
+                boolean field = Math.abs(x) <= 3 && Math.abs(z) <= 3;
+                put(out, x, 0, z, field ? (x == 0 && z == 0 ? Blocks.WATER.defaultBlockState() : Blocks.DIRT.defaultBlockState()) : p.path.defaultBlockState());
+                put(out, x, 1, z, Blocks.AIR.defaultBlockState());
+                put(out, x, 2, z, Blocks.AIR.defaultBlockState());
+            }
+        out.removeIf(c -> c.pos().equals(new BlockPos(0, 1, 0)));
+        out.add(new Cell(new BlockPos(0, 1, 0), Blocks.LILY_PAD.defaultBlockState(), false, false));
+        for (int sx = -1; sx <= 1; sx += 2)
+            for (int sz = -1; sz <= 1; sz += 2) {
+                replace(out, sx * 4, 1, sz * 4, p.fence.defaultBlockState());
+                replace(out, sx * 4, 2, sz * 4, Blocks.LANTERN.defaultBlockState());
+            }
+        replace(out, 1, 1, 4, Blocks.COMPOSTER.defaultBlockState());
+    }
+
+    /** Дровяной двор 5×5: настил, колода для рубки, поленница вдоль задней стороны, бочка под щепу. */
+    private static void woodyard(List<Cell> out, Palette p) {
+        for (int x = -2; x <= 2; x++)
+            for (int z = -2; z <= 2; z++) {
+                put(out, x, 0, z, p.path.defaultBlockState());
+                put(out, x, 1, z, Blocks.AIR.defaultBlockState());
+                put(out, x, 2, z, Blocks.AIR.defaultBlockState());
+            }
+        BlockState lying = p.log.defaultBlockState().hasProperty(RotatedPillarBlock.AXIS)
+                ? p.log.defaultBlockState().setValue(RotatedPillarBlock.AXIS, Direction.Axis.X) : p.log.defaultBlockState();
+        for (int x = -2; x <= 2; x++) {
+            replace(out, x, 1, -2, lying);
+            if (Math.abs(x) <= 1) replace(out, x, 2, -2, lying);
+        }
+        replace(out, 1, 1, 0, log(p));
+        replace(out, -2, 1, 1, Blocks.BARREL.defaultBlockState());
+        replace(out, 2, 1, 2, p.fence.defaultBlockState());
+        replace(out, 2, 2, 2, Blocks.LANTERN.defaultBlockState());
+    }
+
+    private static void replace(List<Cell> out, int x, int y, int z, BlockState s) {
+        BlockPos at = new BlockPos(x, y, z);
+        out.removeIf(c -> c.pos().equals(at));
+        put(out, x, y, z, s);
+    }
+
     /** Якорь зоны в каноне: центр загона, место кузнеца, точка входа в шахту (у оголовка со стороны входа). */
     public static BlockPos anchor(Project.Type type) {
         return switch (type) {
@@ -201,7 +300,10 @@ public final class ProjectDesigner {
     /** Глубина постройки вперёд от входа: насколько отступить от игрока, чтобы не строить на нём. */
     public static int depth(Project.Type type) {
         return switch (type) {
-            case HOUSE -> 4;
+            case HOUSE -> 5;
+            case BARRACKS -> 6;
+            case FARM -> 6;
+            case WOODYARD -> 4;
             case WATCHTOWER -> 4;
             case WALL -> 3;
             case PEN -> 5;
