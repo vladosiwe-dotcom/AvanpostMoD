@@ -196,6 +196,7 @@ public class WorkGoal extends Goal {
     }
 
     private void release() {
+        if (!mob.craftItem().isEmpty()) mob.showCraft(ItemStack.EMPTY, 0);
         Outpost o = mob.outpost();
         if (o != null && tree != null) o.claimedTrees.remove(tree);
         tree = null;
@@ -213,6 +214,8 @@ public class WorkGoal extends Goal {
         herdStage = 0;
         prey = null;
         farmTarget = null;
+        axeChecked = false;
+        hoeChecked = false;
         grassTarget = null;
         grassBroken = 0;
         farmHarvest = false;
@@ -304,13 +307,15 @@ public class WorkGoal extends Goal {
                     mob.swing(InteractionHand.MAIN_HAND);
                     // Скотовод корм не сдаёт: он для животных, не для кухни.
                     java.util.List<ItemStack> kept = new ArrayList<>();
-                    if (acting == Role.SKOTOVOD) {
-                        for (int i = 0; i < mob.inventory.getContainerSize(); i++) {
-                            ItemStack st = mob.inventory.getItem(i);
-                            if (WorkerEntity.feed(st) && kept.stream().mapToInt(ItemStack::getCount).sum() < 64) {
-                                kept.add(st.copy());
-                                mob.inventory.setItem(i, ItemStack.EMPTY);
-                            }
+                    for (int i = 0; i < mob.inventory.getContainerSize(); i++) {
+                        ItemStack st = mob.inventory.getItem(i);
+                        boolean feed = acting == Role.SKOTOVOD && WorkerEntity.feed(st) && kept.stream().mapToInt(ItemStack::getCount).sum() < 64;
+                        // Свой рабочий инструмент житель не сдаёт: топор лесоруба, мотыга фермера.
+                        boolean tool = (acting == Role.LUMBERJACK && st.is(net.minecraft.tags.ItemTags.AXES))
+                                || (acting == Role.FARMER && st.is(net.minecraft.tags.ItemTags.HOES));
+                        if (feed || tool) {
+                            kept.add(st.copy());
+                            mob.inventory.setItem(i, ItemStack.EMPTY);
                         }
                     }
                     Storehouse.deposit(level, o, mob.inventory);
@@ -687,10 +692,22 @@ public class WorkGoal extends Goal {
                 }
                 saplingSupplied = true;
             }
+            // Топор со склада: с ним рубится втрое быстрее; без топора — руками, медленно.
+            if (!axeChecked) {
+                if (bestCarried(AXES) == null) {
+                    Item axe = null;
+                    for (Item a : AXES) if (Logistics.available(level, o, a, null) > 0) { axe = a; break; }
+                    if (axe != null) {
+                        Supply s = supply(level, o, r, axe, 1, 0, OutpostTask.Type.FETCH_TOOLS, now);
+                        if (s == Supply.BUSY) return false;
+                    }
+                }
+                axeChecked = true;
+            }
             if (!go(o, tree, 3.0, 500)) return false;
             collectTree(level, OutpostSavedData.get(level), tree);
             if (logs.isEmpty()) return true;
-            timer = 12;
+            timer = chopTime();
         }
         mob.getLookControl().setLookAt(tree.getX() + 0.5, tree.getY() + 1.5, tree.getZ() + 0.5);
         if (--timer > 0) {
@@ -700,7 +717,7 @@ public class WorkGoal extends Goal {
             }
             return false;
         }
-        timer = 12;
+        timer = chopTime();
         BlockPos log = logs.pollFirst();
         BlockState state = level.getBlockState(log);
         // Повторная проверка: пока лесоруб шёл, рядом могли начать стройку или поставить блок игрока.
@@ -710,6 +727,11 @@ public class WorkGoal extends Goal {
                 if (!left.isEmpty()) mob.spawnAtLocation(left);
             }
             level.destroyBlock(log, false, mob);
+            ItemStack axe = bestCarried(AXES);
+            if (axe != null) {
+                axe.hurtAndBreak(1, level, mob, item -> {});
+                mob.inventory.setChanged();
+            }
             r.lastRealWork = now;
         }
         if (!logs.isEmpty()) return false;
@@ -2213,6 +2235,9 @@ public class WorkGoal extends Goal {
         }
         // Та же шкала smithWork используется вдали: загрузка чанка не удваивает производство.
         o.smithWork = Math.min(8, o.smithWork + 30.0 / 24000.0);
+        // Над кузнецом — что он куёт и сколько осталось.
+        mob.showCraft(forge ? new ItemStack(task.product, OutpostDirector.yield(task.product))
+                : new ItemStack(task.type == OutpostTask.Type.REPAIR_ARMOR ? Items.IRON_CHESTPLATE : gearIcon(target)), (float) Math.min(1, o.smithWork));
         if (o.smithWork < 1) return false;
         // 3. Расход именно взятых предметов: сначала проверить всё, потом списать.
         for (var e : materials.entrySet()) {
@@ -2226,7 +2251,8 @@ public class WorkGoal extends Goal {
         o.smithWork -= 1;
         if (forge) {
             // Готовый инструмент — настоящий предмет: в ношу кузнеца, а с ней на склад.
-            ItemStack made = new ItemStack(task.product);
+            ItemStack made = new ItemStack(task.product, OutpostDirector.yield(task.product));
+            mob.showCraft(ItemStack.EMPTY, 0);
             ItemStack left = mob.collect(made);
             if (!left.isEmpty()) mob.spawnAtLocation(left);
             // Рукоять из бревна: из 8 палок ушли 2, остальные — на склад.
@@ -2240,6 +2266,7 @@ public class WorkGoal extends Goal {
             Logistics.complete(o, task, now);
             task = null;
         } else {
+            mob.showCraft(ItemStack.EMPTY, 0);
             OutpostDirector.applySmithResult(o, task, target);
             Logistics.complete(o, task, now);
             task = null;
@@ -2250,6 +2277,33 @@ public class WorkGoal extends Goal {
         worker.lastRealWork = now;
         OutpostSavedData.get(level).setDirty();
         return true;
+    }
+
+    private static final Item[] AXES = {Items.DIAMOND_AXE, Items.IRON_AXE, Items.STONE_AXE, Items.WOODEN_AXE};
+    private static final Item[] HOES = {Items.DIAMOND_HOE, Items.IRON_HOE, Items.STONE_HOE, Items.WOODEN_HOE};
+    private boolean axeChecked, hoeChecked;
+
+    /** Лучший инструмент из списка в ноше жителя (или null). */
+    @Nullable
+    private ItemStack bestCarried(Item[] tools) {
+        for (Item t : tools) {
+            ItemStack st = carriedStack(t);
+            if (st != null) return st;
+        }
+        return null;
+    }
+
+    /** Время на одно бревно: железный топор — 8 тиков, каменный — 10, деревянный — 14, руками — 24. */
+    private int chopTime() {
+        ItemStack axe = bestCarried(AXES);
+        if (axe == null) return 24;
+        return axe.is(Items.DIAMOND_AXE) ? 6 : axe.is(Items.IRON_AXE) ? 8 : axe.is(Items.STONE_AXE) ? 10 : 14;
+    }
+
+    /** Значок перековки: нагрудник следующего уровня снаряжения бойца. */
+    private static Item gearIcon(@Nullable Resident target) {
+        int g = target == null ? 1 : Math.min(3, target.gear + 1);
+        return switch (g) { case 1 -> Items.CHAINMAIL_CHESTPLATE; case 2 -> Items.IRON_CHESTPLATE; default -> Items.DIAMOND_CHESTPLATE; };
     }
 
     private void removeCarried(Item item, int count) {
@@ -2561,7 +2615,21 @@ public class WorkGoal extends Goal {
         // Каждое действие занимает время, как у игрока: вспахать, посадить, сжать — а не всё поле за секунду.
         boolean seedsNeeded = crop.isAir() && level.getBlockState(farmTarget.below()).is(Blocks.FARMLAND) && countCarried(Items.WHEAT_SEEDS) == 0;
         if (!seedsNeeded) {
-            if (farmTimer < 0) farmTimer = farmHarvest ? 16 : farmTill ? 24 : 12;
+            // Мотыга со склада ускоряет вспашку; без неё — лопатой из рук, вдвое дольше.
+            if (farmTill && bestCarried(HOES) == null && !hoeChecked) {
+                hoeChecked = true;
+                for (Item hoe : HOES) {
+                    if (Logistics.available(level, o, hoe, null) > 0) {
+                        Supply sp = supply(level, o, r, hoe, 1, 0, OutpostTask.Type.FETCH_TOOLS, now);
+                        if (sp == Supply.BUSY) {
+                            hoeChecked = false;
+                            return false;
+                        }
+                        break;
+                    }
+                }
+            }
+            if (farmTimer < 0) farmTimer = farmHarvest ? 16 : farmTill ? (bestCarried(HOES) != null ? 14 : 30) : 12;
             mob.getLookControl().setLookAt(farmTarget.getX() + 0.5, farmTarget.getY(), farmTarget.getZ() + 0.5);
             if (--farmTimer > 0) {
                 if (farmTimer % 6 == 0) mob.swing(InteractionHand.MAIN_HAND);
@@ -2583,6 +2651,11 @@ public class WorkGoal extends Goal {
         if (farmTill && crop.isAir() && (soil.is(Blocks.DIRT) || soil.is(Blocks.GRASS_BLOCK))) {
             mob.swing(InteractionHand.MAIN_HAND);
             level.setBlockAndUpdate(farmTarget.below(), Blocks.FARMLAND.defaultBlockState());
+            ItemStack hoe = bestCarried(HOES);
+            if (hoe != null) {
+                hoe.hurtAndBreak(1, level, mob, item -> {});
+                mob.inventory.setChanged();
+            }
             level.playSound(null, farmTarget.below(), SoundEvents.GRASS_PLACE, SoundSource.BLOCKS, 0.7f, 1.0f);
             r.lastRealWork = now;
             return true;

@@ -213,9 +213,18 @@ public final class OutpostDirector {
         }
         Item pick = pickTier >= 3 && ownedTier < 3 && Storehouse.countItem(level, o, Items.DIAMOND) >= 3 ? Items.DIAMOND_PICKAXE
                 : pickTier >= 2 && ownedTier < 2 ? Items.IRON_PICKAXE : null;
-        for (Item product : new Item[]{Items.SHEARS, Items.BUCKET, Items.IRON_PICKAXE, Items.DIAMOND_PICKAXE}) {
-            boolean tool = product == Items.IRON_PICKAXE || product == Items.DIAMOND_PICKAXE;
-            boolean needed = smith && (tool ? product == pick : herders && owned(level, o, product) == 0
+        int ranged = 0;
+        for (Resident r : o.residents) if (r.active() && r.role.ranged()) ranged++;
+        int arrowsHave = Storehouse.countItem(level, o, Items.ARROW);
+        for (Resident r : o.residents) if (r.role.ranged()) arrowsHave += r.arrows;
+        boolean lumberjacks = o.count(Role.LUMBERJACK) > 0, farmers = o.count(Role.FARMER) > 0;
+        for (Item product : new Item[]{Items.SHEARS, Items.BUCKET, Items.IRON_PICKAXE, Items.DIAMOND_PICKAXE, Items.ARROW, Items.IRON_AXE, Items.IRON_HOE}) {
+            boolean tool = product == Items.IRON_PICKAXE || product == Items.DIAMOND_PICKAXE || product == Items.ARROW
+                    || product == Items.IRON_AXE || product == Items.IRON_HOE;
+            boolean needed = smith && (product == Items.ARROW ? ranged > 0 && arrowsHave < Math.max(32, ranged * 24)
+                    : product == Items.IRON_AXE ? lumberjacks && owned(level, o, Items.IRON_AXE) + owned(level, o, Items.STONE_AXE) + owned(level, o, Items.DIAMOND_AXE) == 0
+                    : product == Items.IRON_HOE ? farmers && owned(level, o, Items.IRON_HOE) + owned(level, o, Items.STONE_HOE) == 0
+                    : tool ? product == pick : herders && owned(level, o, product) == 0
                     && (product != Items.BUCKET || Storehouse.countItem(level, o, Items.MILK_BUCKET) < 4));
             OutpostTask t = null;
             for (OutpostTask x : o.tasks.all()) if (x.active() && x.type == OutpostTask.Type.FORGE_TOOL && x.product == product) t = x;
@@ -244,6 +253,11 @@ public final class OutpostDirector {
         }
     }
 
+    /** Сколько изделий даёт одна поковка. */
+    public static int yield(@Nullable Item product) {
+        return product == Items.ARROW ? 3 : 1;
+    }
+
     /** Настоящий рецепт верстака: ведро — 3 слитка, ножницы — 2. */
     public static Map<Item, Integer> recipe(@Nullable Item product) {
         Map<Item, Integer> m = new LinkedHashMap<>();
@@ -251,6 +265,12 @@ public final class OutpostDirector {
         else if (product == Items.SHEARS) m.put(Items.IRON_INGOT, 2);
         else if (product == Items.IRON_PICKAXE) m.put(Items.IRON_INGOT, 3);
         else if (product == Items.DIAMOND_PICKAXE) m.put(Items.DIAMOND, 3);
+        // Стрелы: наконечники из слитка, оперение из кожи, древки из бревна — 3 стрелы за раз.
+        else if (product == Items.ARROW) {
+            m.put(Items.IRON_INGOT, 1);
+            m.put(Items.LEATHER, 1);
+        } else if (product == Items.IRON_AXE) m.put(Items.IRON_INGOT, 3);
+        else if (product == Items.IRON_HOE) m.put(Items.IRON_INGOT, 2);
         return m;
     }
 

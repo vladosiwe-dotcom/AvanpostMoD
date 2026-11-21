@@ -138,12 +138,32 @@ public final class OutpostManager {
         o.setStock(Resource.IRON, 16);
         o.setStock(Resource.HIDES, 12);
         o.setStock(Resource.GOLD, 25);
+        starterKit(o);
         o.penAnimals = 2;
         o.nextRaidAt = now + 3 * 24000L;
         o.log(now, "lordsoutpost.event.founded", playerName);
         data.setLord(o, player);
         o.dirtyForClients = true;
         return FoundResult.OK;
+    }
+
+    /**
+     * Стартовый склад: инструменты на каждую профессию, факелы, стрелы, ведро и ножницы. Настоящие предметы —
+     * ложатся в бочки склада, как только он загружен (очередь storeItems).
+     */
+    public static void starterKit(Outpost o) {
+        net.minecraft.world.item.Item[][] kit = {
+                {net.minecraft.world.item.Items.STONE_AXE, null}, {net.minecraft.world.item.Items.STONE_AXE, null},
+                {net.minecraft.world.item.Items.STONE_HOE, null}, {net.minecraft.world.item.Items.STONE_PICKAXE, null},
+                {net.minecraft.world.item.Items.STONE_PICKAXE, null}, {net.minecraft.world.item.Items.SHEARS, null},
+                {net.minecraft.world.item.Items.BUCKET, null}};
+        for (var k : kit) o.storeItems.add(new net.minecraft.world.item.ItemStack(k[0]));
+        o.storeItems.add(new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.TORCH, 48));
+        o.storeItems.add(new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.ARROW, 64));
+        o.storeItems.add(new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.ARROW, 32));
+        o.storeItems.add(new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.LADDER, 16));
+        o.storeItems.add(new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.WHEAT_SEEDS, 16));
+        o.storeItems.add(new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.OAK_SAPLING, 8));
     }
 
     public static String defaultName(String playerName) {

@@ -48,6 +48,11 @@ public abstract class OutpostNpc extends PathfinderMob implements OutpostMember 
     private static final EntityDataAccessor<Integer> ROLE = SynchedEntityData.defineId(OutpostNpc.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Boolean> HOSTILE = SynchedEntityData.defineId(OutpostNpc.class, EntityDataSerializers.BOOLEAN);
     private static final EntityDataAccessor<Integer> STYLE = SynchedEntityData.defineId(OutpostNpc.class, EntityDataSerializers.INT);
+    /** Что делает житель руками (кузнец — изделие) и прогресс 0..1; для подсказки и полоски над головой. */
+    public static final EntityDataAccessor<net.minecraft.world.item.ItemStack> CRAFT_ITEM = SynchedEntityData.defineId(OutpostNpc.class, EntityDataSerializers.ITEM_STACK);
+    public static final EntityDataAccessor<Float> CRAFT_PROGRESS = SynchedEntityData.defineId(OutpostNpc.class, EntityDataSerializers.FLOAT);
+    /** Стрелы стрелка в колчане (-1 — не считаются: мародёры). */
+    public static final EntityDataAccessor<Integer> AMMO = SynchedEntityData.defineId(OutpostNpc.class, EntityDataSerializers.INT);
     private static final ResourceLocation ROAD_MODIFIER = LordsOutpost.id("road");
 
     protected long outpostId;
@@ -88,6 +93,26 @@ public abstract class OutpostNpc extends PathfinderMob implements OutpostMember 
         builder.define(ROLE, Role.SHIELDMAN.ordinal());
         builder.define(HOSTILE, true);
         builder.define(STYLE, 0);
+        builder.define(CRAFT_ITEM, net.minecraft.world.item.ItemStack.EMPTY);
+        builder.define(CRAFT_PROGRESS, 0f);
+        builder.define(AMMO, -1);
+    }
+
+    public void showCraft(net.minecraft.world.item.ItemStack item, float progress) {
+        if (!net.minecraft.world.item.ItemStack.matches(entityData.get(CRAFT_ITEM), item)) entityData.set(CRAFT_ITEM, item.copy());
+        entityData.set(CRAFT_PROGRESS, Math.max(0f, Math.min(1f, progress)));
+    }
+
+    public net.minecraft.world.item.ItemStack craftItem() {
+        return entityData.get(CRAFT_ITEM);
+    }
+
+    public float craftProgress() {
+        return entityData.get(CRAFT_PROGRESS);
+    }
+
+    public int ammo() {
+        return entityData.get(AMMO);
     }
 
     // ============================== Привязка к записи ==============================

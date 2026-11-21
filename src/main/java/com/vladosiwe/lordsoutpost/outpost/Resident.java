@@ -36,6 +36,8 @@ public final class Resident {
     public long statusUntil;
     /** Отряд бойца (индекс в Outpost.squads) или -1. */
     public int squad = -1;
+    /** Стрелы в колчане стрелка (настоящие, со склада; тратятся по одной на выстрел). */
+    public int arrows;
     /** Когда Лорд последний раз сменил профессию (игровой тик): следующая смена — не раньше чем через 2 минуты. */
     public long roleChangedAt = Long.MIN_VALUE / 2;
     public static final long ROLE_COOLDOWN = 2400;
@@ -98,6 +100,7 @@ public final class Resident {
         t.putInt("kills", kills);
         t.putInt("miningXp", miningXp);
         t.putLong("roleAt", roleChangedAt);
+        t.putInt("arrows", arrows);
         if (!pouch.isEmpty()) {
             CompoundTag pt = new CompoundTag();
             for (var e : pouch.entrySet()) if (e.getValue() > 0) pt.putInt(e.getKey(), e.getValue());
@@ -117,6 +120,7 @@ public final class Resident {
         r.kills = t.getInt("kills");
         r.miningXp = Math.max(0, t.getInt("miningXp"));
         if (t.contains("roleAt")) r.roleChangedAt = t.getLong("roleAt");
+        r.arrows = Math.max(0, t.getInt("arrows"));
         CompoundTag pt = t.getCompound("pouch");
         for (String k : pt.getAllKeys()) r.pouch.put(k, Math.max(0, pt.getInt(k)));
         return r;

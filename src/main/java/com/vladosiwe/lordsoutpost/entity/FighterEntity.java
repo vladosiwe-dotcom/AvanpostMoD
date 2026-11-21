@@ -56,7 +56,7 @@ public class FighterEntity extends OutpostNpc implements RangedAttackMob {
 
     /** Epic Fight заменяет ванильные цели ближнего боя своими; стрелкам возвращаем их штатную стрельбу. */
     public void ensureRangedCombatGoals() {
-        if (!ranged()) return;
+        if (!role().ranged()) return;
         createRangedGoals();
         boolean ranged = false, bow = false;
         for (var w : goalSelector.getAvailableGoals()) {
@@ -73,24 +73,24 @@ public class FighterEntity extends OutpostNpc implements RangedAttackMob {
         rangedGoal = new RangedAttackGoal(this, 1.0, 30, 18f) {
             @Override
             public boolean canUse() {
-                return role() == Role.CROSSBOWMAN && super.canUse();
+                return role() == Role.CROSSBOWMAN && ranged() && super.canUse();
             }
 
             @Override
             public boolean canContinueToUse() {
-                return role() == Role.CROSSBOWMAN && super.canContinueToUse();
+                return role() == Role.CROSSBOWMAN && ranged() && super.canContinueToUse();
             }
         };
         // Лучник натягивает лук: видно и в обычной игре, и как прицеливание Epic Fight.
         bowGoal = new RangedBowAttackGoal<>(this, 1.0, 25, 18f) {
             @Override
             public boolean canUse() {
-                return role() == Role.ARCHER && super.canUse();
+                return role() == Role.ARCHER && ranged() && super.canUse();
             }
 
             @Override
             public boolean canContinueToUse() {
-                return role() == Role.ARCHER && super.canContinueToUse();
+                return role() == Role.ARCHER && ranged() && super.canContinueToUse();
             }
         };
     }
@@ -105,8 +105,15 @@ public class FighterEntity extends OutpostNpc implements RangedAttackMob {
                 .add(Attributes.KNOCKBACK_RESISTANCE, 0.1);
     }
 
+    /** Стреляет: стрелок с луком или арбалетом, у которого есть стрелы (у своих — счёт настоящих стрел). */
     public boolean ranged() {
-        return role().ranged();
+        return role().ranged() && (hostileFaction() || entityData.get(AMMO) != 0);
+    }
+
+    /** Колчан стрелка из записи жителя (для подсказки над ним). */
+    public void syncAmmo() {
+        Resident r = resident();
+        entityData.set(AMMO, hostileFaction() || r == null || !r.role.ranged() ? -1 : r.arrows);
     }
 
     /**
@@ -194,6 +201,7 @@ public class FighterEntity extends OutpostNpc implements RangedAttackMob {
 
     @Override
     protected void equip(@Nullable Outpost o, Resident r) {
+        entityData.set(AMMO, o == null || o.state != OutpostState.OWNED || !r.role.ranged() ? -1 : r.arrows);
         int gear = Math.max(0, Math.min(Resident.MAX_GEAR, r.gear));
         Item[] armor = ARMOR[gear];
         setItemSlot(EquipmentSlot.HEAD, armorStack(armor[0], r.armor));
@@ -257,6 +265,18 @@ public class FighterEntity extends OutpostNpc implements RangedAttackMob {
 
     @Override
     public void performRangedAttack(LivingEntity target, float power) {
+        // Свои стрелки тратят настоящие стрелы со склада; кончились — стрелять нечем.
+        if (!hostileFaction()) {
+            Resident r = resident();
+            if (r != null) {
+                if (r.arrows <= 0) {
+                    syncAmmo();
+                    return;
+                }
+                r.arrows--;
+                syncAmmo();
+            }
+        }
         ItemStack weapon = getMainHandItem();
         boolean crossbow = weapon.is(Items.CROSSBOW);
         AbstractArrow arrow = ProjectileUtil.getMobArrow(this, new ItemStack(Items.ARROW), power, weapon);

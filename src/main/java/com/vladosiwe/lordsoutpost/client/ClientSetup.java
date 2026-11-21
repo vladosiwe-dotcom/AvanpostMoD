@@ -72,6 +72,7 @@ public final class ClientSetup {
         public static void hud(RegisterGuiLayersEvent event) {
             event.registerAboveAll(LordsOutpost.id("discovery"), DiscoveryBanner::render);
             event.registerAboveAll(LordsOutpost.id("outpost_status"), com.vladosiwe.lordsoutpost.client.hud.OutpostHud::render);
+            event.registerAboveAll(LordsOutpost.id("npc_hover"), com.vladosiwe.lordsoutpost.client.render.NpcOverlay::renderHover);
         }
 
     }

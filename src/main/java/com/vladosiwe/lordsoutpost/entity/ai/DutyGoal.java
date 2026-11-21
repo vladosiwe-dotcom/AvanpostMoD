@@ -68,6 +68,7 @@ public class DutyGoal extends Goal {
         Outpost o = mob.outpost();
         Resident r = mob.resident();
         if (o == null || r == null) return;
+        if (refillArrows(level, o, r)) return;
 
         if (o.state != OutpostState.OWNED) {
             if (r.role == Role.CAPTAIN) {
@@ -117,6 +118,31 @@ public class DutyGoal extends Goal {
             return;
         }
         mob.approach(post, 1.0, 1.6, 240);
+    }
+
+    private boolean refilling;
+
+    /**
+     * Стрелок без боя пополняет колчан: меньше 16 стрел и на складе они есть — идёт к складу и берёт до 32.
+     * Набег и приказ «Свита» не прерываются.
+     */
+    private boolean refillArrows(ServerLevel level, Outpost o, Resident r) {
+        if (!r.role.ranged() || o.raid != null || o.state != OutpostState.OWNED) return false;
+        if (!refilling) {
+            if (r.arrows >= 16 || mob.tickCount % 40 != 0) return false;
+            if (com.vladosiwe.lordsoutpost.data.Logistics.available(level, o, net.minecraft.world.item.Items.ARROW, null) <= 0) return false;
+            refilling = true;
+        }
+        if (!mob.approach(com.vladosiwe.lordsoutpost.data.Storehouse.storePos(level, o), 1.0, 2.0, 600)) return true;
+        int want = Math.min(32 - r.arrows, com.vladosiwe.lordsoutpost.data.Logistics.available(level, o, net.minecraft.world.item.Items.ARROW, null));
+        if (want > 0 && com.vladosiwe.lordsoutpost.data.Storehouse.takeItem(level, o, net.minecraft.world.item.Items.ARROW, want)) {
+            r.arrows += want;
+            mob.playSound(net.minecraft.sounds.SoundEvents.ARMOR_EQUIP_LEATHER.value(), 0.7f, 1.2f);
+            OutpostSavedData.get(level).setDirty();
+        }
+        mob.syncAmmo();
+        refilling = false;
+        return false;
     }
 
     /**
