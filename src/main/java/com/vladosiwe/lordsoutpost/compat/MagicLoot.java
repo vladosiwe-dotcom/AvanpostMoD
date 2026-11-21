@@ -48,6 +48,12 @@ public final class MagicLoot {
         return ironsLoaded() ? roll(level, TREASURE_IRONS, rnd) : new ArrayList<>();
     }
 
+    /** Кольца и эссенции Iron's Spells для сундуков фортов (2–5 черепков); без мода — ничего. */
+    public static List<ItemStack> outpostMagic(ServerLevel level, RandomSource rnd, int skulls) {
+        if (!ironsLoaded() || skulls < 2) return new ArrayList<>();
+        return roll(level, table("compat/irons/outpost_magic_" + Math.min(5, skulls)), rnd);
+    }
+
     /**
      * Уровень заклинания на свитке Iron's Spells (без зависимости от API мода): компоненты предмета из пространства
      * имён мода кодируются в NBT и берётся наибольшее поле "level". Для прочих предметов — 0.

@@ -33,7 +33,9 @@ public final class Raids {
         }
         if (o.raid != null) {
             // Игрок ушёл посреди боя или налётчики слишком долго топчутся — остаток решается по силе.
-            if (!o.online || now - o.raid.startedAt > RAID_TIMEOUT) {
+            // Пока идёт предупреждение, набег ждёт штурма и без игрока.
+            boolean offline = !o.online && now >= o.raid.assaultAt;
+            if (offline || now - Math.max(o.raid.startedAt, o.raid.assaultAt) > RAID_TIMEOUT) {
                 double left = o.raid.strength * remainingShare(o.raid);
                 Raid raid = o.raid;
                 o.raid = null;
@@ -47,23 +49,60 @@ public final class Raids {
             schedule(data, o, now, rnd);
             return;
         }
-        if (now < o.nextRaidAt) return;
+        // Рядом игрок — за 5 минут разведчики предупреждают о набеге; без игрока набег считается в свой срок.
+        boolean warn = o.online && now >= o.nextRaidAt - Raid.WARNING;
+        if (now < o.nextRaidAt && !warn) return;
         Outpost source = source(data, o);
         double days = (now - o.foundedAt) / (double) Simulation.DAY;
+        // Сила растёт с тиром, возрастом поселения и его богатством: богатый форт манит большие банды.
         double strength = (6 + 4 * o.tier + Math.min(20, days * 0.4)) * (source != null ? 1 + 0.25 * source.difficulty.skulls : 0.8)
-                * (0.8 + rnd.nextDouble() * 0.4);
-        int count = Math.max(3, Math.min(14, (int) Math.round(strength / 5)));
+                * (1 + wealthFactor(o)) * (0.8 + rnd.nextDouble() * 0.4);
+        int count = Math.max(4, Math.min(18, (int) Math.round(strength / 5)));
         long sourceId = source == null ? 0 : source.id;
-        o.log(now, "lordsoutpost.event.raid_start", sourceName(source));
-        Notify.lord(level.getServer(), o, Component.translatable("lordsoutpost.event.raid_start", sourceName(source)));
         if (o.online) {
-            o.raid = new Raid(sourceId, strength, now, count);
-            o.alarmUntil = now + RAID_TIMEOUT;
+            Raid raid = new Raid(sourceId, strength, now, count);
+            raid.assaultAt = now + Raid.WARNING;
+            raid.ravagers = o.tier >= 3 ? (strength > 45 ? 2 : 1) : o.tier == 2 ? 1 : strength > 20 ? 1 : 0;
+            raid.camp = camp(o, source, rnd);
+            o.raid = raid;
+            o.alarmUntil = raid.assaultAt + RAID_TIMEOUT;
+            Component dir = Component.translatable("lordsoutpost.dir." + compass(o.center, raid.camp));
+            o.log(now, "lordsoutpost.event.raid_warn", sourceName(source), dir);
+            Notify.lord(level.getServer(), o, Component.translatable("lordsoutpost.event.raid_warn", sourceName(source), dir));
+            broadcast(level, o, Component.translatable("lordsoutpost.event.raid_warn", sourceName(source), dir).withStyle(net.minecraft.ChatFormatting.RED));
         } else {
+            o.log(now, "lordsoutpost.event.raid_start", sourceName(source));
+            Notify.lord(level.getServer(), o, Component.translatable("lordsoutpost.event.raid_start", sourceName(source)));
             resolve(level, data, o, sourceId, strength, now, rnd);
             schedule(data, o, now, rnd);
         }
         o.dirtyForClients = true;
+    }
+
+    /** Богатство поселения (золото, железо, запасы) → надбавка к силе набега, до +60 %. */
+    public static double wealthFactor(Outpost o) {
+        double w = o.stock(Resource.GOLD) * 4 + o.stock(Resource.IRON) * 2 + o.stock(Resource.FOOD) * 0.2
+                + (o.stock(Resource.WOOD) + o.stock(Resource.STONE)) * 0.1 + o.tributeGold * 4;
+        return Math.min(0.6, w / 3000.0);
+    }
+
+    /** Лагерь: 100–115 блоков от края форта, со стороны источника набега (или случайно). */
+    static net.minecraft.core.BlockPos camp(Outpost o, @Nullable Outpost source, RandomSource rnd) {
+        double ang = source != null ? Math.atan2(source.center.getZ() - o.center.getZ(), source.center.getX() - o.center.getX()) + (rnd.nextDouble() - 0.5) * 0.6
+                : rnd.nextDouble() * Math.PI * 2;
+        double dist = o.reach() + 100 + rnd.nextInt(16);
+        return new net.minecraft.core.BlockPos((int) (o.center.getX() + Math.cos(ang) * dist), o.center.getY(), (int) (o.center.getZ() + Math.sin(ang) * dist));
+    }
+
+    public static String compass(net.minecraft.core.BlockPos from, net.minecraft.core.BlockPos to) {
+        double ang = Math.toDegrees(Math.atan2(to.getX() - from.getX(), -(to.getZ() - from.getZ())));
+        String[] d = {"n", "ne", "e", "se", "s", "sw", "w", "nw"};
+        return d[(int) Math.floorMod(Math.round(ang / 45.0), 8)];
+    }
+
+    /** Сообщение всем игрокам у форта (в 200 блоках). */
+    public static void broadcast(ServerLevel level, Outpost o, Component msg) {
+        for (var p : level.players()) if (o.distanceSqr(p.getX(), p.getZ()) < 200 * 200) p.sendSystemMessage(msg);
     }
 
     private static String sourceName(@Nullable Outpost source) {

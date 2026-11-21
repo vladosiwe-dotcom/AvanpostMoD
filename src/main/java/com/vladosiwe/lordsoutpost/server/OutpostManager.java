@@ -66,7 +66,10 @@ public final class OutpostManager {
 
     public static Resident marauder(Outpost o, RandomSource rnd) {
         int skulls = o.difficulty.skulls;
-        Resident r = new Resident(UUID.randomUUID(), randomFighter(rnd), Names.random(rnd));
+        // В малых фортах стрелков меньше: первый захват не должен превращаться в тир под стенами.
+        Role role = randomFighter(rnd);
+        if (skulls <= 2 && role.ranged() && rnd.nextInt(100) < (skulls == 1 ? 50 : 30)) role = rnd.nextBoolean() ? Role.SHIELDMAN : Role.BERSERKER;
+        Resident r = new Resident(UUID.randomUUID(), role, Names.random(rnd));
         r.gear = Math.max(0, Math.min(Resident.MAX_GEAR, (skulls - 1) / 2 + (rnd.nextInt(4) == 0 ? 1 : 0)));
         return r;
     }

@@ -854,6 +854,40 @@ public final class OutpostGameTests {
         h.succeed();
     }
 
+    /** Набег рядом с игроком: предупреждение за 5 минут, лагерь в 100+ блоках, штурм по расписанию; богатство усиливает банду. */
+    @GameTest(template = "empty")
+    public static void epicRaidPhases(GameTestHelper h) {
+        ServerLevel level = h.getLevel();
+        OutpostSavedData data = OutpostSavedData.get(level);
+        Outpost o = virtualOutpost(level, data, FAR.offset(3584, 0, 0), 1, UUID.randomUUID());
+        try {
+            long now = level.getGameTime();
+            o.online = true;
+            o.nextRaidAt = now + 100;
+            Raids.tick(level, data, o, now, level.random);
+            h.assertTrue(o.raid != null, "предупреждение о набеге не началось");
+            var raid = o.raid;
+            h.assertTrue(raid.assaultAt == now + com.vladosiwe.lordsoutpost.outpost.Raid.WARNING, "штурм не через 5 минут");
+            h.assertTrue(raid.beforeAssault(now) && !raid.preparing(now), "фазы набега");
+            h.assertTrue(raid.preparing(raid.assaultAt - com.vladosiwe.lordsoutpost.outpost.Raid.CAMP_BEFORE), "лагерь за 2 минуты");
+            double d = Math.sqrt(o.distanceSqr(raid.camp.getX(), raid.camp.getZ()));
+            h.assertTrue(d >= 100, "лагерь ближе 100 блоков: " + d);
+            o.online = false;
+            Raids.tick(level, data, o, now + 200, level.random);
+            h.assertTrue(o.raid == raid, "без игрока набег во время предупреждения не должен решаться заранее");
+            var copy = com.vladosiwe.lordsoutpost.outpost.Raid.load(raid.save());
+            h.assertTrue(copy.assaultAt == raid.assaultAt && copy.camp.equals(raid.camp) && copy.ravagers == raid.ravagers, "набег не сохраняется");
+            double poor = Raids.wealthFactor(o);
+            o.setStock(Resource.GOLD, 400);
+            h.assertTrue(Raids.wealthFactor(o) > poor, "богатство не усиливает набег");
+        } finally {
+            o.raid = null;
+            OutpostManager.abandon(data, o, level.getGameTime());
+            data.remove(o);
+        }
+        h.succeed();
+    }
+
     /** Донжон Лорда: личные сундуки на каждом тире, рамка портала на тире 3; Зеркало Лорда — одно и привязано к аванпосту. */
     @GameTest(template = "empty")
     public static void lordKeepAndMirror(GameTestHelper h) {

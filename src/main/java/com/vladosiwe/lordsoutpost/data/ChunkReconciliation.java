@@ -292,6 +292,7 @@ public final class ChunkReconciliation {
         if (skulls >= 4) loot.add(new ItemStack(Items.GOLDEN_APPLE, skulls - 3));
         if (skulls >= 5) loot.add(new ItemStack(Items.TOTEM_OF_UNDYING));
         if (skulls >= 4) loot.addAll(MagicLoot.captainScrolls(level, level.random));
+        if (skulls >= 3) loot.addAll(MagicLoot.outpostMagic(level, level.random, skulls));
         int slot = 0;
         for (ItemStack stack : loot) {
             while (slot < chest.getContainerSize() && !chest.getItem(slot).isEmpty()) slot++;
@@ -338,6 +339,7 @@ public final class ChunkReconciliation {
             }
         }
         long phase = Math.floorMod(now + o.id, 40L);
+        if (o.state == OutpostState.WILD && phase == 21) GateBreach.wild(level, o);
         if (o.state == OutpostState.OWNED) {
             if (phase == 7) containers(level, o, now);
             if (Math.floorMod(now + o.id, 200L) == 11) pen(level, o);
@@ -884,37 +886,161 @@ public final class ChunkReconciliation {
 
     // ============================== Набег ==============================
 
+    public static final String RAID_TAG = "lordsoutpost_raid", BANNERMAN_TAG = "lordsoutpost_bannerman";
+
+    /** Выводит банду: в лагерь за 100+ блоков (если там прогружено), иначе — к воротам, как раньше. */
+    private static void spawnRaiders(ServerLevel level, OutpostSavedData data, Outpost o, Raid raid) {
+        Outpost source = data.byId(raid.source);
+        int gear = source == null ? 0 : Math.min(Resident.MAX_GEAR, (source.difficulty.skulls - 1) / 2);
+        gear = Math.min(Resident.MAX_GEAR, gear + (o.tier >= 3 ? 1 : 0));
+        BlockPos base = raid.camp;
+        if (base != null && !level.hasChunk(base.getX() >> 4, base.getZ() >> 4)) {
+            // Лагерь не прогружен — ближе к форту по той же линии, но не ближе 60 блоков.
+            double dx = base.getX() - o.center.getX(), dz = base.getZ() - o.center.getZ(), len = Math.max(1, Math.sqrt(dx * dx + dz * dz));
+            BlockPos found = null;
+            for (double d = len; d >= 60; d -= 8) {
+                int x = (int) (o.center.getX() + dx / len * d), z = (int) (o.center.getZ() + dz / len * d);
+                if (level.hasChunk(x >> 4, z >> 4)) {
+                    found = new BlockPos(x, base.getY(), z);
+                    break;
+                }
+            }
+            if (found == null) return;
+            raid.camp = base = found;
+        }
+        if (base == null) {
+            BlockPos gate = o.marker(Marker.GATE);
+            double dx = gate.getX() - o.center.getX(), dz = gate.getZ() - o.center.getZ(), len = Math.max(1, Math.sqrt(dx * dx + dz * dz));
+            base = new BlockPos((int) (gate.getX() + dx / len * 34), gate.getY(), (int) (gate.getZ() + dz / len * 34));
+        }
+        for (int i = 0; i < 6 && raid.toSpawn > 0; i++) {
+            BlockPos pos = surface(level, base, 10);
+            if (pos == null) break;
+            FighterEntity raider = ModEntities.FIGHTER.get().create(level);
+            if (raider == null) break;
+            raider.moveTo(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, level.random.nextFloat() * 360, 0);
+            boolean bannerman = raid.banner && raid.entities.isEmpty() && raid.killed == 0;
+            raider.bindRaider(raid.source, o.id, bannerman ? Role.SHIELDMAN : OutpostManager.randomFighter(level.random), gear);
+            if (bannerman) {
+                raider.setItemSlot(net.minecraft.world.entity.EquipmentSlot.HEAD,
+                        net.minecraft.world.entity.raid.Raid.getLeaderBannerInstance(level.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.BANNER_PATTERN)));
+                raider.setDropChance(net.minecraft.world.entity.EquipmentSlot.HEAD, 1f);
+                raider.addTag(BANNERMAN_TAG);
+                raider.setCustomName(Component.translatable("lordsoutpost.npc.bannerman").withStyle(net.minecraft.ChatFormatting.DARK_RED));
+                raider.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH).setBaseValue(raider.getMaxHealth() + 16);
+                raider.setHealth(raider.getMaxHealth());
+                raid.banner = false;
+            }
+            if (level.addFreshEntity(raider)) {
+                raid.entities.add(raider.getUUID());
+                raid.toSpawn--;
+            }
+        }
+        while (raid.toSpawn <= 0 && raid.ravagers > 0) {
+            BlockPos pos = surface(level, base, 8);
+            var r = net.minecraft.world.entity.EntityType.RAVAGER.create(level);
+            if (pos == null || r == null) break;
+            r.moveTo(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, level.random.nextFloat() * 360, 0);
+            r.addTag(RAID_TAG);
+            r.setPersistenceRequired();
+            r.targetSelector.addGoal(2, new net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal<>(r, OutpostNpc.class, 10, true, false,
+                    e -> e instanceof OutpostNpc n && !n.hostileFaction()));
+            raid.beasts.add(r.getUUID());
+            if (!level.addFreshEntity(r)) raid.beasts.remove(r.getUUID());
+            raid.ravagers--;
+        }
+        if (raid.toSpawn <= 0 && raid.ravagers <= 0) raid.camped = true;
+    }
+
+    private static final net.minecraft.server.level.TicketType<net.minecraft.world.level.ChunkPos> RAID_TICKET =
+            net.minecraft.server.level.TicketType.create("lordsoutpost_raid", java.util.Comparator.comparingLong(net.minecraft.world.level.ChunkPos::toLong), 100);
+
+    private static void keepTicking(ServerLevel level, net.minecraft.world.level.ChunkPos pos) {
+        level.getChunkSource().addRegionTicket(RAID_TICKET, pos, 2, pos);
+    }
+
+    private static BlockPos surface(ServerLevel level, BlockPos base, int spread) {
+        for (int t = 0; t < 8; t++) {
+            int x = base.getX() + level.random.nextInt(spread * 2 + 1) - spread, z = base.getZ() + level.random.nextInt(spread * 2 + 1) - spread;
+            if (!level.hasChunk(x >> 4, z >> 4)) continue;
+            BlockPos p = new BlockPos(x, level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z), z);
+            if (level.getBlockState(p.below()).getFluidState().isEmpty()) return p;
+        }
+        return null;
+    }
+
     private static void raid(ServerLevel level, OutpostSavedData data, Outpost o, long now) {
         Raid raid = o.raid;
         if (raid == null) return;
         raid.entities.removeIf(id -> !(level.getEntity(id) instanceof OutpostNpc npc) || !npc.isAlive());
-        if (raid.toSpawn > 0) {
-            BlockPos gate = o.marker(Marker.GATE);
-            double dx = gate.getX() - o.center.getX(), dz = gate.getZ() - o.center.getZ();
-            double len = Math.max(1, Math.sqrt(dx * dx + dz * dz));
-            Outpost source = data.byId(raid.source);
-            int gear = source == null ? 0 : Math.min(Resident.MAX_GEAR, (source.difficulty.skulls - 1) / 2);
-            for (int i = 0; i < 2 && raid.toSpawn > 0; i++) {
-                double side = (level.random.nextDouble() - 0.5) * 24;
-                int x = (int) (gate.getX() + dx / len * 34 - dz / len * side), z = (int) (gate.getZ() + dz / len * 34 + dx / len * side);
-                if (!level.hasChunk(x >> 4, z >> 4)) break;
-                BlockPos pos = new BlockPos(x, level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z), z);
-                FighterEntity raider = ModEntities.FIGHTER.get().create(level);
-                if (raider == null) break;
-                raider.moveTo(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, 0, 0);
-                raider.bindRaider(raid.source, o.id, OutpostManager.randomFighter(level.random), gear);
-                if (level.addFreshEntity(raider)) {
-                    raid.entities.add(raider.getUUID());
-                    raid.toSpawn--;
-                }
+        raid.beasts.removeIf(id -> !(level.getEntity(id) instanceof net.minecraft.world.entity.monster.Ravager r) || !r.isAlive());
+        // Предупреждение (5 → 2 минуты до штурма): только ждём.
+        if (raid.beforeAssault(now) && !raid.preparing(now)) return;
+        // Лагерь и банда в 100+ блоках от игрока могут быть вне зоны тиков: держим их чанки активными, пока идёт набег.
+        if (raid.camp != null && !raid.camped) keepTicking(level, new net.minecraft.world.level.ChunkPos(raid.camp));
+        for (UUID id : raid.entities) if (level.getEntity(id) instanceof OutpostNpc npc) keepTicking(level, npc.chunkPosition());
+        for (UUID id : raid.beasts) if (level.getEntity(id) != null) keepTicking(level, level.getEntity(id).chunkPosition());
+        if (raid.toSpawn > 0 || (!raid.camped && raid.camp != null)) spawnRaiders(level, data, o, raid);
+        if (!raid.horn && now >= raid.assaultAt - Raid.HORN_BEFORE) {
+            raid.horn = true;
+            BlockPos from = raid.camp != null ? raid.camp : GateBreach.outside(o);
+            for (ServerPlayer p : level.players()) {
+                if (o.distanceSqr(p.getX(), p.getZ()) > 220 * 220) continue;
+                double dx = from.getX() - p.getX(), dz = from.getZ() - p.getZ(), len = Math.max(1, Math.sqrt(dx * dx + dz * dz));
+                level.playSeededSound(null, p.getX() + dx / len * 12, p.getY() + 2, p.getZ() + dz / len * 12,
+                        net.minecraft.sounds.SoundEvents.RAID_HORN, net.minecraft.sounds.SoundSource.HOSTILE, 64f, 1f, level.random.nextLong());
+            }
+            Raids.broadcast(level, o, Component.translatable("lordsoutpost.event.raid_horn").withStyle(net.minecraft.ChatFormatting.DARK_RED));
+        }
+        boolean assault = !raid.beforeAssault(now);
+        // Знаменосец воодушевляет: налётчики и разорители рядом с ним сильнее и быстрее.
+        List<net.minecraft.world.entity.Mob> band = new ArrayList<>();
+        for (UUID id : raid.entities) if (level.getEntity(id) instanceof OutpostNpc npc) band.add(npc);
+        for (UUID id : raid.beasts) if (level.getEntity(id) instanceof net.minecraft.world.entity.monster.Ravager r) band.add(r);
+        for (net.minecraft.world.entity.Mob m : band) {
+            if (!m.getTags().contains(BANNERMAN_TAG)) continue;
+            for (net.minecraft.world.entity.Mob ally : band) {
+                if (ally.distanceToSqr(m) > 16 * 16) continue;
+                ally.addEffect(new net.minecraft.world.effect.MobEffectInstance(net.minecraft.world.effect.MobEffects.DAMAGE_BOOST, 60, 0, true, false));
+                ally.addEffect(new net.minecraft.world.effect.MobEffectInstance(net.minecraft.world.effect.MobEffects.MOVEMENT_SPEED, 60, 0, true, false));
             }
         }
-        if (raid.toSpawn <= 0 && raid.entities.isEmpty()) {
+        // Разорители: ждут в лагере, на штурме идут на ворота и топчут жителей.
+        BlockPos outside = GateBreach.outside(o);
+        List<BlockPos> gate = assault ? GateBreach.standing(level, o) : List.of();
+        for (UUID id : raid.beasts) {
+            if (!(level.getEntity(id) instanceof net.minecraft.world.entity.monster.Ravager r)) continue;
+            if (!assault) {
+                if (raid.camp != null && r.distanceToSqr(raid.camp.getX(), r.getY(), raid.camp.getZ()) > 64) r.getNavigation().moveTo(raid.camp.getX() + 0.5, r.getY(), raid.camp.getZ() + 0.5, 0.8);
+            } else if (r.getTarget() == null) {
+                BlockPos to = gate.isEmpty() ? o.marker(Marker.YARD) : outside;
+                r.getNavigation().moveTo(to.getX() + 0.5, to.getY(), to.getZ() + 0.5, 1.0);
+            }
+        }
+        // Решётка ворот: налётчики у ворот долбят её; разоритель — вчетверо сильнее. Пробита — строитель потом поставит новую.
+        if (assault && !gate.isEmpty()) {
+            for (net.minecraft.world.entity.Mob m : band) {
+                for (BlockPos g : gate) {
+                    if (m.distanceToSqr(g.getX() + 0.5, g.getY(), g.getZ() + 0.5) > 3.2 * 3.2) continue;
+                    raid.gateDamage += m instanceof net.minecraft.world.entity.monster.Ravager ? 4 : 1;
+                    if (m instanceof net.minecraft.world.entity.monster.Ravager || level.random.nextInt(3) == 0) m.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
+                    break;
+                }
+            }
+            if (raid.gateDamage > 0 && level.random.nextInt(2) == 0) level.playSound(null, gate.get(0), net.minecraft.sounds.SoundEvents.ZOMBIE_ATTACK_IRON_DOOR, net.minecraft.sounds.SoundSource.HOSTILE, 1f, 0.8f);
+            if (raid.gateDamage >= 12 + 6 * o.tier) {
+                raid.gateDamage = 0;
+                if (GateBreach.breakOne(level, o, outside) && GateBreach.standing(level, o).isEmpty())
+                    Raids.broadcast(level, o, Component.translatable("lordsoutpost.event.raid_gate").withStyle(net.minecraft.ChatFormatting.RED));
+            }
+        }
+        if (assault && raid.toSpawn <= 0 && raid.entities.isEmpty() && raid.beasts.isEmpty()) {
             o.raid = null;
             Raids.victory(level, o, raid.source, now, 0);
             Raids.schedule(data, o, now, level.random);
             return;
         }
+        if (!assault) return;
         // Защищать некому, налётчики хозяйничают: через полминуты набег считается проигранным.
         boolean defended = false;
         for (Resident r : o.residents) if (r.role.combat && r.active()) defended = true;

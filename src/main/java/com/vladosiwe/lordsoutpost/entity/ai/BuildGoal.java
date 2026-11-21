@@ -71,13 +71,22 @@ public class BuildGoal extends Goal {
         if (!hasJob()) {
             if (--cooldown > 0) return;
             // Ремонт важнее новой стройки: очередь ремонта уже отсортирована — функциональные здания впереди.
-            if (o.online && !o.repairs.isEmpty()) {
+            if (o.online && !o.repairs.isEmpty() && level.getGameTime() >= repairPauseUntil) {
                 repair = o.repairs.pollFirst();
                 if (repairStep(o) == null || ChunkReconciliation.repairDone(level, o, repair)) {
                     repair = null;
                     cooldown = 2;
                     return;
                 }
+                Step rs = repairStep(o);
+                if (rs.cost() != null && o.stock(rs.cost()) < 1) {
+                    // Нечем чинить (например, нет железа на решётку) — ремонт ждёт, а строитель пока строит план.
+                    o.repairs.addLast(repair);
+                    repair = null;
+                    repairPauseUntil = level.getGameTime() + 200;
+                }
+            }
+            if (repair != null) {
                 Step rs = repairStep(o);
                 target = o.world(rs.pos());
                 workPosition = null;
@@ -371,6 +380,9 @@ public class BuildGoal extends Goal {
         projectKey = -1;
     }
 
+    /** До этого момента строитель не берёт ремонт (последний был недоступен или без материала). */
+    private long repairPauseUntil;
+
     private int jobFailures(Outpost o) {
         return claim >= 0 ? ChunkReconciliation.stepFailures(o, claim) : projectKey >= 0 ? Projects.failures(o, projectKey) : 0;
     }
@@ -480,7 +492,10 @@ public class BuildGoal extends Goal {
 
     /** Шаг недоступен: откладываем его, а строитель берёт следующий. */
     private void defer(Outpost o, long now) {
-        if (repair != null) o.repairs.addLast(repair);
+        if (repair != null) {
+            o.repairs.addLast(repair);
+            repairPauseUntil = now + 200;
+        }
         repair = null;
         if (claim >= 0) ChunkReconciliation.deferStep(o, claim, now);
         else if (projectKey >= 0) Projects.defer(o, projectKey, now);

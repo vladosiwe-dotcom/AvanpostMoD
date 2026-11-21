@@ -50,6 +50,13 @@ public class DutyGoal extends Goal {
         if (mob.raidTarget != 0) {
             Outpost target = OutpostSavedData.get(level).byId(mob.raidTarget);
             if (target == null) return;
+            var raid = target.raid;
+            long now = level.getGameTime();
+            // До штурма банда стоит лагерем и ждёт горна.
+            if (raid != null && raid.beforeAssault(now) && raid.camp != null) {
+                walk(raid.camp, 0.9, 6);
+                return;
+            }
             // Налётчик идёт на ближайшего защитника или жителя (видно его или нет), а не стоит у стены.
             if (mob.getTarget() == null && mob.tickCount % 20 == 0) {
                 OutpostNpc victim = level.getEntitiesOfClass(OutpostNpc.class, mob.getBoundingBox().inflate(48, 16, 48),
@@ -57,7 +64,10 @@ public class DutyGoal extends Goal {
                         .stream().min(java.util.Comparator.comparingDouble(n -> n.distanceToSqr(mob))).orElse(null);
                 if (victim != null) mob.setTarget(victim);
             }
-            if (mob.getTarget() == null) walk(target.marker(Marker.YARD), 1.0, 5);
+            if (mob.getTarget() == null) {
+                boolean gateUp = !com.vladosiwe.lordsoutpost.data.GateBreach.standing(level, target).isEmpty();
+                walk(gateUp ? com.vladosiwe.lordsoutpost.data.GateBreach.outside(target) : target.marker(Marker.YARD), 1.0, gateUp ? 1.5 : 5);
+            }
             return;
         }
         if (mob.caravanId != null) {
@@ -90,6 +100,18 @@ public class DutyGoal extends Goal {
                 mob.setTarget(raider);
                 return;
             }
+            var beast = level.getEntitiesOfClass(net.minecraft.world.entity.monster.Ravager.class, new net.minecraft.world.phys.AABB(o.center).inflate(rr, 24, rr),
+                            b -> b.isAlive() && b.getTags().contains(com.vladosiwe.lordsoutpost.data.ChunkReconciliation.RAID_TAG))
+                    .stream().min(java.util.Comparator.comparingDouble(b -> b.distanceToSqr(mob))).orElse(null);
+            if (beast != null) {
+                mob.setTarget(beast);
+                return;
+            }
+        }
+        // Перед штурмом дозор за стенами возвращается на посты.
+        if (o.raid != null && o.raid.preparing(level.getGameTime()) && o.squads[Math.max(0, Math.min(Squad.COUNT - 1, r.squad))].order == Squad.Order.PATROL) {
+            post(o, r);
+            return;
         }
         Squad squad = o.squads[Math.max(0, Math.min(Squad.COUNT - 1, r.squad))];
         switch (squad.order) {

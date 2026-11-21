@@ -33,6 +33,13 @@ add(P + 'msg.mirror.given', 'Управляющий %s вручает вам З�
 add(P + 'msg.mirror.full', 'Управляющий принёс Зеркало Лорда, но у вас нет места в инвентаре.', "The steward brought the Lord's Mirror, but your inventory is full.")
 add(P + 'msg.mirror.bound', 'Зеркало Лорда нельзя выбросить или отдать: только инвентарь Лорда или его личный сундук.', "The Lord's Mirror can't be dropped or given away: only the Lord's inventory or personal chest.")
 add(P + 'msg.lord_chest', 'Личный сундук Лорда: открыть его может только сам Лорд.', "The Lord's personal chest: only the Lord may open it.")
+add(P + 'msg.gate_breached', 'Стража ворот перебита — решётка сорвана, путь в форт открыт!', 'The gate guards are dead — the grate is torn down, the way in is open!')
+add(P + 'event.raid_warn', 'Разведчики донесли: идёт набег (%s)! Банда встанет лагерем на %s, штурм через 5 минут. Готовьте оборону.', 'Scouts report a raid (%s)! The band will camp to the %s; assault in 5 minutes. Prepare the defence.')
+add(P + 'event.raid_horn', 'Трубит горн налётчиков! Штурм через 30 секунд — жители укрылись, стража на постах.', 'The raiders sound their horn! Assault in 30 seconds — residents sheltered, guards at their posts.')
+add(P + 'event.raid_gate', 'Решётка ворот пробита! Налётчики врываются во двор.', 'The gate grate is broken! Raiders pour into the yard.')
+add(P + 'npc.bannerman', 'Знаменосец налётчиков', 'Raider Bannerman')
+for k, ru, en in [('n','севере','north'),('ne','северо-востоке','north-east'),('e','востоке','east'),('se','юго-востоке','south-east'),('s','юге','south'),('sw','юго-западе','south-west'),('w','западе','west'),('nw','северо-западе','north-west')]:
+    add(P + 'dir.' + k, ru, en)
 add('entity.lordsoutpost.fighter', 'Боец аванпоста', 'Outpost Fighter')
 add('entity.lordsoutpost.captain', 'Лорд мародёров', 'Marauder Lord')
 add('entity.lordsoutpost.worker', 'Житель аванпоста', 'Outpost Resident')

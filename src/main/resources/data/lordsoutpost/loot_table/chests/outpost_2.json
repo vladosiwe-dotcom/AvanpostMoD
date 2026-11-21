@@ -273,6 +273,21 @@
           ]
         }
       ]
+    },
+    {
+      "rolls": 1,
+      "conditions": [
+        {
+          "condition": "minecraft:random_chance",
+          "chance": 0.25
+        }
+      ],
+      "entries": [
+        {
+          "type": "minecraft:loot_table",
+          "value": "lordsoutpost:compat/irons/outpost_magic_2"
+        }
+      ]
     }
   ]
 }

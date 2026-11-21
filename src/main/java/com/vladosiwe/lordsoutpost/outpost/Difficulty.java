@@ -12,9 +12,9 @@ import net.minecraft.network.chat.Component;
 public enum Difficulty {
     FRONTIER_POST(1, "frontier_post", 1, 0.0f, 4),
     WATCH_FORT(2, "watch_fort", 1, 0.5f, 6),
-    REDOUBT(3, "redoubt", 2, 0.0f, 9),
-    MARAUDER_CITADEL(4, "marauder_citadel", 2, 0.6f, 12),
-    GREAT_FORTRESS(5, "great_fortress", 2, 0.92f, 16);
+    REDOUBT(3, "redoubt", 2, 0.0f, 8),
+    MARAUDER_CITADEL(4, "marauder_citadel", 2, 0.6f, 11),
+    GREAT_FORTRESS(5, "great_fortress", 2, 0.92f, 14);
 
     public static final Difficulty[] VALUES = values();
 

@@ -29,6 +29,7 @@ public class ShelterGoal extends Goal {
         Outpost o = mob.outpost();
         if (o == null) return false;
         if (mobThreat(o)) return true;
+        if (o.raid != null && o.raid.preparing(mob.level().getGameTime())) return true;
         if (o.alarmUntil <= mob.level().getGameTime()) return false;
         // Прятаться — только когда враг рядом; иначе жители работают и во время набега.
         if (mob.tickCount % 20 == 0 || danger) {
@@ -93,6 +94,22 @@ public class ShelterGoal extends Goal {
     @Override
     public void tick() {
         Outpost o = mob.outpost();
-        if (o != null) mob.approach(o.marker(Marker.YARD), 1.35, 3, 300);
+        if (o == null) return;
+        if (o.raid != null && o.raid.preparing(mob.level().getGameTime())) {
+            // Набег: по домам или в донжон Лорда (чётные — в донжон, нечётные — в ближайший дом).
+            if (shelter == null || mob.tickCount % 200 == 0) shelter = shelterSpot(o);
+            mob.approach(shelter, 1.25, 1.8, 400);
+            return;
+        }
+        shelter = null;
+        mob.approach(o.marker(Marker.YARD), 1.35, 3, 300);
+    }
+
+    private net.minecraft.core.BlockPos shelter;
+
+    private net.minecraft.core.BlockPos shelterSpot(Outpost o) {
+        var houses = o.markers(Marker.HOUSING);
+        if ((mob.getId() & 1) == 0 || houses.isEmpty()) return o.marker(Marker.THRONE);
+        return houses.stream().min(java.util.Comparator.comparingDouble(p -> p.distSqr(mob.blockPosition()))).orElse(o.marker(Marker.THRONE));
     }
 }
