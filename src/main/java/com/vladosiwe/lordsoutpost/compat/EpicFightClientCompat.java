@@ -11,7 +11,12 @@ import yesman.epicfight.api.client.model.Meshes;
 import yesman.epicfight.client.mesh.HumanoidMesh;
 import yesman.epicfight.client.renderer.patched.entity.PHumanoidRenderer;
 
-/** Client-only renderer registration; this class is loaded reflectively only when Epic Fight is present. */
+/**
+ * Client-only renderer registration; this class is loaded reflectively only when Epic Fight is present.
+ * The mob patches in data/lordsoutpost/epicfight_mobpatch name these entity types as their "renderer", so Epic Fight
+ * draws fighters with this PHumanoidRenderer: the vanilla HumanoidArmorLayer of FighterRenderer is replaced by
+ * Epic Fight's WearableItemLayer, which bakes each armor piece and skins it to the biped joints.
+ */
 public final class EpicFightClientCompat {
     private EpicFightClientCompat() {}
 

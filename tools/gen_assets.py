@@ -412,7 +412,7 @@ def series(weight, animations, lo=0.0, hi=2.5, cooldown=0, interrupt=True):
             'behaviors': [{'conditions': [within(lo, hi)], 'animation': anim(a)} for a in animations]}
 
 
-def mobpatch(impact, max_strikes, stun_armor, chasing, boss=False):
+def mobpatch(impact, max_strikes, stun_armor, chasing, renderer, boss=False):
     sword = [series(40, ['combat/mob_onehand1', 'combat/mob_onehand2']),
              series(30, ['combat/sword_auto1', 'combat/sword_auto2', 'combat/sword_auto3']),
              series(10, ['combat/sword_dash'], 2.5, 5.0, cooldown=60)]
@@ -425,8 +425,10 @@ def mobpatch(impact, max_strikes, stun_armor, chasing, boss=False):
     return {
         'model': 'epicfight:entity/biped',
         'armature': 'epicfight:entity/biped',
-        # Не vindicator: его слой предмета в руке у Epic Fight приводит моба к AbstractIllager, и клиент падает.
-        'renderer': 'minecraft:pillager',
+        # Свой рендерер (PHumanoidRenderer поверх FighterRenderer): броня печётся по модели с пропорциями игрока
+        # и привязывается к костям. Пресет pillager рисовал броню иллагерским рендерером — шлем висел над головой.
+        # (vindicator нельзя вовсе: его слой предмета в руке приводит моба к AbstractIllager, и клиент падает.)
+        'renderer': renderer,
         'isHumanoid': True,
         # Обязательное поле в Epic Fight 21.17. Свой/чужой для наших бойцов решает мод, поэтому нейтральная фракция.
         'faction': 'neutral',
@@ -450,6 +452,6 @@ def mobpatch(impact, max_strikes, stun_armor, chasing, boss=False):
             {'weapon_categories': ['axe'], 'style': 'one_hand', 'behavior_series': axe}]}
 
 
-write(os.path.join(DM, 'epicfight_mobpatch', 'fighter.json'), mobpatch(0.5, 1, 0.0, 1.0))
-write(os.path.join(DM, 'epicfight_mobpatch', 'captain.json'), mobpatch(0.9, 2, 6.0, 1.05, boss=True))
+write(os.path.join(DM, 'epicfight_mobpatch', 'fighter.json'), mobpatch(0.5, 1, 0.0, 1.0, 'lordsoutpost:fighter'))
+write(os.path.join(DM, 'epicfight_mobpatch', 'captain.json'), mobpatch(0.9, 2, 6.0, 1.05, 'lordsoutpost:captain', boss=True))
 print('epic fight patches ok')

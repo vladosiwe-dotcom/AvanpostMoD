@@ -46,7 +46,7 @@ public final class EpicFightCompat {
 
     public static String patchStatus(FighterEntity fighter) {
         MobPatch<?> patch = EpicFightCapabilities.getEntityPatch(fighter, MobPatch.class);
-        return patch == null ? "EF patch=MISSING" : "EF patch=" + patch.getClass().getSimpleName();
+        return patch == null ? "EF patch=MISSING" : "EF patch=" + patch.getClass().getSimpleName() + " armature=" + patch.getArmature();
     }
 }
 

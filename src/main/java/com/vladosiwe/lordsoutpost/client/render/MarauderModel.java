@@ -27,9 +27,25 @@ public class MarauderModel<T extends OutpostNpc> extends HumanoidModel<T> {
         nose = head.getChild("nose");
     }
 
+    /**
+     * Под Epic Fight тело рисует его скелетная сетка игрока, а эта модель служит лишь «родителем» для слоя брони:
+     * Epic Fight печёт сетку брони ({@code HumanoidModelBaker.bakeArmor}), подгоняя её по частям родителя, и потом
+     * привязывает к костям — так броня следует за всеми его анимациями. Поэтому под ним размеры частей — ровно как
+     * у игрока (голова 8, туловище 8×12×4): с головой разбойника в 10 пикселей шлем пёкся на 2 пикселя выше и висел
+     * над головой, с туловищем глубиной 6 — нагрудник был толще тела.
+     */
+    private static final boolean EPIC_FIGHT = net.neoforged.fml.ModList.get().isLoaded("epicfight");
+
     public static LayerDefinition createBodyLayer() {
         MeshDefinition mesh = HumanoidModel.createMesh(CubeDeformation.NONE, 0f);
         PartDefinition root = mesh.getRoot();
+        if (EPIC_FIGHT) {
+            PartDefinition head = root.addOrReplaceChild("head", CubeListBuilder.create().texOffs(0, 0).addBox(-4f, -8f, -4f, 8f, 8f, 8f), PartPose.ZERO);
+            head.addOrReplaceChild("nose", CubeListBuilder.create(), PartPose.ZERO);
+            PartDefinition body = root.addOrReplaceChild("body", CubeListBuilder.create().texOffs(16, 16).addBox(-4f, 0f, -2f, 8f, 12f, 4f), PartPose.ZERO);
+            body.addOrReplaceChild("robe", CubeListBuilder.create(), PartPose.ZERO);
+            return LayerDefinition.create(mesh, 64, 64);
+        }
         PartDefinition head = root.addOrReplaceChild("head", CubeListBuilder.create().texOffs(0, 0).addBox(-4f, -10f, -4f, 8f, 10f, 8f), PartPose.ZERO);
         head.addOrReplaceChild("nose", CubeListBuilder.create().texOffs(24, 0).addBox(-1f, -1f, -6f, 2f, 4f, 2f), PartPose.offset(0f, -2f, 0f));
         root.addOrReplaceChild("hat", CubeListBuilder.create(), PartPose.ZERO);
